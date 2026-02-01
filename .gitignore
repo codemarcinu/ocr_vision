@@ -1,6 +1,7 @@
 # Environment and secrets
 .env
 *.env.local
+docker-compose.override.yml
 credentials/*
 !credentials/.gitkeep
 
@@ -43,6 +44,9 @@ vault/*.md
 
 # Test files with personal receipts
 do testów/
+
+# Archive
+Archiwum/
 
 # Misc
 nul
