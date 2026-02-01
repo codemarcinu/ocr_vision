@@ -162,7 +162,7 @@ async def structure_with_llm(raw_text: str, prompt: str) -> tuple[Optional[dict]
     }
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             response = await client.post(
                 f"{settings.OLLAMA_BASE_URL}/api/generate",
                 json=payload
