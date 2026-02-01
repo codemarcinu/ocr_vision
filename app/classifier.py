@@ -1,7 +1,10 @@
-"""Product categorization using qwen2.5:7b via Ollama."""
+"""Product categorization using qwen2.5:7b via Ollama with A/B testing support."""
 
 import json
 import logging
+import time
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -10,6 +13,117 @@ from app.config import settings
 from app.models import CategorizedProduct, Product
 
 logger = logging.getLogger(__name__)
+
+# A/B test results log file
+AB_TEST_LOG = settings.LOGS_DIR / "classifier_ab_test.jsonl"
+
+def _log_ab_result(
+    model_a: str,
+    model_b: str,
+    products_count: int,
+    result_a: list[dict],
+    result_b: list[dict],
+    time_a: float,
+    time_b: float,
+    error_a: Optional[str],
+    error_b: Optional[str],
+) -> None:
+    """Log A/B test results to JSONL file for later analysis."""
+    try:
+        AB_TEST_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+        # Calculate agreement between models
+        agreement = 0
+        if result_a and result_b:
+            cats_a = {p.get("nazwa"): p.get("kategoria") for p in result_a}
+            cats_b = {p.get("nazwa"): p.get("kategoria") for p in result_b}
+            common_names = set(cats_a.keys()) & set(cats_b.keys())
+            if common_names:
+                agreement = sum(1 for n in common_names if cats_a[n] == cats_b[n]) / len(common_names)
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "model_a": model_a,
+            "model_b": model_b,
+            "products_count": products_count,
+            "time_a_sec": round(time_a, 2),
+            "time_b_sec": round(time_b, 2),
+            "error_a": error_a,
+            "error_b": error_b,
+            "agreement": round(agreement, 3),
+            "categories_a": [p.get("kategoria") for p in result_a] if result_a else [],
+            "categories_b": [p.get("kategoria") for p in result_b] if result_b else [],
+        }
+
+        with open(AB_TEST_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+
+        logger.info(
+            f"A/B test: {model_a} vs {model_b} | "
+            f"Agreement: {agreement:.1%} | "
+            f"Time: {time_a:.1f}s vs {time_b:.1f}s"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log A/B result: {e}")
+
+
+async def _call_classifier_model(
+    model: str,
+    prompt: str,
+    timeout: float = 180.0,
+) -> tuple[Optional[list[dict]], float, Optional[str]]:
+    """
+    Call a specific classifier model.
+
+    Returns:
+        Tuple of (parsed products list, time in seconds, error message or None)
+    """
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "keep_alive": settings.TEXT_MODEL_KEEP_ALIVE,
+        "options": {
+            "temperature": 0.1
+        }
+    }
+
+    start_time = time.time()
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{settings.OLLAMA_BASE_URL}/api/generate",
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
+    except httpx.TimeoutException:
+        elapsed = time.time() - start_time
+        logger.error(f"Classifier timeout for {model}")
+        return None, elapsed, f"Timeout after {elapsed:.1f}s"
+    except httpx.HTTPError as e:
+        elapsed = time.time() - start_time
+        logger.error(f"Classifier HTTP error for {model}: {e}")
+        return None, elapsed, str(e)
+
+    elapsed = time.time() - start_time
+    raw_response = result.get("response", "")
+    logger.debug(f"Raw classifier response from {model}: {raw_response}")
+
+    try:
+        json_str = raw_response
+        if "```json" in json_str:
+            json_str = json_str.split("```json")[1].split("```")[0]
+        elif "```" in json_str:
+            json_str = json_str.split("```")[1].split("```")[0]
+        json_str = json_str.strip()
+        data = json.loads(json_str)
+        return data.get("products", []), elapsed, None
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse classifier response from {model}: {e}")
+        return None, elapsed, f"JSON parse error: {e}"
+
 
 CATEGORIZATION_PROMPT = """Skategoryzuj poniższe produkty spożywcze.
 
@@ -37,7 +151,12 @@ Zasady:
 
 async def categorize_products(products: list[Product]) -> tuple[list[CategorizedProduct], Optional[str]]:
     """
-    Categorize products using qwen2.5:7b.
+    Categorize products using configured classifier model(s).
+
+    Supports A/B testing when CLASSIFIER_MODEL_B is set:
+    - "primary" mode: use CLASSIFIER_MODEL, optionally log B results
+    - "secondary" mode: use CLASSIFIER_MODEL_B as primary
+    - "both" mode: run both models, use primary, log comparison
 
     Returns:
         Tuple of (list of CategorizedProduct, error message or None)
@@ -57,48 +176,50 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
         products=products_text
     )
 
-    payload = {
-        "model": settings.CLASSIFIER_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "keep_alive": settings.TEXT_MODEL_KEEP_ALIVE,
-        "options": {
-            "temperature": 0.1
-        }
-    }
+    # Determine which model(s) to use
+    model_a = settings.CLASSIFIER_MODEL
+    model_b = settings.CLASSIFIER_MODEL_B
+    ab_mode = settings.CLASSIFIER_AB_MODE
 
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
-                json=payload
+    # Select primary model based on mode
+    if ab_mode == "secondary" and model_b:
+        primary_model = model_b
+    else:
+        primary_model = model_a
+
+    # Call primary model
+    result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
+
+    # A/B testing: call secondary model if configured
+    result_b = None
+    time_b = 0.0
+    error_b = None
+
+    if model_b and ab_mode in ("primary", "both"):
+        secondary_model = model_b if ab_mode == "primary" else model_a
+        if secondary_model != primary_model:
+            logger.info(f"A/B test: running secondary model {secondary_model}")
+            result_b, time_b, error_b = await _call_classifier_model(secondary_model, prompt)
+
+            # Log comparison
+            _log_ab_result(
+                model_a=primary_model,
+                model_b=secondary_model,
+                products_count=len(products),
+                result_a=result_a or [],
+                result_b=result_b or [],
+                time_a=time_a,
+                time_b=time_b,
+                error_a=error_a,
+                error_b=error_b,
             )
-            response.raise_for_status()
-            result = response.json()
-    except httpx.TimeoutException:
-        logger.error("Classifier timeout")
-        # Fallback: return products with "Inne" category
-        return _fallback_categorization(products), "Classifier timeout - using fallback"
-    except httpx.HTTPError as e:
-        logger.error(f"Classifier HTTP error: {e}")
-        return _fallback_categorization(products), f"Classifier error: {e}"
 
-    raw_response = result.get("response", "")
-    logger.debug(f"Raw classifier response: {raw_response}")
+    # Handle primary model failure
+    if error_a or result_a is None:
+        logger.error(f"Classifier error: {error_a}")
+        return _fallback_categorization(products), f"Classifier error: {error_a}"
 
-    try:
-        json_str = raw_response
-
-        if "```json" in json_str:
-            json_str = json_str.split("```json")[1].split("```")[0]
-        elif "```" in json_str:
-            json_str = json_str.split("```")[1].split("```")[0]
-
-        json_str = json_str.strip()
-        data = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse classifier response: {e}")
-        return _fallback_categorization(products), f"Failed to parse response: {e}"
+    data = {"products": result_a}
 
     # Build categorized products
     categorized = []

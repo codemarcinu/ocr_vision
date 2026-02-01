@@ -26,6 +26,14 @@ class Settings:
     OCR_MODEL: str = os.getenv("OCR_MODEL", "qwen2.5vl:7b")
     CLASSIFIER_MODEL: str = os.getenv("CLASSIFIER_MODEL", "qwen2.5:7b")
 
+    # A/B Testing for classifier models
+    # Set CLASSIFIER_MODEL_B to enable A/B testing (runs both models and logs comparison)
+    CLASSIFIER_MODEL_B: str = os.getenv("CLASSIFIER_MODEL_B", "")  # e.g., "gpt-oss:20b"
+    CLASSIFIER_AB_MODE: str = os.getenv("CLASSIFIER_AB_MODE", "primary")  # "primary", "secondary", "both"
+    # "primary" - use CLASSIFIER_MODEL, log B results if set
+    # "secondary" - use CLASSIFIER_MODEL_B as primary
+    # "both" - run both, use primary, log comparison
+
     # OCR backend: "vision" (LLM vision model) or "paddle" (PaddleOCR + LLM)
     OCR_BACKEND: str = os.getenv("OCR_BACKEND", "vision")
 

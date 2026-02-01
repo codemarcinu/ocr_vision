@@ -450,3 +450,97 @@ async def get_full_summary():
             "avg_discount_per_receipt": round(total_discount / len(receipts), 2) if receipts else 0
         }
     }
+
+
+@router.get("/classifier-ab")
+async def get_classifier_ab_report():
+    """
+    Get A/B test results for classifier models.
+
+    Returns comparison data between CLASSIFIER_MODEL and CLASSIFIER_MODEL_B
+    including agreement rates, timing differences, and error rates.
+    """
+    import json
+
+    ab_log_path = settings.LOGS_DIR / "classifier_ab_test.jsonl"
+
+    if not ab_log_path.exists():
+        return {
+            "status": "no_data",
+            "message": "No A/B test data yet. Set CLASSIFIER_MODEL_B to enable testing.",
+            "config": {
+                "model_a": settings.CLASSIFIER_MODEL,
+                "model_b": settings.CLASSIFIER_MODEL_B or "(not configured)",
+                "mode": settings.CLASSIFIER_AB_MODE,
+            }
+        }
+
+    # Parse JSONL log
+    results = []
+    try:
+        with open(ab_log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    results.append(json.loads(line))
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read log: {e}"}
+
+    if not results:
+        return {"status": "no_data", "message": "Log file is empty"}
+
+    # Calculate aggregated stats
+    total_tests = len(results)
+    total_products = sum(r.get("products_count", 0) for r in results)
+
+    # Agreement stats
+    agreements = [r.get("agreement", 0) for r in results]
+    avg_agreement = sum(agreements) / len(agreements) if agreements else 0
+
+    # Timing stats
+    times_a = [r.get("time_a_sec", 0) for r in results]
+    times_b = [r.get("time_b_sec", 0) for r in results if r.get("time_b_sec")]
+    avg_time_a = sum(times_a) / len(times_a) if times_a else 0
+    avg_time_b = sum(times_b) / len(times_b) if times_b else 0
+
+    # Error rates
+    errors_a = sum(1 for r in results if r.get("error_a"))
+    errors_b = sum(1 for r in results if r.get("error_b"))
+
+    # Get unique model pairs
+    model_pairs = set()
+    for r in results:
+        model_pairs.add((r.get("model_a", ""), r.get("model_b", "")))
+
+    return {
+        "status": "ok",
+        "config": {
+            "model_a": settings.CLASSIFIER_MODEL,
+            "model_b": settings.CLASSIFIER_MODEL_B or "(not configured)",
+            "mode": settings.CLASSIFIER_AB_MODE,
+        },
+        "summary": {
+            "total_tests": total_tests,
+            "total_products_categorized": total_products,
+            "avg_agreement": round(avg_agreement * 100, 1),  # percentage
+            "agreement_interpretation": (
+                "excellent" if avg_agreement >= 0.9 else
+                "good" if avg_agreement >= 0.75 else
+                "moderate" if avg_agreement >= 0.5 else
+                "poor"
+            ),
+        },
+        "timing": {
+            "avg_time_model_a_sec": round(avg_time_a, 2),
+            "avg_time_model_b_sec": round(avg_time_b, 2),
+            "speedup": round(avg_time_a / avg_time_b, 2) if avg_time_b > 0 else None,
+        },
+        "reliability": {
+            "errors_model_a": errors_a,
+            "errors_model_b": errors_b,
+            "error_rate_a": round(errors_a / total_tests * 100, 1) if total_tests > 0 else 0,
+            "error_rate_b": round(errors_b / total_tests * 100, 1) if total_tests > 0 else 0,
+        },
+        "model_pairs_tested": [{"model_a": a, "model_b": b} for a, b in model_pairs],
+        "recent_tests": results[-10:][::-1],  # Last 10, newest first
+    }
