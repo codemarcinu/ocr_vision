@@ -35,6 +35,7 @@ from app.telegram.handlers import (
 )
 from app.telegram.keyboards import get_main_keyboard
 from app.telegram.middleware import authorized_only
+from app.telegram.notifications import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ class PantryBot:
         await self.application.start()
         await self.application.updater.start_polling(drop_pending_updates=True)
 
+        # Start notification scheduler
+        start_scheduler(self.application.bot)
+
         self._running = True
         logger.info("Telegram bot started successfully")
 
@@ -81,6 +85,9 @@ class PantryBot:
             return
 
         logger.info("Stopping Telegram bot...")
+
+        # Stop notification scheduler
+        stop_scheduler()
 
         await self.application.updater.stop()
         await self.application.stop()
@@ -140,10 +147,10 @@ class PantryBot:
             return
 
         await update.message.reply_text(
-            "*Smart Pantry Tracker*\n\n"
+            "<b>🏪 Smart Pantry Tracker</b>\n\n"
             "Witaj! Wyślij mi zdjęcie paragonu, a przetworzę je automatycznie.\n\n"
             "Użyj /help aby zobaczyć dostępne komendy.",
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
 
@@ -153,32 +160,32 @@ class PantryBot:
         if not update.message:
             return
 
-        help_text = """*Dostępne komendy:*
+        help_text = """<b>📋 Dostępne komendy:</b>
 
-*Paragony:*
+<b>🧾 Paragony:</b>
 • Wyślij zdjęcie - przetwórz paragon
 • Wklej JSON - import z Gemini/innego źródła
-• `/recent [N]` - ostatnie N paragonów
-• `/reprocess <plik>` - ponowne przetwarzanie
-• `/pending` - pliki w kolejce
+• <code>/recent [N]</code> - ostatnie N paragonów
+• <code>/reprocess &lt;plik&gt;</code> - ponowne przetwarzanie
+• <code>/pending</code> - pliki w kolejce
 
-*Spiżarnia:*
-• `/pantry [kategoria]` - zawartość spiżarni
-• `/use <produkt>` - oznacz jako zużyty
-• `/remove <produkt>` - usuń ze spiżarni
-• `/search <fraza>` - szukaj produktu
+<b>🏠 Spiżarnia:</b>
+• <code>/pantry [kategoria]</code> - zawartość spiżarni
+• <code>/use &lt;produkt&gt;</code> - oznacz jako zużyty
+• <code>/remove &lt;produkt&gt;</code> - usuń ze spiżarni
+• <code>/search &lt;fraza&gt;</code> - szukaj produktu
 
-*Statystyki:*
-• `/stats [week/month]` - podsumowanie wydatków
-• `/stores` - wydatki wg sklepów
-• `/categories` - wydatki wg kategorii
-• `/rabaty` - raport rabatów i oszczędności
+<b>📊 Statystyki:</b>
+• <code>/stats [week/month]</code> - podsumowanie wydatków
+• <code>/stores</code> - wydatki wg sklepów
+• <code>/categories</code> - wydatki wg kategorii
+• <code>/rabaty</code> - raport rabatów i oszczędności
 
-*Błędy:*
-• `/errors` - lista błędów OCR
-• `/clearerrors` - wyczyść logi błędów"""
+<b>❌ Błędy:</b>
+• <code>/errors</code> - lista błędów OCR
+• <code>/clearerrors</code> - wyczyść logi błędów"""
 
-        await update.message.reply_text(help_text, parse_mode="Markdown")
+        await update.message.reply_text(help_text, parse_mode="HTML")
 
     @authorized_only
     async def _handle_text_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -229,9 +236,9 @@ class PantryBot:
                 raise ValueError("Invalid amount")
         except ValueError:
             await update.message.reply_text(
-                f"Nieprawidłowa kwota: `{text}`\n\n"
-                "Wpisz liczbę, np. `144.48` lub `144,48`",
-                parse_mode="Markdown"
+                f"❌ <b>Nieprawidłowa kwota:</b> <code>{text}</code>\n\n"
+                "Wpisz liczbę, np. <code>144.48</code> lub <code>144,48</code>",
+                parse_mode="HTML"
             )
             return
 
@@ -275,15 +282,21 @@ class PantryBot:
             del context.user_data[pending_key]
             del context.user_data["awaiting_manual_total"]
 
+            from app.telegram.formatters import get_store_emoji
+            store = receipt.sklep or "nieznany"
+            emoji = get_store_emoji(store)
+
             await update.message.reply_text(
-                f"Paragon zapisany z ręcznie wprowadzoną sumą.\n\n"
-                f"Sklep: {receipt.sklep or 'nieznany'}\n"
-                f"Suma: {manual_total:.2f} zł\n"
-                f"Produktów: {len(categorized)}"
+                f"✅ <b>Paragon zapisany z ręcznie wprowadzoną sumą!</b>\n\n"
+                f"{emoji} <b>{store.upper()}</b>\n"
+                f"💰 Suma: <b>{manual_total:.2f} zł</b>\n"
+                f"📦 Produktów: {len(categorized)}",
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
         except Exception as e:
             logger.error(f"Error saving receipt with manual total: {e}")
-            await update.message.reply_text(f"Błąd zapisu: {e}")
+            await update.message.reply_text(f"❌ Błąd zapisu: {e}", parse_mode="HTML")
 
     @authorized_only
     async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -296,24 +309,36 @@ class PantryBot:
 
         data = query.data or ""
 
-        if data == "pantry":
+        if data == "main_menu":
+            await query.edit_message_text(
+                "<b>🏪 Smart Pantry Tracker</b>\n\n"
+                "Wybierz opcję poniżej lub wyślij zdjęcie paragonu:",
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
+            )
+
+        elif data == "pantry":
             from app.obsidian_writer import get_pantry_contents
             from app.telegram.formatters import format_pantry_contents
+            from app.telegram.keyboards import get_pantry_quick_actions
             contents = get_pantry_contents()
             await query.edit_message_text(
                 format_pantry_contents(contents),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_pantry_quick_actions()
             )
 
         elif data.startswith("pantry_"):
             category = data.replace("pantry_", "")
             from app.obsidian_writer import get_pantry_contents
             from app.telegram.formatters import format_pantry_contents
+            from app.telegram.keyboards import get_pantry_quick_actions
             contents = get_pantry_contents()
             cat = None if category == "all" else category
             await query.edit_message_text(
                 format_pantry_contents(contents, cat),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_pantry_quick_actions()
             )
 
         elif data == "stats":
@@ -329,7 +354,8 @@ class PantryBot:
             stats = _calculate_stats("week")
             await query.edit_message_text(
                 format_stats(stats, "week"),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif data == "stats_month":
@@ -338,7 +364,8 @@ class PantryBot:
             stats = _calculate_stats("month")
             await query.edit_message_text(
                 format_stats(stats, "month"),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif data == "stores":
@@ -347,7 +374,8 @@ class PantryBot:
             stores = _calculate_stores_stats()
             await query.edit_message_text(
                 format_stores_stats(stores),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif data == "categories":
@@ -356,7 +384,8 @@ class PantryBot:
             categories = _calculate_categories_stats()
             await query.edit_message_text(
                 format_categories_stats(categories),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif data == "recent":
@@ -365,7 +394,8 @@ class PantryBot:
             receipts = _get_recent_receipts(5)
             await query.edit_message_text(
                 format_receipt_list(receipts),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif data == "errors":
@@ -374,7 +404,8 @@ class PantryBot:
             errors = get_errors()
             await query.edit_message_text(
                 format_errors(errors),
-                parse_mode="Markdown"
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif data == "cancel":
@@ -413,6 +444,7 @@ class PantryBot:
         if action == "approve":
             # Save the receipt as-is
             from app.obsidian_writer import update_pantry_file, write_receipt_file
+            from app.telegram.formatters import get_store_emoji
 
             receipt = review_data["receipt"]
             categorized = review_data["categorized"]
@@ -444,15 +476,19 @@ class PantryBot:
                 if context.user_data:
                     del context.user_data[pending_key]
 
+                store = receipt.sklep or "nieznany"
+                emoji = get_store_emoji(store)
                 await query.edit_message_text(
-                    f"Paragon zatwierdzony i zapisany.\n\n"
-                    f"Sklep: {receipt.sklep or 'nieznany'}\n"
-                    f"Suma: {receipt.suma:.2f} zł\n"
-                    f"Produktów: {len(categorized)}"
+                    f"✅ <b>Paragon zatwierdzony i zapisany!</b>\n\n"
+                    f"{emoji} <b>{store.upper()}</b>\n"
+                    f"💰 Suma: <b>{receipt.suma:.2f} zł</b>\n"
+                    f"📦 Produktów: {len(categorized)}",
+                    parse_mode="HTML",
+                    reply_markup=get_main_keyboard()
                 )
             except Exception as e:
                 logger.error(f"Error saving approved receipt: {e}")
-                await query.edit_message_text(f"Błąd zapisu: {e}")
+                await query.edit_message_text(f"❌ Błąd zapisu: {e}", parse_mode="HTML")
 
         elif action == "edit":
             # Show total correction options
@@ -460,11 +496,11 @@ class PantryBot:
             calculated = receipt.calculated_total or sum(p.cena for p in receipt.products)
 
             await query.edit_message_text(
-                f"*Popraw sumę paragonu*\n\n"
-                f"Suma OCR: {receipt.suma:.2f} zł\n"
-                f"Suma produktów: {calculated:.2f} zł\n\n"
-                f"Wybierz opcję:",
-                parse_mode="Markdown",
+                f"<b>✏️ Popraw sumę paragonu</b>\n\n"
+                f"💵 Suma OCR: <b>{receipt.suma:.2f} zł</b>\n"
+                f"🧮 Suma produktów: <b>{calculated:.2f} zł</b>\n\n"
+                f"<i>Wybierz opcję:</i>",
+                parse_mode="HTML",
                 reply_markup=get_total_correction_keyboard(receipt_id, calculated)
             )
 
@@ -501,9 +537,10 @@ class PantryBot:
                 context.user_data["awaiting_manual_total"] = receipt_id
 
             await query.edit_message_text(
-                "Wpisz poprawną sumę paragonu (np. `144.48`):\n\n"
-                "_Wyślij kwotę jako wiadomość_",
-                parse_mode="Markdown"
+                "✏️ <b>Wpisz poprawną sumę paragonu</b>\n\n"
+                "Przykład: <code>144.48</code>\n\n"
+                "<i>Wyślij kwotę jako wiadomość</i>",
+                parse_mode="HTML"
             )
 
         elif action == "reject":
@@ -512,8 +549,11 @@ class PantryBot:
                 del context.user_data[pending_key]
 
             await query.edit_message_text(
-                "Paragon odrzucony. Plik pozostaje w inbox.\n"
-                "Użyj `/reprocess <plik>` aby spróbować ponownie."
+                "🗑️ <b>Paragon odrzucony.</b>\n\n"
+                "Plik pozostaje w inbox.\n"
+                "Użyj <code>/reprocess &lt;plik&gt;</code> aby spróbować ponownie.",
+                parse_mode="HTML",
+                reply_markup=get_main_keyboard()
             )
 
         elif action == "cancel":
@@ -529,7 +569,7 @@ class PantryBot:
                 try:
                     await query.edit_message_text(
                         format_review_receipt(receipt, categorized, filename),
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         reply_markup=get_review_keyboard(receipt_id)
                     )
                 except Exception:
@@ -538,7 +578,7 @@ class PantryBot:
                         reply_markup=get_review_keyboard(receipt_id)
                     )
             else:
-                await query.edit_message_text("Anulowano.")
+                await query.edit_message_text("Anulowano.", reply_markup=get_main_keyboard())
 
     async def _error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors in the bot."""

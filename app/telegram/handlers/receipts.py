@@ -2,6 +2,7 @@
 
 import logging
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -15,8 +16,14 @@ from app.models import CategorizedProduct, Receipt
 from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
 from app.ocr import extract_products_from_image as extract_vision, unload_model
 from app.pdf_converter import convert_pdf_to_images
-from app.telegram.formatters import format_pending_files, format_receipt_list, format_receipt_summary, format_review_receipt
-from app.telegram.keyboards import get_review_keyboard
+from app.telegram.formatters import (
+    format_pending_files,
+    format_progress_bar,
+    format_receipt_list,
+    format_receipt_summary,
+    format_review_receipt,
+)
+from app.telegram.keyboards import get_receipt_actions_keyboard, get_review_keyboard
 from app.telegram.middleware import authorized_only
 
 # Import PaddleOCR if configured
@@ -88,7 +95,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 try:
                     await status_msg.edit_text(
                         review_msg,
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         reply_markup=get_review_keyboard(receipt_id)
                     )
                 except Exception:
@@ -97,20 +104,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         reply_markup=get_review_keyboard(receipt_id)
                     )
             else:
-                summary = format_receipt_summary(
-                    result["receipt"],
-                    result["categorized"],
-                    filename
-                )
+                # Show success with contextual actions
+                receipt = result["receipt"]
+                categorized = result["categorized"]
+                has_discounts = any(p.rabat and p.rabat > 0 for p in receipt.products)
+
+                summary = format_receipt_summary(receipt, categorized, filename)
                 try:
-                    await status_msg.edit_text(summary, parse_mode="Markdown")
+                    await status_msg.edit_text(
+                        summary,
+                        parse_mode="HTML",
+                        reply_markup=get_receipt_actions_keyboard(filename, has_discounts)
+                    )
                 except Exception:
                     await status_msg.edit_text(summary)
         else:
             await status_msg.edit_text(
-                f"Błąd przetwarzania: {result['error']}\n\n"
-                f"Użyj `/reprocess {filename}` aby spróbować ponownie.",
-                parse_mode="Markdown"
+                f"❌ <b>Błąd przetwarzania:</b> {result['error']}\n\n"
+                f"Użyj <code>/reprocess {filename}</code> aby spróbować ponownie.",
+                parse_mode="HTML"
             )
 
     except Exception as e:
@@ -293,11 +305,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             try:
                 await status_msg.edit_text(
                     review_msg,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=get_review_keyboard(receipt_id)
                 )
             except Exception as md_error:
-                logger.warning(f"Markdown formatting failed: {md_error}")
+                logger.warning(f"HTML formatting failed: {md_error}")
                 await status_msg.edit_text(
                     review_msg,
                     reply_markup=get_review_keyboard(receipt_id)
@@ -326,12 +338,17 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception as e:
             logger.warning(f"Failed to move file to processed: {e}")
 
-        # Try with Markdown, fallback to plain text if it fails
+        # Show success with contextual actions
+        has_discounts = any(p.rabat and p.rabat > 0 for p in combined_receipt.products)
         summary = format_receipt_summary(combined_receipt, categorized, pdf_filename)
         try:
-            await status_msg.edit_text(summary, parse_mode="Markdown")
-        except Exception as md_error:
-            logger.warning(f"Markdown formatting failed, sending plain text: {md_error}")
+            await status_msg.edit_text(
+                summary,
+                parse_mode="HTML",
+                reply_markup=get_receipt_actions_keyboard(pdf_filename, has_discounts)
+            )
+        except Exception as html_error:
+            logger.warning(f"HTML formatting failed, sending plain text: {html_error}")
             await status_msg.edit_text(summary)
 
     except Exception as e:
@@ -505,9 +522,13 @@ async def _process_receipt_with_progress(
     context: ContextTypes.DEFAULT_TYPE
 ) -> dict:
     """Process receipt with progress updates."""
+    start_time = time.time()
 
     # Step 1: OCR
-    await status_msg.edit_text("Krok 1/3: Rozpoznawanie tekstu (OCR)...")
+    await status_msg.edit_text(
+        format_progress_bar(1, 3, "Rozpoznawanie tekstu (OCR)...", 0, filename),
+        parse_mode="HTML"
+    )
     logger.info(f"Starting OCR for: {filename}")
 
     receipt, ocr_error = await extract_products_from_image(file_path)
@@ -545,8 +566,10 @@ async def _process_receipt_with_progress(
     await unload_model(settings.OCR_MODEL)
 
     # Step 2: Categorize
+    elapsed = time.time() - start_time
     await status_msg.edit_text(
-        f"Krok 2/3: Kategoryzacja {len(receipt.products)} produktów..."
+        format_progress_bar(2, 3, f"Kategoryzacja {len(receipt.products)} produktów...", elapsed, filename),
+        parse_mode="HTML"
     )
     logger.info(f"Categorizing {len(receipt.products)} products")
 
@@ -569,7 +592,11 @@ async def _process_receipt_with_progress(
         }
 
     # Step 3: Write files
-    await status_msg.edit_text("Krok 3/3: Zapisywanie do Obsidian...")
+    elapsed = time.time() - start_time
+    await status_msg.edit_text(
+        format_progress_bar(3, 3, "Zapisywanie do Obsidian...", elapsed, filename),
+        parse_mode="HTML"
+    )
 
     try:
         receipt_file = write_receipt_file(receipt, categorized, filename)
@@ -617,7 +644,7 @@ async def recent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     receipts = _get_recent_receipts(count)
     await update.message.reply_text(
         format_receipt_list(receipts),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -681,9 +708,9 @@ async def reprocess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if not context.args:
         await update.message.reply_text(
-            "Użycie: `/reprocess <nazwa_pliku>`\n\n"
-            "Przykład: `/reprocess telegram_20240115_120000.jpg`",
-            parse_mode="Markdown"
+            "Użycie: <code>/reprocess &lt;nazwa_pliku&gt;</code>\n\n"
+            "Przykład: <code>/reprocess telegram_20240115_120000.jpg</code>",
+            parse_mode="HTML"
         )
         return
 
@@ -700,12 +727,12 @@ async def reprocess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         shutil.move(processed_path, inbox_path)
         file_path = inbox_path
     else:
-        await update.message.reply_text(f"Nie znaleziono pliku: `{filename}`", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Nie znaleziono pliku: <code>{filename}</code>", parse_mode="HTML")
         return
 
     status_msg = await update.message.reply_text(
-        f"Ponowne przetwarzanie: `{filename}`...",
-        parse_mode="Markdown"
+        f"🔄 Ponowne przetwarzanie: <code>{filename}</code>...",
+        parse_mode="HTML"
     )
 
     # Check if it's a PDF - needs special handling
@@ -737,7 +764,7 @@ async def reprocess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             try:
                 await status_msg.edit_text(
                     review_msg,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=get_review_keyboard(receipt_id)
                 )
             except Exception:
@@ -746,17 +773,22 @@ async def reprocess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     reply_markup=get_review_keyboard(receipt_id)
                 )
         else:
-            summary = format_receipt_summary(
-                result["receipt"],
-                result["categorized"],
-                filename
-            )
+            # Show success with contextual actions
+            receipt = result["receipt"]
+            categorized = result["categorized"]
+            has_discounts = any(p.rabat and p.rabat > 0 for p in receipt.products)
+
+            summary = format_receipt_summary(receipt, categorized, filename)
             try:
-                await status_msg.edit_text(summary, parse_mode="Markdown")
+                await status_msg.edit_text(
+                    summary,
+                    parse_mode="HTML",
+                    reply_markup=get_receipt_actions_keyboard(filename, has_discounts)
+                )
             except Exception:
                 await status_msg.edit_text(summary)
     else:
-        await status_msg.edit_text(f"Błąd przetwarzania: {result['error']}")
+        await status_msg.edit_text(f"❌ <b>Błąd przetwarzania:</b> {result['error']}", parse_mode="HTML")
 
 
 @authorized_only
@@ -768,7 +800,7 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     inbox_dir = settings.INBOX_DIR
 
     if not inbox_dir.exists():
-        await update.message.reply_text("Folder inbox nie istnieje.")
+        await update.message.reply_text("📭 Folder inbox nie istnieje.")
         return
 
     files = [
@@ -778,5 +810,5 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     await update.message.reply_text(
         format_pending_files(files),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )

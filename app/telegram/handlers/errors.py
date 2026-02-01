@@ -22,7 +22,7 @@ async def errors_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         format_errors(errors),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 

@@ -50,7 +50,7 @@ async def pantry_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         format_pantry_contents(contents, category),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -62,10 +62,10 @@ async def use_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if not context.args:
         await update.message.reply_text(
-            "Użycie: `/use <nazwa_produktu>`\n\n"
-            "Przykład: `/use mleko`\n"
+            "Użycie: <code>/use &lt;nazwa_produktu&gt;</code>\n\n"
+            "Przykład: <code>/use mleko</code>\n"
             "Oznacza pierwszy pasujący produkt jako zużyty.",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -86,10 +86,10 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not context.args:
         await update.message.reply_text(
-            "Użycie: `/remove <nazwa_produktu>`\n\n"
-            "Przykład: `/remove mleko`\n"
+            "Użycie: <code>/remove &lt;nazwa_produktu&gt;</code>\n\n"
+            "Przykład: <code>/remove mleko</code>\n"
             "Usuwa pierwszy pasujący produkt ze spiżarni.",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -110,10 +110,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not context.args:
         await update.message.reply_text(
-            "Użycie: `/search <fraza>`\n\n"
-            "Przykład: `/search ser`\n"
+            "Użycie: <code>/search &lt;fraza&gt;</code>\n\n"
+            "Przykład: <code>/search ser</code>\n"
             "Wyszukuje produkty zawierające podaną frazę.",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -122,5 +122,5 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         format_search_results(results, query),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )

@@ -7,12 +7,48 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
     """Get main menu keyboard."""
     keyboard = [
         [
-            InlineKeyboardButton("Spiżarnia", callback_data="pantry"),
-            InlineKeyboardButton("Statystyki", callback_data="stats"),
+            InlineKeyboardButton("🏠 Spiżarnia", callback_data="pantry"),
+            InlineKeyboardButton("📊 Statystyki", callback_data="stats"),
         ],
         [
-            InlineKeyboardButton("Ostatnie paragony", callback_data="recent"),
-            InlineKeyboardButton("Błędy", callback_data="errors"),
+            InlineKeyboardButton("🧾 Ostatnie paragony", callback_data="recent"),
+            InlineKeyboardButton("❌ Błędy", callback_data="errors"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_receipt_actions_keyboard(receipt_id: str, has_discounts: bool = False) -> InlineKeyboardMarkup:
+    """Get contextual actions for processed receipt."""
+    keyboard = [
+        [
+            InlineKeyboardButton("📊 Statystyki", callback_data="stats"),
+            InlineKeyboardButton("🏠 Spiżarnia", callback_data="pantry"),
+        ],
+    ]
+
+    if has_discounts:
+        keyboard.append([
+            InlineKeyboardButton("🏷️ Zobacz rabaty", callback_data=f"receipt_discounts_{receipt_id}"),
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("📋 Menu główne", callback_data="main_menu"),
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_pantry_quick_actions() -> InlineKeyboardMarkup:
+    """Quick actions for pantry management."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🔍 Szukaj", callback_data="pantry_search"),
+            InlineKeyboardButton("📊 Statystyki", callback_data="stats"),
+        ],
+        [
+            InlineKeyboardButton("🧾 Paragony", callback_data="recent"),
+            InlineKeyboardButton("📋 Menu", callback_data="main_menu"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)

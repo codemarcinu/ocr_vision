@@ -125,28 +125,31 @@ def _parse_receipt_for_discounts(file_path: Path) -> Optional[dict]:
 
 
 def format_discount_stats(stats: dict) -> str:
-    """Format discount statistics for Telegram message."""
+    """Format discount statistics for Telegram message (HTML mode)."""
+    from app.telegram.formatters import escape_html, get_store_emoji
+
     if stats["discount_count"] == 0:
-        return "📊 *Raport rabatów*\n\nNie znaleziono żadnych rabatów."
+        return "📊 <b>Raport rabatów</b>\n\nNie znaleziono żadnych rabatów."
 
     lines = [
-        "📊 *Raport rabatów*\n",
-        f"💰 *Łączne oszczędności:* {stats['total_discount']:.2f} zł",
-        f"🏷️ *Liczba rabatów:* {stats['discount_count']}",
-        f"📈 *Średni rabat:* {stats['total_discount']/stats['discount_count']:.2f} zł",
+        "📊 <b>Raport rabatów</b>\n",
+        f"💰 <b>Łączne oszczędności:</b> {stats['total_discount']:.2f} zł",
+        f"🏷️ <b>Liczba rabatów:</b> {stats['discount_count']}",
+        f"📈 <b>Średni rabat:</b> {stats['total_discount']/stats['discount_count']:.2f} zł",
         ""
     ]
 
     if stats["by_store"]:
-        lines.append("*Rabaty wg sklepu:*")
+        lines.append("<b>Rabaty wg sklepu:</b>")
         for store, amount in list(stats["by_store"].items())[:5]:
-            lines.append(f"  • {store}: {amount:.2f} zł")
+            emoji = get_store_emoji(store)
+            lines.append(f"  {emoji} {escape_html(store)}: <b>{amount:.2f} zł</b>")
         lines.append("")
 
     if stats["recent_items"]:
-        lines.append("*Ostatnie rabaty:*")
+        lines.append("<b>Ostatnie rabaty:</b>")
         for item in stats["recent_items"][:5]:
-            lines.append(f"  • {item['name']}: -{item['discount']:.2f} zł ({item['store']})")
+            lines.append(f"  • {escape_html(item['name'])}: <b>-{item['discount']:.2f} zł</b> ({item['store']})")
 
     return "\n".join(lines)
 
@@ -161,7 +164,7 @@ async def discounts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     await update.message.reply_text(
         format_discount_stats(stats),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -182,7 +185,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await update.message.reply_text(
         format_stats(stats, period),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -196,7 +199,7 @@ async def stores_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         format_stores_stats(stores),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -210,7 +213,7 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await update.message.reply_text(
         format_categories_stats(categories),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
