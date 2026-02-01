@@ -11,7 +11,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.classifier import categorize_products
 from app.config import settings
@@ -46,6 +46,16 @@ app = FastAPI(
 # Register API routers
 app.include_router(dictionary_router)
 app.include_router(reports_router)
+
+
+# Web UI for dictionary management
+@app.get("/web/dictionary", response_class=HTMLResponse)
+async def dictionary_web_ui():
+    """Serve dictionary management web interface."""
+    html_path = Path(__file__).parent / "web" / "dictionary.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="Web UI not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
 # Prometheus metrics
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
@@ -482,7 +492,8 @@ async def root():
             "process": "/process-receipt",
             "reprocess": "/reprocess/{filename}",
             "obsidian_sync": "/obsidian/sync/*",
-            "analytics": "/analytics/*"
+            "analytics": "/analytics/*",
+            "web_dictionary": "/web/dictionary"
         }
     }
 
