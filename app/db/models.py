@@ -1,0 +1,351 @@
+"""SQLAlchemy ORM models for Smart Pantry Tracker."""
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import List, Optional
+from uuid import UUID, uuid4
+
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Base class for all models."""
+    pass
+
+
+class Category(Base):
+    """Product category."""
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    products: Mapped[List["Product"]] = relationship(back_populates="category")
+    receipt_items: Mapped[List["ReceiptItem"]] = relationship(back_populates="category")
+    pantry_items: Mapped[List["PantryItem"]] = relationship(back_populates="category")
+
+
+class Store(Base):
+    """Store (sklep)."""
+    __tablename__ = "stores"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    aliases: Mapped[List["StoreAlias"]] = relationship(
+        back_populates="store", cascade="all, delete-orphan"
+    )
+    shortcuts: Mapped[List["ProductShortcut"]] = relationship(
+        back_populates="store", cascade="all, delete-orphan"
+    )
+    receipts: Mapped[List["Receipt"]] = relationship(back_populates="store")
+    pantry_items: Mapped[List["PantryItem"]] = relationship(back_populates="store")
+    price_history: Mapped[List["PriceHistory"]] = relationship(back_populates="store")
+    unmatched_products: Mapped[List["UnmatchedProduct"]] = relationship(
+        back_populates="store"
+    )
+    review_corrections: Mapped[List["ReviewCorrection"]] = relationship(
+        back_populates="store"
+    )
+
+
+class StoreAlias(Base):
+    """Store alias for OCR matching."""
+    __tablename__ = "store_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False
+    )
+    alias: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+
+    # Relationships
+    store: Mapped["Store"] = relationship(back_populates="aliases")
+
+
+class Product(Base):
+    """Normalized product from dictionary."""
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    normalized_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
+    typical_price_pln: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+    )
+
+    # Relationships
+    category: Mapped[Optional["Category"]] = relationship(back_populates="products")
+    variants: Mapped[List["ProductVariant"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan"
+    )
+    receipt_items: Mapped[List["ReceiptItem"]] = relationship(back_populates="product")
+    pantry_items: Mapped[List["PantryItem"]] = relationship(back_populates="product")
+    price_history: Mapped[List["PriceHistory"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan"
+    )
+    learned_from: Mapped[List["UnmatchedProduct"]] = relationship(
+        back_populates="learned_product"
+    )
+
+
+class ProductVariant(Base):
+    """Raw product name variant (as seen in OCR)."""
+    __tablename__ = "product_variants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    raw_name: Mapped[str] = mapped_column(String(300), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    product: Mapped["Product"] = relationship(back_populates="variants")
+
+
+class ProductShortcut(Base):
+    """Store-specific product abbreviation."""
+    __tablename__ = "product_shortcuts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    store_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False
+    )
+    shortcut: Mapped[str] = mapped_column(String(100), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    store: Mapped["Store"] = relationship(back_populates="shortcuts")
+
+
+class Receipt(Base):
+    """Receipt (paragon)."""
+    __tablename__ = "receipts"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    source_file: Mapped[str] = mapped_column(String(255), nullable=False)
+    receipt_date: Mapped[date] = mapped_column(Date, nullable=False)
+    store_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("stores.id"), nullable=True
+    )
+    store_raw: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    total_ocr: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    total_calculated: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    total_final: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    review_reasons: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(Text), nullable=True
+    )
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    store: Mapped[Optional["Store"]] = relationship(back_populates="receipts")
+    items: Mapped[List["ReceiptItem"]] = relationship(
+        back_populates="receipt", cascade="all, delete-orphan"
+    )
+    price_history: Mapped[List["PriceHistory"]] = relationship(back_populates="receipt")
+    corrections: Mapped[List["ReviewCorrection"]] = relationship(
+        back_populates="receipt"
+    )
+
+
+class ReceiptItem(Base):
+    """Item from a receipt."""
+    __tablename__ = "receipt_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("receipts.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("products.id"), nullable=True
+    )
+    name_raw: Mapped[str] = mapped_column(String(300), nullable=False)
+    name_normalized: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    price_final: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    price_original: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    discount_amount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    discount_details: Mapped[Optional[dict]] = mapped_column(JSONB, default=list)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(3, 2), nullable=True)
+    warning: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    match_method: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    item_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
+
+    # Relationships
+    receipt: Mapped["Receipt"] = relationship(back_populates="items")
+    product: Mapped[Optional["Product"]] = relationship(back_populates="receipt_items")
+    category: Mapped[Optional["Category"]] = relationship(back_populates="receipt_items")
+    pantry_items: Mapped[List["PantryItem"]] = relationship(back_populates="receipt_item")
+
+
+class PantryItem(Base):
+    """Item in pantry (spiżarnia)."""
+    __tablename__ = "pantry_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_item_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("receipt_items.id", ondelete="SET NULL"), nullable=True
+    )
+    product_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("products.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    category_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
+    store_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("stores.id"), nullable=True
+    )
+    purchase_date: Mapped[date] = mapped_column(Date, nullable=False)
+    expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(10, 3), default=Decimal("1.0"))
+    is_consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    receipt_item: Mapped[Optional["ReceiptItem"]] = relationship(
+        back_populates="pantry_items"
+    )
+    product: Mapped[Optional["Product"]] = relationship(back_populates="pantry_items")
+    category: Mapped[Optional["Category"]] = relationship(back_populates="pantry_items")
+    store: Mapped[Optional["Store"]] = relationship(back_populates="pantry_items")
+
+
+class PriceHistory(Base):
+    """Price history for analytics."""
+    __tablename__ = "price_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    store_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("stores.id"), nullable=True
+    )
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    receipt_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("receipts.id", ondelete="SET NULL"), nullable=True
+    )
+    recorded_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # Relationships
+    product: Mapped["Product"] = relationship(back_populates="price_history")
+    store: Mapped[Optional["Store"]] = relationship(back_populates="price_history")
+    receipt: Mapped[Optional["Receipt"]] = relationship(back_populates="price_history")
+
+
+class UnmatchedProduct(Base):
+    """Product that couldn't be matched (for learning)."""
+    __tablename__ = "unmatched_products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    raw_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    raw_name_normalized: Mapped[Optional[str]] = mapped_column(
+        String(300), unique=True, nullable=True
+    )
+    price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    store_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("stores.id"), nullable=True
+    )
+    first_seen: Mapped[date] = mapped_column(Date, nullable=False)
+    last_seen: Mapped[date] = mapped_column(Date, nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+    is_learned: Mapped[bool] = mapped_column(Boolean, default=False)
+    learned_product_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("products.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp()
+    )
+
+    # Relationships
+    store: Mapped[Optional["Store"]] = relationship(back_populates="unmatched_products")
+    learned_product: Mapped[Optional["Product"]] = relationship(
+        back_populates="learned_from"
+    )
+
+
+class ReviewCorrection(Base):
+    """Correction made during human review."""
+    __tablename__ = "review_corrections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("receipts.id", ondelete="SET NULL"), nullable=True
+    )
+    original_total: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
+    corrected_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    correction_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # 'approved', 'calculated', 'manual', 'rejected'
+    store_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("stores.id"), nullable=True
+    )
+    product_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    receipt: Mapped[Optional["Receipt"]] = relationship(back_populates="corrections")
+    store: Mapped[Optional["Store"]] = relationship(back_populates="review_corrections")

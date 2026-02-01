@@ -1,4 +1,23 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pantry-db
+    environment:
+      - POSTGRES_USER=pantry
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pantry123}
+      - POSTGRES_DB=pantry
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pantry -d pantry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   fastapi:
     build: .
     container_name: pantry-api
@@ -16,8 +35,12 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - BOT_ENABLED=true
+      - DATABASE_URL=postgresql+asyncpg://pantry:${POSTGRES_PASSWORD:-pantry123}@postgres:5432/pantry
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     labels:
       - "logging=promtail"
@@ -78,6 +101,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   paddleocr_cache:
   prometheus_data:
   loki_data:
