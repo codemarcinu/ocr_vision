@@ -31,14 +31,18 @@ if settings.OCR_BACKEND == "paddle":
     from app.paddle_ocr import extract_products_paddle, extract_total_from_text
 elif settings.OCR_BACKEND == "deepseek":
     from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text
+elif settings.OCR_BACKEND == "google":
+    from app.google_ocr_backend import extract_products_google, process_multipage_pdf_google
 
 
-async def extract_products_from_image(image_path):
+async def extract_products_from_image(image_path, is_multi_page: bool = False):
     """Use configured OCR backend."""
     if settings.OCR_BACKEND == "paddle":
         return await extract_products_paddle(image_path)
     elif settings.OCR_BACKEND == "deepseek":
         return await extract_products_deepseek(image_path)
+    elif settings.OCR_BACKEND == "google":
+        return await extract_products_google(image_path, is_multi_page=is_multi_page)
     return await extract_vision(image_path)
 
 logger = logging.getLogger(__name__)
@@ -184,42 +188,65 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         all_raw_texts = []  # Collect raw text for multi-page total extraction
         combined_receipt: Receipt | None = None
 
-        for i, image_path in enumerate(temp_images):
-            page_info = f" (strona {i+1}/{len(temp_images)})" if len(temp_images) > 1 else ""
-            await status_msg.edit_text(f"Krok 1/3: Rozpoznawanie tekstu (OCR){page_info}...")
+        # For Google backend with multi-page PDF, use unified processing
+        if settings.OCR_BACKEND == "google" and len(temp_images) > 1:
+            await status_msg.edit_text(f"Krok 1/3: Google Vision OCR ({len(temp_images)} stron)...")
+            combined_receipt, ocr_error = await process_multipage_pdf_google(temp_images, pdf_filename)
 
-            receipt, ocr_error = await extract_products_from_image(image_path)
-
-            if ocr_error or not receipt:
-                # For multi-page PDFs, skip pages without products (e.g. summary pages)
-                if len(temp_images) > 1:
-                    logger.warning(f"Page {i+1}/{len(temp_images)} has no products, skipping: {ocr_error or 'No data'}")
-                    continue
-                # For single-page documents, this is an error
-                error_msg = ocr_error or "OCR returned no data"
-                logger.error(f"OCR failed for {pdf_filename}{page_info}: {error_msg}")
+            if ocr_error or not combined_receipt:
+                error_msg = ocr_error or "Google Vision OCR returned no data"
+                logger.error(f"Google Vision OCR failed for {pdf_filename}: {error_msg}")
                 write_error_file(pdf_filename, error_msg)
                 log_error(pdf_filename, error_msg)
                 await status_msg.edit_text(
-                    f"Błąd OCR{page_info}: {error_msg}\n\n"
+                    f"Błąd OCR: {error_msg}\n\n"
                     f"Użyj `/reprocess {pdf_filename}` aby spróbować ponownie.",
                     parse_mode="Markdown"
                 )
                 return
 
-            all_products.extend(receipt.products)
+            all_products = combined_receipt.products
+            if combined_receipt.raw_text:
+                all_raw_texts.append(combined_receipt.raw_text)
 
-            # Collect raw text for combined total extraction
-            if receipt.raw_text:
-                all_raw_texts.append(receipt.raw_text)
+        else:
+            # Legacy per-page processing for other backends
+            for i, image_path in enumerate(temp_images):
+                page_info = f" (strona {i+1}/{len(temp_images)})" if len(temp_images) > 1 else ""
+                await status_msg.edit_text(f"Krok 1/3: Rozpoznawanie tekstu (OCR){page_info}...")
 
-            if combined_receipt is None:
-                combined_receipt = receipt
-            else:
-                if not combined_receipt.sklep and receipt.sklep:
-                    combined_receipt.sklep = receipt.sklep
-                if not combined_receipt.data and receipt.data:
-                    combined_receipt.data = receipt.data
+                receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=len(temp_images) > 1)
+
+                if ocr_error or not receipt:
+                    # For multi-page PDFs, skip pages without products (e.g. summary pages)
+                    if len(temp_images) > 1:
+                        logger.warning(f"Page {i+1}/{len(temp_images)} has no products, skipping: {ocr_error or 'No data'}")
+                        continue
+                    # For single-page documents, this is an error
+                    error_msg = ocr_error or "OCR returned no data"
+                    logger.error(f"OCR failed for {pdf_filename}{page_info}: {error_msg}")
+                    write_error_file(pdf_filename, error_msg)
+                    log_error(pdf_filename, error_msg)
+                    await status_msg.edit_text(
+                        f"Błąd OCR{page_info}: {error_msg}\n\n"
+                        f"Użyj `/reprocess {pdf_filename}` aby spróbować ponownie.",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                all_products.extend(receipt.products)
+
+                # Collect raw text for combined total extraction
+                if receipt.raw_text:
+                    all_raw_texts.append(receipt.raw_text)
+
+                if combined_receipt is None:
+                    combined_receipt = receipt
+                else:
+                    if not combined_receipt.sklep and receipt.sklep:
+                        combined_receipt.sklep = receipt.sklep
+                    if not combined_receipt.data and receipt.data:
+                        combined_receipt.data = receipt.data
 
         # Check if any products were found across all pages
         if not all_products:

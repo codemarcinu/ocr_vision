@@ -27,11 +27,12 @@ services:
       - ./paragony:/data/paragony
       - ./vault:/data/vault
       - paddleocr_cache:/root/.paddleocr
+      - ./credentials:/data/credentials:ro
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # DeepSeek pipeline: fast OCR + LLM structuring (~20s total)
-      - OCR_MODEL=deepseek-ocr
-      - OCR_BACKEND=deepseek
+      - OCR_MODEL=qwen2.5:7b
+      - OCR_BACKEND=google
       - STRUCTURING_MODEL=qwen2.5:7b
       - CLASSIFIER_MODEL=qwen2.5:7b
       # A/B testing (optional)
@@ -41,6 +42,9 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - BOT_ENABLED=true
       - DATABASE_URL=postgresql+asyncpg://pantry:${POSTGRES_PASSWORD:-pantry123}@postgres:5432/pantry
+      # Google Cloud Vision (ultimate fallback - disabled by default)
+      - GOOGLE_VISION_ENABLED=true
+      - GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

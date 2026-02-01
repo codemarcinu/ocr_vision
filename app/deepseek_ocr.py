@@ -208,6 +208,206 @@ async def _call_deepseek_ocr(image_base64: str, timeout: float = 45.0) -> tuple[
     return content, None
 
 
+async def _try_google_vision_fallback(
+    image_path: Path,
+    previous_errors: str
+) -> tuple[Optional["Receipt"], Optional[str]]:
+    """
+    Ultimate fallback using Google Cloud Vision API.
+
+    Called when all local Ollama models fail. Extracts text with Google Vision,
+    then structures it with local LLM.
+
+    Args:
+        image_path: Path to the image file
+        previous_errors: Description of previous failures for logging
+
+    Returns:
+        Tuple (Receipt or None, error message or None)
+    """
+    logger.info(f"Attempting Google Vision as ultimate fallback for {image_path.name}")
+    logger.info(f"Previous errors: {previous_errors}")
+
+    try:
+        from app.google_vision_ocr import ocr_with_google_vision
+    except ImportError as e:
+        return None, f"Google Vision module not available: {e}"
+
+    # Step 1: OCR with Google Vision
+    gv_text, gv_error = await ocr_with_google_vision(image_path)
+
+    if gv_error:
+        return None, gv_error
+
+    if len(gv_text) < 50:
+        return None, f"Google Vision returned too little text ({len(gv_text)} chars)"
+
+    logger.info(f"Google Vision extracted {len(gv_text)} chars")
+    logger.debug(f"Google Vision text preview:\n{gv_text[:500]}")
+
+    # Step 2: Detect store from Google Vision text
+    detected_store = detect_store_from_text(gv_text)
+    if detected_store:
+        logger.info(f"Google Vision: detected store {detected_store}")
+
+    # Step 3: Structure with local LLM (reuse existing function)
+    data, struct_error = await _call_structuring_llm(gv_text, detected_store=detected_store)
+
+    if struct_error:
+        return None, f"Google Vision OCR ok, but LLM structuring failed: {struct_error}"
+
+    if not data:
+        return None, "Google Vision OCR ok, but LLM returned no data"
+
+    # Step 4: Build receipt (same logic as main function)
+    return await _build_receipt_from_llm_data(data, gv_text, detected_store)
+
+
+async def _build_receipt_from_llm_data(
+    data: dict,
+    raw_text: str,
+    detected_store: Optional[str] = None
+) -> tuple[Optional["Receipt"], Optional[str]]:
+    """
+    Build Receipt object from LLM-structured data.
+
+    This is extracted to be reusable by both main flow and Google Vision fallback.
+    """
+    products_data = data.get("produkty", data.get("products", []))
+
+    if isinstance(data, list):
+        products_data = data
+
+    if not products_data and "nazwa" in data and "cena" in data:
+        products_data = [data]
+
+    if not products_data:
+        return None, "No products in LLM response"
+
+    skip_patterns = ['PTU', 'VAT', 'SUMA', 'TOTAL', 'RAZEM', 'PARAGON', 'FISKALNY',
+                     'KAUCJ', 'ZWROT', 'OPAKOW', 'PŁATN', 'PLATN', 'KARTA', 'SPRZEDA',
+                     'GOTÓWKA', 'RESZTA', 'WYDANO', 'NUMER', 'TRANS', 'OPODATK']
+
+    products = []
+    for p in products_data:
+        try:
+            name = str(p.get("nazwa") or p.get("name") or "").strip()
+            price = float(p.get("cena") or p.get("price") or 0)
+
+            if not name or len(name) < 3:
+                continue
+
+            name_upper = name.upper()
+            if any(pat in name_upper for pat in skip_patterns):
+                continue
+
+            if price <= 0 or price > 500:
+                continue
+
+            discount = None
+            original_price = None
+            try:
+                rabat_val = p.get("rabat")
+                if rabat_val:
+                    discount = abs(float(rabat_val))
+                    original_price = round(price + discount, 2)
+            except (ValueError, TypeError):
+                pass
+
+            category = p.get("kategoria") or p.get("category")
+            norm_result = normalize_product(name, store=detected_store)
+
+            if norm_result.method == "no_match":
+                log_unmatched_product(
+                    raw_name=name,
+                    price=price,
+                    store=detected_store,
+                    confidence=norm_result.confidence
+                )
+
+            rabaty_szczegoly = None
+            if discount:
+                rabaty_szczegoly = [
+                    DiscountDetail(typ="kwotowy", wartosc=discount, opis="Rabat")
+                ]
+
+            warning = None
+            if price > settings.PRICE_WARNING_THRESHOLD:
+                warning = f"Price > {settings.PRICE_WARNING_THRESHOLD} PLN"
+
+            products.append(Product(
+                nazwa=name,
+                cena=price,
+                warning=warning,
+                nazwa_oryginalna=name,
+                nazwa_znormalizowana=norm_result.normalized_name,
+                kategoria=norm_result.category if norm_result.confidence >= 0.6 else category,
+                confidence=norm_result.confidence if norm_result.confidence >= 0.6 else 0.7 if category else None,
+                cena_oryginalna=original_price,
+                rabat=discount,
+                rabaty_szczegoly=rabaty_szczegoly,
+            ))
+
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Skipping invalid product: {p} - {e}")
+            continue
+
+    if not products:
+        return None, "No valid products found"
+
+    # Run price fixer
+    products, price_warnings = fix_products(products)
+
+    # Extract metadata
+    receipt_date = data.get("data") or data.get("date")
+    if not receipt_date or receipt_date == "null":
+        receipt_date = extract_date_from_text(raw_text)
+
+    if detected_store:
+        receipt_store = get_store_display_name(detected_store)
+    else:
+        receipt_store = data.get("sklep") or data.get("store")
+
+    receipt_total = extract_total_from_text(raw_text)
+    if not receipt_total:
+        try:
+            receipt_total = float(data.get("suma") or data.get("total") or 0)
+        except (ValueError, TypeError):
+            receipt_total = None
+
+    calculated_total = round(sum(p.cena for p in products), 2)
+
+    if not receipt_total:
+        receipt_total = calculated_total
+
+    receipt = Receipt(
+        products=products,
+        sklep=receipt_store,
+        data=receipt_date,
+        suma=receipt_total,
+        raw_text=raw_text,
+        calculated_total=calculated_total,
+    )
+
+    # Calculate confidence score
+    confidence_report = calculate_confidence(receipt)
+
+    if not confidence_report.auto_save_ok:
+        receipt.needs_review = True
+        if confidence_report.issues:
+            receipt.review_reasons.extend(confidence_report.issues)
+        if not receipt.review_reasons and confidence_report.warnings:
+            receipt.review_reasons.append(confidence_report.warnings[0])
+
+    logger.info(
+        f"Built receipt: {len(products)} products, store={receipt_store}, "
+        f"total={receipt_total}, calculated={calculated_total}, "
+        f"confidence={confidence_report.score:.2f}"
+    )
+
+    return receipt, None
+
+
 async def _call_structuring_llm(
     ocr_text: str,
     detected_store: str = None,
@@ -343,6 +543,17 @@ async def extract_products_deepseek(
 
                 if error:
                     logger.error(f"Fallback OCR ({fallback_model}) failed: {error}")
+
+                    # Ultimate fallback: Google Cloud Vision
+                    if settings.GOOGLE_VISION_ENABLED:
+                        gv_receipt, gv_error = await _try_google_vision_fallback(
+                            image_path, f"DeepSeek: {ocr_error}, Vision: {error}"
+                        )
+                        if gv_receipt:
+                            return gv_receipt, None
+                        logger.error(f"Google Vision also failed: {gv_error}")
+                        return None, f"All OCR failed - DeepSeek: {ocr_error}, Vision: {error}, Google: {gv_error}"
+
                     return None, f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) failed ({error})"
 
                 logger.info(f"Fallback ({fallback_model}) response ({len(response_text)} chars): {response_text[:500]}")
@@ -350,6 +561,17 @@ async def extract_products_deepseek(
                 data = parse_json_response(response_text)
                 if not data:
                     logger.error(f"Fallback ({fallback_model}) unparseable response: {response_text[:1000]}")
+
+                    # Ultimate fallback: Google Cloud Vision
+                    if settings.GOOGLE_VISION_ENABLED:
+                        gv_receipt, gv_error = await _try_google_vision_fallback(
+                            image_path, f"DeepSeek: {ocr_error}, Vision: unparseable"
+                        )
+                        if gv_receipt:
+                            return gv_receipt, None
+                        logger.error(f"Google Vision also failed: {gv_error}")
+                        return None, f"All OCR failed - DeepSeek: {ocr_error}, Vision: unparseable, Google: {gv_error}"
+
                     return None, f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) returned unparseable response"
 
                 receipt, build_error = _build_receipt(data, response_text)
@@ -357,10 +579,32 @@ async def extract_products_deepseek(
                     logger.info(f"Fallback ({fallback_model}) succeeded: {len(receipt.products)} products")
                     return receipt, None
                 else:
+                    # Ultimate fallback: Google Cloud Vision
+                    if settings.GOOGLE_VISION_ENABLED:
+                        gv_receipt, gv_error = await _try_google_vision_fallback(
+                            image_path, f"DeepSeek: {ocr_error}, Vision build: {build_error}"
+                        )
+                        if gv_receipt:
+                            return gv_receipt, None
+                        logger.error(f"Google Vision also failed: {gv_error}")
+                        return None, f"All OCR failed - DeepSeek: {ocr_error}, Vision: {build_error}, Google: {gv_error}"
+
                     return None, f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) build failed ({build_error})"
 
             except Exception as e:
                 logger.error(f"Vision fallback also failed: {e}")
+                vision_error = str(e)
+
+                # Ultimate fallback: Google Cloud Vision
+                if settings.GOOGLE_VISION_ENABLED:
+                    gv_receipt, gv_error = await _try_google_vision_fallback(
+                        image_path, f"DeepSeek: {ocr_error}, Vision: {vision_error}"
+                    )
+                    if gv_receipt:
+                        return gv_receipt, None
+                    logger.error(f"Google Vision also failed: {gv_error}")
+                    return None, f"All OCR failed - DeepSeek: {ocr_error}, Vision: {vision_error}, Google: {gv_error}"
+
                 return None, f"DeepSeek failed ({ocr_error}), vision fallback failed ({e})"
 
         return None, ocr_error

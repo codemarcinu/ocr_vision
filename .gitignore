@@ -1,6 +1,8 @@
 # Environment and secrets
 .env
 *.env.local
+credentials/*
+!credentials/.gitkeep
 
 # Python
 __pycache__/

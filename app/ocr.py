@@ -359,6 +359,78 @@ async def call_ollama(
 
 
 # =============================================================================
+# GOOGLE VISION FALLBACK
+# =============================================================================
+
+async def _try_google_vision_fallback(
+    image_path: Path,
+    previous_errors: str
+) -> tuple[Optional[Receipt], Optional[str]]:
+    """
+    Ultimate fallback using Google Cloud Vision API.
+
+    Called when local vision models fail. Extracts text with Google Vision,
+    then structures it with local LLM.
+
+    Args:
+        image_path: Path to the image file
+        previous_errors: Description of previous failures for logging
+
+    Returns:
+        Tuple (Receipt or None, error message or None)
+    """
+    logger.info(f"Attempting Google Vision as ultimate fallback for {image_path.name}")
+    logger.info(f"Previous errors: {previous_errors}")
+
+    try:
+        from app.google_vision_ocr import ocr_with_google_vision
+    except ImportError as e:
+        return None, f"Google Vision module not available: {e}"
+
+    # Step 1: OCR with Google Vision
+    gv_text, gv_error = await ocr_with_google_vision(image_path)
+
+    if gv_error:
+        return None, gv_error
+
+    if len(gv_text) < 50:
+        return None, f"Google Vision returned too little text ({len(gv_text)} chars)"
+
+    logger.info(f"Google Vision extracted {len(gv_text)} chars")
+    logger.debug(f"Google Vision text preview:\n{gv_text[:500]}")
+
+    # Step 2: Detect store from Google Vision text
+    detected_store = detect_store_from_text(gv_text)
+    if detected_store:
+        logger.info(f"Google Vision: detected store {detected_store}")
+
+    # Step 3: Parse text to JSON using local LLM
+    parse_prompt = PARSE_TEXT_PROMPT.format(text=gv_text[:3000])
+
+    json_response, error = await call_ollama(
+        parse_prompt,
+        image_base64=None,  # No image - text parsing only
+        model=settings.CLASSIFIER_MODEL
+    )
+
+    if error:
+        return None, f"Google Vision OCR ok, but LLM parsing failed: {error}"
+
+    data = parse_json_response(json_response)
+    if not data:
+        return None, "Google Vision OCR ok, but LLM returned unparseable JSON"
+
+    # Step 4: Build receipt using existing function
+    receipt, build_error = _build_receipt(data, gv_text)
+
+    if receipt:
+        logger.info(f"Google Vision fallback succeeded: {len(receipt.products)} products")
+        return receipt, None
+    else:
+        return None, f"Google Vision OCR ok, but receipt build failed: {build_error}"
+
+
+# =============================================================================
 # MAIN OCR FUNCTIONS
 # =============================================================================
 
@@ -393,6 +465,15 @@ async def extract_products_from_image(
 
     if error:
         logger.error(f"Primary OCR failed: {error}")
+
+        # Ultimate fallback: Google Cloud Vision
+        if settings.GOOGLE_VISION_ENABLED:
+            gv_receipt, gv_error = await _try_google_vision_fallback(image_path, f"Vision: {error}")
+            if gv_receipt:
+                return gv_receipt, None
+            logger.error(f"Google Vision also failed: {gv_error}")
+            return None, f"All OCR failed - Vision: {error}, Google: {gv_error}"
+
         return None, error
 
     logger.debug(f"Raw response: {response_text[:500]}...")
@@ -417,6 +498,14 @@ async def extract_products_from_image(
         # Continue with primary results even if few
 
     if not data:
+        # Ultimate fallback: Google Cloud Vision
+        if settings.GOOGLE_VISION_ENABLED:
+            gv_receipt, gv_error = await _try_google_vision_fallback(image_path, "Vision: unparseable response")
+            if gv_receipt:
+                return gv_receipt, None
+            logger.error(f"Google Vision also failed: {gv_error}")
+            return None, f"All OCR failed - Vision: unparseable, Google: {gv_error}"
+
         return None, "Failed to parse OCR response"
 
     # Build initial receipt

@@ -56,6 +56,10 @@ class Settings:
     # PDF parallel processing (number of pages to process concurrently)
     PDF_MAX_PARALLEL_PAGES: int = int(os.getenv("PDF_MAX_PARALLEL_PAGES", "2"))
 
+    # Google Cloud Vision (ultimate fallback when all local models fail)
+    # Requires: GOOGLE_APPLICATION_CREDENTIALS env var pointing to service account JSON
+    GOOGLE_VISION_ENABLED: bool = os.getenv("GOOGLE_VISION_ENABLED", "false").lower() == "true"
+
     # Paths
     BASE_DIR: Path = Path("/data")
     INBOX_DIR: Path = BASE_DIR / "paragony" / "inbox"

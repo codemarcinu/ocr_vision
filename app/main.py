@@ -33,6 +33,8 @@ if settings.OCR_BACKEND == "paddle":
     from app.paddle_ocr import extract_products_paddle, extract_total_from_text
 elif settings.OCR_BACKEND == "deepseek":
     from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text, process_multipage_pdf
+elif settings.OCR_BACKEND == "google":
+    from app.google_ocr_backend import extract_products_google, process_multipage_pdf_google
 
 logging.basicConfig(
     level=logging.INFO,
@@ -209,6 +211,8 @@ async def _process_single_page(
             receipt, ocr_error = await extract_products_paddle(image_path)
         elif settings.OCR_BACKEND == "deepseek":
             receipt, ocr_error = await extract_products_deepseek(image_path, is_multi_page=is_multi_page)
+        elif settings.OCR_BACKEND == "google":
+            receipt, ocr_error = await extract_products_google(image_path, is_multi_page=is_multi_page)
         else:
             receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
@@ -257,6 +261,8 @@ async def _process_pages_sequential(
             receipt, ocr_error = await extract_products_paddle(image_path)
         elif settings.OCR_BACKEND == "deepseek":
             receipt, ocr_error = await extract_products_deepseek(image_path, is_multi_page=is_multi_page)
+        elif settings.OCR_BACKEND == "google":
+            receipt, ocr_error = await extract_products_google(image_path, is_multi_page=is_multi_page)
         else:
             receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
@@ -298,7 +304,7 @@ async def _process_file(file_path: Path) -> ProcessingResult:
         all_raw_texts = []  # Collect raw text from all pages for total extraction
         combined_receipt: Receipt | None = None
 
-        # NEW: For multi-page PDFs with deepseek backend, use unified processing
+        # NEW: For multi-page PDFs with deepseek/google backend, use unified processing
         # (OCR all pages first, then single LLM call on combined text)
         if len(image_paths) > 1 and settings.OCR_BACKEND == "deepseek":
             logger.info(f"Multipage PDF ({len(image_paths)} pages): using unified OCR→LLM pipeline")
@@ -321,7 +327,28 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             all_products = combined_receipt.products
             page_results = []  # Empty - not used in unified mode
 
-        # LEGACY: Per-page processing (for single pages or non-deepseek backends)
+        elif len(image_paths) > 1 and settings.OCR_BACKEND == "google":
+            logger.info(f"Multipage PDF ({len(image_paths)} pages): using Google Vision pipeline")
+            combined_receipt, ocr_error = await process_multipage_pdf_google(image_paths, filename)
+
+            if ocr_error or not combined_receipt:
+                error_msg = ocr_error or "Google Vision OCR returned no data"
+                logger.error(f"Google Vision OCR failed for {filename}: {error_msg}")
+                error_file = write_error_file(filename, error_msg)
+                log_error(filename, error_msg)
+                return ProcessingResult(
+                    success=False,
+                    source_file=filename,
+                    output_file=str(error_file),
+                    error=error_msg,
+                    processed_at=processed_at
+                )
+
+            # Skip the per-page processing loop - go directly to categorization
+            all_products = combined_receipt.products
+            page_results = []  # Empty - not used in unified mode
+
+        # LEGACY: Per-page processing (for single pages or non-deepseek/google backends)
         elif len(image_paths) > 1 and settings.PDF_MAX_PARALLEL_PAGES > 1:
             # Parallel processing for multi-page PDFs
             logger.info(f"Processing {len(image_paths)} pages in parallel (max {settings.PDF_MAX_PARALLEL_PAGES} concurrent)")
