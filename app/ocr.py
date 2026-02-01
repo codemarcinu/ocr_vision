@@ -345,10 +345,14 @@ async def call_ollama(
         response_text = result.get("response", "")
 
     if not response_text.strip():
-        # Some models put response in thinking field
-        thinking = result.get("thinking", "")
+        # Some models (qwen3-vl) put response in thinking field instead of content
+        # For chat API, thinking is inside message object
+        if use_chat_api:
+            thinking = result.get("message", {}).get("thinking", "")
+        else:
+            thinking = result.get("thinking", "")
         if thinking:
-            logger.warning("Model returned response in 'thinking' field instead of 'response'")
+            logger.warning("Model returned response in 'thinking' field instead of 'content'")
             response_text = thinking
 
     return response_text, None

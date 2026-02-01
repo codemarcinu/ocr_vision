@@ -42,8 +42,8 @@ class Settings:
     STRUCTURING_MODEL: str = os.getenv("STRUCTURING_MODEL", "")
 
     # Fallback model for DeepSeek-OCR when it fails (repetition loops, etc.)
-    # Uses qwen3-vl:8b by default - faster and more accurate than qwen2.5vl:7b
-    OCR_FALLBACK_MODEL: str = os.getenv("OCR_FALLBACK_MODEL", "qwen3-vl:8b")
+    # Uses qwen2.5vl:7b by default - qwen3-vl:8b has thinking mode issues
+    OCR_FALLBACK_MODEL: str = os.getenv("OCR_FALLBACK_MODEL", "qwen2.5vl:7b")
 
     # Model keep-alive settings (how long to keep models loaded in memory)
     # Vision models use more VRAM, so shorter keep-alive
