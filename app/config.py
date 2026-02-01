@@ -8,6 +8,19 @@ import os
 class Settings:
     """Application settings."""
 
+    # Database configuration
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://pantry:pantry123@localhost:5432/pantry"
+    )
+    DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "5"))
+    DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "10"))
+
+    # Feature flags for gradual migration
+    USE_DB_DICTIONARIES: bool = os.getenv("USE_DB_DICTIONARIES", "true").lower() == "true"
+    USE_DB_RECEIPTS: bool = os.getenv("USE_DB_RECEIPTS", "true").lower() == "true"
+    GENERATE_OBSIDIAN_FILES: bool = os.getenv("GENERATE_OBSIDIAN_FILES", "true").lower() == "true"
+
     # Ollama configuration
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     OCR_MODEL: str = os.getenv("OCR_MODEL", "qwen2.5vl:7b")

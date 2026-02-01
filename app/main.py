@@ -3,9 +3,11 @@
 import asyncio
 import logging
 import shutil
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
+from uuid import UUID
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -13,12 +15,15 @@ from fastapi.responses import JSONResponse
 
 from app.classifier import categorize_products
 from app.config import settings
+from app.db.connection import close_db, init_db
+from app.dependencies import AnalyticsRepoDep, FeedbackRepoDep, PantryRepoDep, ReceiptRepoDep
 from app.dictionary_api import router as dictionary_router
 from app.models import HealthStatus, ProcessingResult, Receipt
 from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
 from app.ocr import extract_products_from_image, extract_total_from_text, unload_model
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
+from app.services.obsidian_sync import obsidian_sync
 from prometheus_fastapi_instrumentator import Instrumentator
 from app.telegram.bot import bot
 
@@ -48,11 +53,22 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize directories and start Telegram bot on startup."""
+    """Initialize directories, database, and start Telegram bot on startup."""
     settings.ensure_directories()
+
+    # Initialize database connection
+    if settings.USE_DB_RECEIPTS or settings.USE_DB_DICTIONARIES:
+        try:
+            await init_db()
+            logger.info("Database connection initialized")
+        except Exception as e:
+            logger.warning(f"Database initialization failed: {e}")
+            logger.info("Continuing without database - using file-based storage")
+
     logger.info("Smart Pantry Tracker started")
     logger.info(f"Inbox: {settings.INBOX_DIR}")
     logger.info(f"Vault: {settings.VAULT_DIR}")
+    logger.info(f"Database enabled: {settings.USE_DB_RECEIPTS}")
 
     # Start Telegram bot
     await bot.start()
@@ -60,8 +76,13 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Stop Telegram bot on shutdown."""
+    """Stop Telegram bot and close database on shutdown."""
     await bot.stop()
+
+    # Close database connection
+    if settings.USE_DB_RECEIPTS or settings.USE_DB_DICTIONARIES:
+        await close_db()
+        logger.info("Database connection closed")
 
 
 @app.get("/health", response_model=HealthStatus)
@@ -455,9 +476,218 @@ async def root():
     return {
         "name": "Smart Pantry Tracker",
         "version": "1.0.0",
+        "database_enabled": settings.USE_DB_RECEIPTS,
         "endpoints": {
             "health": "/health",
             "process": "/process-receipt",
-            "reprocess": "/reprocess/{filename}"
+            "reprocess": "/reprocess/{filename}",
+            "obsidian_sync": "/obsidian/sync/*",
+            "analytics": "/analytics/*"
         }
     }
+
+
+# --- Obsidian Sync Endpoints ---
+
+@app.post("/obsidian/sync/receipt/{receipt_id}")
+async def sync_receipt(receipt_id: UUID):
+    """Regenerate markdown file for a specific receipt."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    path = await obsidian_sync.regenerate_receipt(receipt_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    return {"success": True, "file": str(path)}
+
+
+@app.post("/obsidian/sync/pantry")
+async def sync_pantry():
+    """Regenerate spiżarnia.md from database."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    path = await obsidian_sync.regenerate_pantry()
+    return {"success": True, "file": str(path)}
+
+
+@app.post("/obsidian/sync/all")
+async def sync_all():
+    """Full regeneration of all Obsidian vault files."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    result = await obsidian_sync.full_regenerate()
+    return {"success": True, **result}
+
+
+# --- Analytics Endpoints ---
+
+@app.get("/analytics/price-trends/{product_id}")
+async def get_price_trends(
+    product_id: int,
+    months: int = 6,
+    repo: AnalyticsRepoDep = None
+):
+    """Get price history for a product."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    trends = await repo.get_price_trends(product_id, months)
+    return {"product_id": product_id, "months": months, "trends": trends}
+
+
+@app.get("/analytics/store-comparison")
+async def get_store_comparison(
+    product_ids: str,
+    repo: AnalyticsRepoDep = None
+):
+    """Compare prices across stores for given products."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    ids = [int(x.strip()) for x in product_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No valid product IDs provided")
+
+    comparison = await repo.get_store_comparison(ids)
+    return {"product_ids": ids, "comparison": comparison}
+
+
+@app.get("/analytics/spending/by-category")
+async def get_spending_by_category(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    repo: AnalyticsRepoDep = None
+):
+    """Get spending breakdown by category."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    spending = await repo.get_spending_by_category(start, end)
+    return {"start": start, "end": end, "spending": spending}
+
+
+@app.get("/analytics/spending/by-store")
+async def get_spending_by_store(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    repo: AnalyticsRepoDep = None
+):
+    """Get spending breakdown by store."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    spending = await repo.get_spending_by_store(start, end)
+    return {"start": start, "end": end, "spending": spending}
+
+
+@app.get("/analytics/basket-analysis")
+async def get_basket_analysis(
+    min_support: float = 0.1,
+    repo: AnalyticsRepoDep = None
+):
+    """Get frequently bought together products."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    analysis = await repo.get_basket_analysis(min_support)
+    return {"min_support": min_support, "pairs": analysis}
+
+
+@app.get("/analytics/top-products")
+async def get_top_products(
+    limit: int = 20,
+    by: str = "count",
+    repo: AnalyticsRepoDep = None
+):
+    """Get top products by purchase count or spending."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    if by not in ("count", "spending"):
+        raise HTTPException(status_code=400, detail="by must be 'count' or 'spending'")
+
+    products = await repo.get_top_products(limit, by)
+    return {"limit": limit, "by": by, "products": products}
+
+
+@app.get("/analytics/discounts")
+async def get_discount_summary(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    repo: AnalyticsRepoDep = None
+):
+    """Get discount statistics."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    summary = await repo.get_discount_summary(start, end)
+    return {"start": start, "end": end, "summary": summary}
+
+
+@app.get("/analytics/yearly-comparison")
+async def get_yearly_comparison(repo: AnalyticsRepoDep = None):
+    """Get year-over-year spending comparison."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    comparison = await repo.get_yearly_comparison()
+    return {"comparison": comparison}
+
+
+# --- Database Statistics Endpoints ---
+
+@app.get("/db/receipts/stats")
+async def get_receipt_stats(repo: ReceiptRepoDep = None):
+    """Get receipt statistics from database."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    stats = await repo.get_summary_stats()
+    return stats
+
+
+@app.get("/db/receipts/pending")
+async def get_pending_receipts(repo: ReceiptRepoDep = None):
+    """Get receipts pending review."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    receipts = await repo.get_pending_review()
+    return {
+        "count": len(receipts),
+        "receipts": [
+            {
+                "id": str(r.id),
+                "source_file": r.source_file,
+                "date": r.receipt_date.isoformat() if r.receipt_date else None,
+                "store": r.store.name if r.store else r.store_raw,
+                "total": float(r.total_final) if r.total_final else None,
+                "review_reasons": r.review_reasons,
+            }
+            for r in receipts
+        ]
+    }
+
+
+@app.get("/db/pantry/stats")
+async def get_pantry_stats(repo: PantryRepoDep = None):
+    """Get pantry statistics from database."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    stats = await repo.get_stats()
+    return stats
+
+
+@app.get("/db/feedback/stats")
+async def get_feedback_stats(repo: FeedbackRepoDep = None):
+    """Get feedback statistics (unmatched products, corrections)."""
+    if not settings.USE_DB_RECEIPTS:
+        raise HTTPException(status_code=400, detail="Database not enabled")
+
+    unmatched = await repo.get_unmatched_stats()
+    corrections = await repo.get_correction_stats()
+    return {"unmatched": unmatched, "corrections": corrections}
