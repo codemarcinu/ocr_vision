@@ -26,15 +26,19 @@ from app.telegram.formatters import (
 from app.telegram.keyboards import get_receipt_actions_keyboard, get_review_keyboard
 from app.telegram.middleware import authorized_only
 
-# Import PaddleOCR if configured
+# Import OCR backend based on configuration
 if settings.OCR_BACKEND == "paddle":
     from app.paddle_ocr import extract_products_paddle, extract_total_from_text
+elif settings.OCR_BACKEND == "deepseek":
+    from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text
 
 
 async def extract_products_from_image(image_path):
     """Use configured OCR backend."""
     if settings.OCR_BACKEND == "paddle":
         return await extract_products_paddle(image_path)
+    elif settings.OCR_BACKEND == "deepseek":
+        return await extract_products_deepseek(image_path)
     return await extract_vision(image_path)
 
 logger = logging.getLogger(__name__)

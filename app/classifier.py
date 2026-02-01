@@ -1,5 +1,14 @@
 """Product categorization using qwen2.5:7b via Ollama with A/B testing support."""
 
+"""Product categorization using qwen2.5:7b via Ollama with A/B testing support.
+
+Optimizations:
+- Uses connection pooling via ollama_client module
+- A/B testing runs models in parallel (not sequential)
+- Skips LLM categorization for products already categorized by dictionary
+"""
+
+import asyncio
 import json
 import logging
 import time
@@ -7,10 +16,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import httpx
-
 from app.config import settings
 from app.models import CategorizedProduct, Product
+from app import ollama_client
 
 logger = logging.getLogger(__name__)
 
@@ -70,45 +78,29 @@ def _log_ab_result(
 async def _call_classifier_model(
     model: str,
     prompt: str,
-    timeout: float = 180.0,
+    timeout: float = 120.0,
 ) -> tuple[Optional[list[dict]], float, Optional[str]]:
     """
-    Call a specific classifier model.
+    Call a specific classifier model using connection pooling.
 
     Returns:
         Tuple of (parsed products list, time in seconds, error message or None)
     """
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "keep_alive": settings.TEXT_MODEL_KEEP_ALIVE,
-        "options": {
-            "temperature": 0.1
-        }
-    }
-
     start_time = time.time()
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
-                json=payload
-            )
-            response.raise_for_status()
-            result = response.json()
-    except httpx.TimeoutException:
-        elapsed = time.time() - start_time
-        logger.error(f"Classifier timeout for {model}")
-        return None, elapsed, f"Timeout after {elapsed:.1f}s"
-    except httpx.HTTPError as e:
-        elapsed = time.time() - start_time
-        logger.error(f"Classifier HTTP error for {model}: {e}")
-        return None, elapsed, str(e)
+    raw_response, error = await ollama_client.post_generate(
+        model=model,
+        prompt=prompt,
+        options={"temperature": 0.1},
+        timeout=timeout,
+        keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
+    )
 
     elapsed = time.time() - start_time
-    raw_response = result.get("response", "")
+
+    if error:
+        logger.error(f"Classifier error for {model}: {error}")
+        return None, elapsed, error
     logger.debug(f"Raw classifier response from {model}: {raw_response}")
 
     try:
@@ -164,9 +156,38 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
     if not products:
         return [], None
 
+    # Optimization: separate products that need LLM categorization from already-categorized
+    # Products with dictionary category (confidence >= 0.6) don't need LLM
+    needs_llm = []
+    already_categorized = []
+
+    for p in products:
+        if p.kategoria and p.confidence and p.confidence >= 0.6:
+            # Already has good category from dictionary - skip LLM
+            already_categorized.append(CategorizedProduct(
+                nazwa=p.nazwa,
+                cena=p.cena,
+                kategoria=p.kategoria,
+                confidence=p.confidence,
+                warning=p.warning,
+                nazwa_oryginalna=p.nazwa_oryginalna,
+                nazwa_znormalizowana=p.nazwa_znormalizowana,
+                cena_oryginalna=p.cena_oryginalna,
+                rabat=p.rabat,
+            ))
+        else:
+            needs_llm.append(p)
+
+    # If all products are already categorized, skip LLM entirely
+    if not needs_llm:
+        logger.info(f"All {len(already_categorized)} products already categorized by dictionary - skipping LLM")
+        return already_categorized, None
+
+    logger.info(f"Categorizing {len(needs_llm)} products with LLM ({len(already_categorized)} already categorized)")
+
     products_text = "\n".join([
         f"- {p.nazwa} ({p.cena} zł)"
-        for p in products
+        for p in needs_llm
     ])
 
     categories_text = "\n".join([f"- {c}" for c in settings.CATEGORIES])
@@ -187,10 +208,7 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
     else:
         primary_model = model_a
 
-    # Call primary model
-    result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
-
-    # A/B testing: call secondary model if configured
+    # A/B testing: run both models in PARALLEL if configured
     result_b = None
     time_b = 0.0
     error_b = None
@@ -198,8 +216,14 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
     if model_b and ab_mode in ("primary", "both"):
         secondary_model = model_b if ab_mode == "primary" else model_a
         if secondary_model != primary_model:
-            logger.info(f"A/B test: running secondary model {secondary_model}")
-            result_b, time_b, error_b = await _call_classifier_model(secondary_model, prompt)
+            # Run BOTH models in parallel for A/B testing (saves ~7-30s)
+            logger.info(f"A/B test: running {primary_model} and {secondary_model} in parallel")
+            results = await asyncio.gather(
+                _call_classifier_model(primary_model, prompt),
+                _call_classifier_model(secondary_model, prompt),
+            )
+            result_a, time_a, error_a = results[0]
+            result_b, time_b, error_b = results[1]
 
             # Log comparison
             _log_ab_result(
@@ -213,17 +237,24 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
                 error_a=error_a,
                 error_b=error_b,
             )
+        else:
+            # Same model for A and B - just call once
+            result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
+    else:
+        # No A/B testing - just call primary model
+        result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
 
     # Handle primary model failure
     if error_a or result_a is None:
         logger.error(f"Classifier error: {error_a}")
-        return _fallback_categorization(products), f"Classifier error: {error_a}"
+        # Return already_categorized + fallback for needs_llm
+        return already_categorized + _fallback_categorization(needs_llm), f"Classifier error: {error_a}"
 
     data = {"products": result_a}
 
-    # Build categorized products
-    categorized = []
-    original_map = {p.nazwa: p for p in products}
+    # Build categorized products from LLM response
+    llm_categorized = []
+    original_map = {p.nazwa: p for p in needs_llm}
 
     for p in data.get("products", []):
         try:
@@ -241,13 +272,7 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
             price = float(p.get("cena", original.cena if original else 0))
             warning = original.warning if original else None
 
-            # Use dictionary category if available with high confidence
-            if original and original.kategoria and original.confidence and original.confidence >= 0.6:
-                # Dictionary has higher priority than LLM for known products
-                category = original.kategoria
-                confidence = max(confidence, original.confidence)
-
-            categorized.append(CategorizedProduct(
+            llm_categorized.append(CategorizedProduct(
                 nazwa=name,
                 cena=price,
                 kategoria=category,
@@ -263,14 +288,14 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
             logger.warning(f"Skipping invalid categorized product: {p} - {e}")
             continue
 
-    # Add any missing products with fallback category
-    categorized_names = {p.nazwa for p in categorized}
-    for product in products:
+    # Add any missing products from needs_llm with fallback category
+    categorized_names = {p.nazwa for p in llm_categorized}
+    for product in needs_llm:
         if product.nazwa not in categorized_names:
-            # Use dictionary category if available
+            # Use dictionary category if available, otherwise "Inne"
             category = product.kategoria if product.kategoria else "Inne"
             confidence = product.confidence if product.confidence else 0.0
-            categorized.append(CategorizedProduct(
+            llm_categorized.append(CategorizedProduct(
                 nazwa=product.nazwa,
                 cena=product.cena,
                 kategoria=category,
@@ -282,7 +307,8 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
                 rabat=product.rabat,
             ))
 
-    return categorized, None
+    # Combine already_categorized (from dictionary) + llm_categorized
+    return already_categorized + llm_categorized, None
 
 
 def _fallback_categorization(products: list[Product]) -> list[CategorizedProduct]:

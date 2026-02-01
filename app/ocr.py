@@ -260,9 +260,15 @@ async def call_ollama(
     image_base64: Optional[str] = None,
     model: Optional[str] = None,
     timeout: float = 300.0,
-    keep_alive: Optional[str] = None
+    keep_alive: Optional[str] = None,
+    disable_thinking: bool = True
 ) -> tuple[str, Optional[str]]:
-    """Call Ollama API and return response text or error."""
+    """Call Ollama API and return response text or error.
+
+    Args:
+        disable_thinking: If True, disables thinking mode for models like qwen3-vl.
+                         Uses /api/chat endpoint with think=false parameter.
+    """
     used_model = model or settings.OCR_MODEL
 
     # Auto-select keep_alive based on model type if not specified
@@ -274,27 +280,55 @@ async def call_ollama(
             # Text model - longer keep-alive
             keep_alive = settings.TEXT_MODEL_KEEP_ALIVE
 
-    payload = {
-        "model": used_model,
-        "prompt": prompt,
-        "stream": False,
-        "keep_alive": keep_alive,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.8,
-            "top_k": 20,
-            "num_predict": 4096,
-            "num_ctx": 4096,
-        }
-    }
+    # Use /api/chat for vision models with thinking mode disabled
+    # This is required for qwen3-vl which returns responses in 'thinking' field otherwise
+    use_chat_api = image_base64 is not None and disable_thinking
 
-    if image_base64:
-        payload["images"] = [image_base64]
+    if use_chat_api:
+        # Chat API format (supports think parameter)
+        payload = {
+            "model": used_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_base64]
+                }
+            ],
+            "stream": False,
+            "think": False,  # Disable thinking mode
+            "options": {
+                "temperature": 0.1,
+                "top_p": 0.8,
+                "top_k": 20,
+                "num_predict": 4096,
+                "num_ctx": 4096,
+            }
+        }
+        endpoint = "/api/chat"
+    else:
+        # Generate API format (original)
+        payload = {
+            "model": used_model,
+            "prompt": prompt,
+            "stream": False,
+            "keep_alive": keep_alive,
+            "options": {
+                "temperature": 0.1,
+                "top_p": 0.8,
+                "top_k": 20,
+                "num_predict": 4096,
+                "num_ctx": 4096,
+            }
+        }
+        if image_base64:
+            payload["images"] = [image_base64]
+        endpoint = "/api/generate"
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
+                f"{settings.OLLAMA_BASE_URL}{endpoint}",
                 json=payload
             )
             response.raise_for_status()
@@ -304,8 +338,11 @@ async def call_ollama(
     except httpx.HTTPError as e:
         return "", f"Ollama error: {e}"
 
-    # Check both content and thinking fields (for models with thinking mode)
-    response_text = result.get("response", "")
+    # Extract response text based on endpoint
+    if use_chat_api:
+        response_text = result.get("message", {}).get("content", "")
+    else:
+        response_text = result.get("response", "")
 
     if not response_text.strip():
         # Some models put response in thinking field

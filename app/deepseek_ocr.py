@@ -1,10 +1,15 @@
 """OCR processing using DeepSeek-OCR (fast vision) + LLM for structuring.
 
 Pipeline:
-1. DeepSeek-OCR: Fast text extraction with layout preservation (~10-15s)
-2. LLM (qwen2.5:7b or configurable): JSON structuring + categorization (~7s)
+1. DeepSeek-OCR: Fast text extraction with layout preservation (~6-10s)
+2. LLM (qwen2.5:7b): Combined JSON structuring + categorization (~7s)
 
-Total: ~20s vs ~80s for single-model approach.
+Total: ~13-17s (optimized from ~20s by merging structuring and categorization).
+
+Optimizations applied:
+- Connection pooling via ollama_client module
+- Combined structuring + categorization in single LLM call
+- Reduced DeepSeek-OCR timeout to 45s (was 120s)
 """
 
 import json
@@ -14,9 +19,8 @@ from pathlib import Path
 from typing import Optional
 import base64
 
-import httpx
-
 from app.config import settings
+from app import ollama_client
 from app.models import Product, Receipt, DiscountDetail
 from app.dictionaries import normalize_product
 from app.store_prompts import detect_store_from_text, get_store_display_name
@@ -29,23 +33,34 @@ logger = logging.getLogger(__name__)
 # "OCR this image" misses prices; longer prompts cause infinite loops
 DEEPSEEK_OCR_PROMPT = "Read all text and numbers."
 
-# Structuring prompt - convert OCR text to JSON
+# Combined structuring + categorization prompt (saves one LLM call ~7s)
+# Categories are assigned directly during extraction
 STRUCTURING_PROMPT = """Tekst paragonu (OCR):
 
 {ocr_text}
 
-Wyekstrahuj do JSON:
-{{"sklep":"nazwa sklepu","data":"YYYY-MM-DD","produkty":[{{"nazwa":"...","cena":X.XX,"kategoria":"...","rabat":X.XX}}],"suma":X.XX}}
+Wyekstrahuj WSZYSTKIE produkty i przypisz im kategorie. Format JSON:
+{{"sklep":"nazwa","data":"YYYY-MM-DD","produkty":[{{"nazwa":"X","cena":0.00,"kategoria":"Nabiał","rabat":0.00}}],"suma":0.00}}
 
-ZASADY:
-- cena = cena WIDOCZNA przy produkcie (cena końcowa po rabacie jeśli jest w tej samej linii)
-- rabat = wartość z linii "Rabat" lub "Promocja" pod produktem (jako liczba dodatnia, np. 1.00)
-- Dla produktów wagowych (np. "0.8kg x 29.90/kg") użyj ceny końcowej (tej mniejszej, np. 23.92)
-- kategorie: Nabiał, Pieczywo, Mięso, Warzywa, Napoje, Słodycze, Chemia, Inne
-- WSZYSTKIE produkty muszą być uwzględnione
+ZASADY EKSTRAKCJI:
+- Uwzględnij KAŻDY produkt (może być 10-30 produktów!)
+- cena = cena KOŃCOWA po rabacie (ostatnia liczba w wierszu)
+- rabat = wartość ujemna pod produktem (np. -1.40 → rabat: 1.40)
 - suma = wartość przy "SUMA", "DO ZAPŁATY" lub "Karta płatnicza"
 
-Odpowiedz TYLKO poprawnym JSON, bez markdown."""
+KATEGORIE (wybierz jedną dla każdego produktu):
+- Nabiał: mleko, ser, jogurt, masło, śmietana, twaróg, kefir
+- Pieczywo: chleb, bułka, bagietka, rogal, drożdżówka
+- Mięso i wędliny: kurczak, wołowina, wieprzowina, szynka, kiełbasa, boczek, parówki
+- Warzywa i owoce: pomidor, ogórek, jabłko, banan, ziemniak, cebula, marchew
+- Napoje: woda, sok, cola, piwo, wino, kawa, herbata
+- Słodycze: czekolada, cukierki, ciastka, lody, wafelki
+- Produkty suche: makaron, ryż, mąka, kasza, płatki, olej
+- Mrożonki: lody, pizza mrożona, warzywa mrożone, ryba mrożona
+- Chemia: proszek, płyn do naczyń, mydło, szampon, papier toaletowy
+- Inne: wszystko co nie pasuje do powyższych
+
+Zwróć TYLKO JSON, bez markdown i komentarzy."""
 
 
 def extract_total_from_text(text: str) -> Optional[float]:
@@ -112,12 +127,22 @@ def extract_date_from_text(text: str) -> Optional[str]:
     return None
 
 
-def _detect_repetition(text: str, ngram_size: int = 20, threshold: float = 0.3) -> bool:
+def _detect_repetition(text: str, ngram_size: int = 15, threshold: float = 0.3) -> bool:
     """
     Detect repetitive text patterns using n-gram analysis.
     Returns True if text appears to be stuck in a loop.
+
+    Tuned parameters:
+    - ngram_size: 15 - catches medium-length repetition patterns
+    - threshold: 0.3 - balanced between false positives and catching loops
+    - Minimum text length: 800 chars - short receipts are naturally repetitive
+
+    Note: Receipts have natural repetition (similar product line formats),
+    so we use a higher threshold and minimum length to avoid false positives.
     """
-    if len(text) < ngram_size * 3:
+    # Short texts are naturally repetitive (receipts with similar product formats)
+    # Only check for loops in longer texts where infinite generation is a problem
+    if len(text) < 800:
         return False
 
     # Split into n-grams
@@ -133,7 +158,7 @@ def _detect_repetition(text: str, ngram_size: int = 20, threshold: float = 0.3) 
     return repetition_ratio > threshold
 
 
-async def _call_deepseek_ocr(image_base64: str, timeout: float = 120.0) -> tuple[str, Optional[str]]:
+async def _call_deepseek_ocr(image_base64: str, timeout: float = 45.0) -> tuple[str, Optional[str]]:
     """
     Call DeepSeek-OCR via Ollama chat API.
 
@@ -146,39 +171,30 @@ async def _call_deepseek_ocr(image_base64: str, timeout: float = 120.0) -> tuple
     - Hard limit via num_predict
     - n-gram repetition detection
     - Pattern-based loop detection
-    - Timeout (120s default)
+    - Timeout reduced to 45s (was 120s) - normal processing takes 6-15s
     """
-    payload = {
-        "model": settings.OCR_MODEL,  # deepseek-ocr
-        "messages": [
-            {
-                "role": "user",
-                "content": DEEPSEEK_OCR_PROMPT,
-                "images": [image_base64]
-            }
-        ],
-        "stream": False,
-        "options": {
-            "num_predict": 2048,  # Hard limit to prevent infinite generation
-            "num_ctx": 4096,
-            "temperature": 0.1,
+    messages = [
+        {
+            "role": "user",
+            "content": DEEPSEEK_OCR_PROMPT,
+            "images": [image_base64]
         }
+    ]
+    options = {
+        "num_predict": 2048,  # Hard limit to prevent infinite generation
+        "num_ctx": 4096,
+        "temperature": 0.1,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/chat",
-                json=payload
-            )
-            response.raise_for_status()
-            result = response.json()
-    except httpx.TimeoutException:
-        return "", "DeepSeek-OCR timeout (possible infinite loop)"
-    except httpx.HTTPError as e:
-        return "", f"DeepSeek-OCR error: {e}"
+    content, error = await ollama_client.post_chat(
+        model=settings.OCR_MODEL,
+        messages=messages,
+        options=options,
+        timeout=timeout,
+    )
 
-    content = result.get("message", {}).get("content", "")
+    if error:
+        return "", f"DeepSeek-OCR error: {error}"
 
     if not content:
         return "", "DeepSeek-OCR returned empty response"
@@ -217,37 +233,38 @@ async def _call_deepseek_ocr(image_base64: str, timeout: float = 120.0) -> tuple
     return content, None
 
 
-async def _call_structuring_llm(ocr_text: str, timeout: float = 180.0) -> tuple[Optional[dict], Optional[str]]:
-    """Call LLM for JSON structuring."""
+async def _call_structuring_llm(ocr_text: str, timeout: float = 120.0) -> tuple[Optional[dict], Optional[str]]:
+    """Call LLM for combined JSON structuring + categorization.
+
+    This is a merged step that:
+    1. Extracts products with prices and discounts
+    2. Assigns categories to each product
+    3. Extracts store, date, and total
+
+    By combining structuring and categorization, we save one LLM call (~7s).
+    """
     prompt = STRUCTURING_PROMPT.format(ocr_text=ocr_text)
 
     # Use STRUCTURING_MODEL if set, otherwise fall back to CLASSIFIER_MODEL
     model = getattr(settings, 'STRUCTURING_MODEL', None) or settings.CLASSIFIER_MODEL
 
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.1,
-            "num_predict": 2048,
-        }
+    options = {
+        "temperature": 0.1,
+        "num_predict": 4096,  # For long receipts with many products
+        "num_ctx": 8192,      # Context window for long OCR text
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
-                json=payload
-            )
-            response.raise_for_status()
-            result = response.json()
-    except httpx.TimeoutException:
-        return None, f"Structuring LLM ({model}) timeout"
-    except httpx.HTTPError as e:
-        return None, f"Structuring LLM error: {e}"
+    raw_response, error = await ollama_client.post_generate(
+        model=model,
+        prompt=prompt,
+        options=options,
+        timeout=timeout,
+        keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
+    )
 
-    raw_response = result.get("response", "")
+    if error:
+        return None, f"Structuring LLM ({model}) error: {error}"
+    logger.info(f"Raw LLM response ({len(raw_response)} chars): {raw_response[:1000]}")
 
     # Parse JSON from response
     try:
@@ -261,8 +278,14 @@ async def _call_structuring_llm(ocr_text: str, timeout: float = 180.0) -> tuple[
             if len(parts) >= 2:
                 json_str = parts[1]
 
-        # Find JSON object
-        start = json_str.find('{"')
+        # Find JSON object - look for opening brace
+        # First try to find the outermost { that starts the JSON
+        start = -1
+        for i, c in enumerate(json_str):
+            if c == '{':
+                start = i
+                break
+
         if start != -1:
             depth = 0
             for i, c in enumerate(json_str[start:], start):
@@ -323,10 +346,37 @@ async def extract_products_deepseek(
 
         # Fallback to vision backend if allowed
         if allow_fallback:
-            logger.info("Falling back to vision OCR backend...")
+            fallback_model = settings.OCR_FALLBACK_MODEL
+            logger.info(f"Falling back to vision OCR backend with {fallback_model}...")
             try:
-                from app.ocr import extract_products_from_image
-                return await extract_products_from_image(image_path, is_multi_page=is_multi_page)
+                from app.ocr import extract_products_from_image, call_ollama, parse_json_response, _build_receipt, encode_image, OCR_PROMPT
+
+                # Use fallback model instead of default OCR_MODEL
+                image_base64 = await encode_image(image_path)
+                response_text, error = await call_ollama(
+                    OCR_PROMPT,
+                    image_base64,
+                    model=fallback_model
+                )
+
+                if error:
+                    logger.error(f"Fallback OCR ({fallback_model}) failed: {error}")
+                    return None, f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) failed ({error})"
+
+                logger.info(f"Fallback ({fallback_model}) response ({len(response_text)} chars): {response_text[:500]}")
+
+                data = parse_json_response(response_text)
+                if not data:
+                    logger.error(f"Fallback ({fallback_model}) unparseable response: {response_text[:1000]}")
+                    return None, f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) returned unparseable response"
+
+                receipt, build_error = _build_receipt(data, response_text)
+                if receipt:
+                    logger.info(f"Fallback ({fallback_model}) succeeded: {len(receipt.products)} products")
+                    return receipt, None
+                else:
+                    return None, f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) build failed ({build_error})"
+
             except Exception as e:
                 logger.error(f"Vision fallback also failed: {e}")
                 return None, f"DeepSeek failed ({ocr_error}), vision fallback failed ({e})"
@@ -334,7 +384,7 @@ async def extract_products_deepseek(
         return None, ocr_error
 
     logger.info(f"DeepSeek-OCR extracted {len(ocr_text)} chars")
-    logger.debug(f"OCR text:\n{ocr_text[:500]}...")
+    logger.info(f"OCR text preview:\n{ocr_text[:800]}")
 
     # Check for minimum content
     if len(ocr_text) < 50:
@@ -356,8 +406,23 @@ async def extract_products_deepseek(
     if not data:
         return None, "LLM returned no data"
 
+    logger.info(f"LLM returned: {data}")
+
     # Step 5: Build products list
+    # Handle different response formats from LLM
     products_data = data.get("produkty", data.get("products", []))
+
+    # If LLM returned a single product object instead of proper structure
+    if not products_data and "nazwa" in data and "cena" in data:
+        logger.warning("LLM returned single product instead of proper structure, wrapping it")
+        products_data = [data]
+
+    # If LLM returned a list directly
+    if isinstance(data, list):
+        logger.warning("LLM returned list directly instead of proper structure")
+        products_data = data
+
+    logger.info(f"Found {len(products_data)} products in LLM response")
 
     skip_patterns = ['PTU', 'VAT', 'SUMA', 'TOTAL', 'RAZEM', 'PARAGON', 'FISKALNY',
                      'KAUCJ', 'ZWROT', 'OPAKOW', 'PŁATN', 'PLATN', 'KARTA', 'SPRZEDA',

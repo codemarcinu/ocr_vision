@@ -20,10 +20,11 @@ from app.dependencies import AnalyticsRepoDep, FeedbackRepoDep, PantryRepoDep, R
 from app.dictionary_api import router as dictionary_router
 from app.models import HealthStatus, ProcessingResult, Receipt
 from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
-from app.ocr import extract_products_from_image, extract_total_from_text, unload_model
+from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
 from app.services.obsidian_sync import obsidian_sync
+from app import ollama_client
 from prometheus_fastapi_instrumentator import Instrumentator
 from app.telegram.bot import bot
 
@@ -88,8 +89,12 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Stop Telegram bot and close database on shutdown."""
+    """Stop Telegram bot, close database and HTTP clients on shutdown."""
     await bot.stop()
+
+    # Close Ollama HTTP client
+    await ollama_client.close_client()
+    logger.info("Ollama client closed")
 
     # Close database connection
     if settings.USE_DB_RECEIPTS or settings.USE_DB_DICTIONARIES:
@@ -421,10 +426,7 @@ async def _process_file(file_path: Path) -> ProcessingResult:
 
             receipt = combined_receipt
 
-        # Optionally unload OCR model to free memory (controlled by UNLOAD_MODELS_AFTER_USE)
-        if settings.UNLOAD_MODELS_AFTER_USE:
-            await unload_model(settings.OCR_MODEL)
-            logger.debug("Unloaded OCR model (UNLOAD_MODELS_AFTER_USE=true)")
+        # Models are unloaded after categorization (in parallel) if UNLOAD_MODELS_AFTER_USE=true
 
         # Step 2: Categorize
         logger.info(f"Categorizing {len(receipt.products)} products")
@@ -433,10 +435,15 @@ async def _process_file(file_path: Path) -> ProcessingResult:
         if cat_error:
             logger.warning(f"Categorization warning: {cat_error}")
 
-        # Optionally unload classifier model
+        # Optionally unload ALL models in parallel (saves ~1-2s vs sequential)
         if settings.UNLOAD_MODELS_AFTER_USE:
-            await unload_model(settings.CLASSIFIER_MODEL)
-            logger.debug("Unloaded classifier model (UNLOAD_MODELS_AFTER_USE=true)")
+            models_to_unload = [settings.OCR_MODEL, settings.CLASSIFIER_MODEL]
+            # Remove duplicates (e.g., if both use same model)
+            models_to_unload = list(set(models_to_unload))
+            await asyncio.gather(*[
+                ollama_client.unload_model(model) for model in models_to_unload
+            ])
+            logger.debug(f"Unloaded models in parallel: {models_to_unload}")
 
         # Step 3: Write files
         try:
