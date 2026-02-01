@@ -42,20 +42,9 @@ vault/*.md
 # Test files with personal receipts
 do testów/
 
-# Validation files
-WALIDACJA/
-
-# Personal notes (remove if you want to include them)
-brief.md
-specyfikacja
-opis
-"\#*Doskonale*.md"
-
 # Misc
 nul
 *.log
 .DS_Store
 Thumbs.db
-
-# Windows Zone.Identifier metadata files
 *:Zone.Identifier

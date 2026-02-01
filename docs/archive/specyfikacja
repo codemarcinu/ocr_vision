@@ -1,0 +1,129 @@
+● Raport systemowy
+
+  Specyfikacja
+  ┌───────────┬──────────────────────────────────────────────────┐
+  │ Komponent │                    Szczegóły                     │
+  ├───────────┼──────────────────────────────────────────────────┤
+  │ CPU       │ AMD Ryzen 5 5500 (6 rdzeni / 12 wątków, 3.6 GHz) │
+  ├───────────┼──────────────────────────────────────────────────┤
+  │ RAM       │ 32 GB DDR4 2666 MHz (2x16 GB Samsung)            │
+  ├───────────┼──────────────────────────────────────────────────┤
+  │ GPU       │ NVIDIA GeForce RTX 3060 (12 GB VRAM)             │
+  └───────────┴──────────────────────────────────────────────────┘
+  ---
+  Ocena możliwości
+
+  Gaming:
+  - Płynna gra w 1080p na ultra/wysokich ustawieniach w większości tytułów
+  - Solidna wydajność w 1440p na średnich/wysokich ustawieniach
+  - Ray tracing możliwy z DLSS
+
+  Praca kreatywna:
+  - Edycja wideo 4K (DaVinci Resolve, Premiere Pro)
+  - Renderowanie 3D (Blender) - dobra wydajność
+  - Grafika 2D bez ograniczeń
+
+  AI / Machine Learning:
+  - RTX 3060 z 12 GB VRAM nadaje się do lokalnych modeli LLM (np. Llama 7B/13B)
+  - Trening mniejszych sieci neuronowych
+  - Stable Diffusion działa dobrze
+
+  Programowanie:
+  - Kompilacja, Docker, maszyny wirtualne - bez problemu
+  - 32 GB RAM to komfortowa ilość dla większości zastosowań
+
+  ---
+  Podsumowanie: Solidny komputer do gier, pracy kreatywnej i programowania. Wąskim gardłem może być RAM 2666 MHz (Ryzen
+  5 preferuje szybszą pamięć), ale ogólnie to zbalansowana konfiguracja średnio-wyższej klasy.
+ Modele Ollama - Przegląd
+  ┌──────────────────┬─────────┬─────────────────┬─────────┐
+  │      Model       │ Rozmiar │    Parametry    │  VRAM*  │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ mistral-nemo     │ 7.1 GB  │ ~12B            │ ~8 GB   │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ qwen2.5:7b       │ 4.7 GB  │ 7B              │ ~5 GB   │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ deepseek-ocr     │ 6.7 GB  │ ~8B             │ ~7 GB   │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ gemma3           │ 3.3 GB  │ ~4B             │ ~4 GB   │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ deepseek-r1      │ 5.2 GB  │ ~8B (distilled) │ ~6 GB   │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ bge-m3           │ 1.2 GB  │ embedding       │ ~1.5 GB │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ nomic-embed-text │ 274 MB  │ embedding       │ ~0.5 GB │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ qwen3-vl:8b      │ 6.1 GB  │ 8B              │ ~7 GB   │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ qwen2.5:14b      │ 9.0 GB  │ 14B             │ ~10 GB  │
+  ├──────────────────┼─────────┼─────────────────┼─────────┤
+  │ bielik-11b-v3.0  │ 7.9 GB  │ 11B             │ ~9 GB   │
+  └──────────────────┴─────────┴─────────────────┴─────────┘
+  *szacowane zużycie przy pełnym załadowaniu do GPU
+
+  ---
+  Opisy modeli
+
+  mistral-nemo (12B)
+  - Współpraca Mistral AI i NVIDIA, kontekst 128k tokenów
+  - Świetny do kodu, analizy, rozmów wielojęzycznych
+  - Na Twoim sprzęcie: Działa w pełni na GPU, szybka odpowiedź
+
+  qwen2.5:7b
+  - Wszechstronny model od Alibaba, dobry balans jakość/wydajność
+  - Silny w kodowaniu, matematyce, wielojęzyczny (w tym polski)
+  - Na Twoim sprzęcie: Bardzo szybki, mieści się z zapasem w VRAM
+
+  deepseek-ocr
+  - Specjalistyczny model do rozpoznawania tekstu z obrazów
+  - Czyta dokumenty, screeny, zdjęcia tekstu
+  - Na Twoim sprzęcie: Działa płynnie, idealne do digitalizacji
+
+  gemma3 (4B)
+  - Lekki model Google, dobry do prostych zadań
+  - Najszybszy z kolekcji, niskie wymagania
+  - Na Twoim sprzęcie: Błyskawiczny, można uruchomić obok innych aplikacji
+
+  deepseek-r1 (distilled 8B)
+  - Model z rozumowaniem "chain-of-thought" (myśli krok po kroku)
+  - Dobry do logiki, matematyki, złożonych problemów
+  - Na Twoim sprzęcie: Komfortowo, pełne GPU acceleration
+
+  bge-m3 / nomic-embed-text
+  - Modele embeddingowe (nie generują tekstu)
+  - Służą do: wyszukiwania semantycznego, RAG, klasyfikacji
+  - Na Twoim sprzęcie: Minimalne zużycie, można łączyć z innymi modelami
+
+  qwen3-vl:8b
+  - Model wizyjno-językowy (rozumie obrazy + tekst)
+  - Analizuje zdjęcia, diagramy, screeny, dokumenty
+  - Na Twoim sprzęcie: Działa w pełni na GPU, świetna opcja multimodalna
+
+  qwen2.5:14b
+  - Większy brat 7B, wyższa jakość odpowiedzi
+  - Lepszy w złożonych zadaniach, dłuższych tekstach
+  - Na Twoim sprzęcie: Mieści się w 12GB VRAM, ale na granicy - może być lekki offload do RAM
+
+  bielik-11b-v3.0 (Q5_K_M)
+  - Polski model! Najlepszy otwarty LLM po polsku
+  - Rozumie polską kulturę, idiomy, kontekst
+  - Kwantyzacja Q5_K_M = dobry balans jakość/rozmiar
+  - Na Twoim sprzęcie: Działa płynnie na GPU, idealne do polskich zadań
+
+  ---
+  Podsumowanie dla RTX 3060 12GB
+  ┌─────────────────┬───────────────────────────────────────┐
+  │    Wydajność    │                Modele                 │
+  ├─────────────────┼───────────────────────────────────────┤
+  │ Błyskawiczne    │ gemma3, nomic-embed, bge-m3           │
+  ├─────────────────┼───────────────────────────────────────┤
+  │ Szybkie         │ qwen2.5:7b, deepseek-r1, deepseek-ocr │
+  ├─────────────────┼───────────────────────────────────────┤
+  │ Komfortowe      │ mistral-nemo, qwen3-vl, bielik-11b    │
+  ├─────────────────┼───────────────────────────────────────┤
+  │ Na granicy VRAM │ qwen2.5:14b (może użyć trochę RAM)    │
+  └─────────────────┴───────────────────────────────────────┘
+  Wszystkie modele działają na Twoim sprzęcie bez problemu. RTX 3060 12GB to świetna karta do lokalnych LLM - masz dużo
+  VRAM jak na tę klasę GPU.
+
+

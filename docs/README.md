@@ -14,23 +14,56 @@
 | [../CLAUDE.md](../CLAUDE.md) | Dokumentacja techniczna (architektura, API, konfiguracja) |
 | [../README.md](../README.md) | Główny README projektu |
 
+## Raporty techniczne
+
+| Dokument | Opis |
+|----------|------|
+| [reports/OPTIMIZATION_REPORT.md](reports/OPTIMIZATION_REPORT.md) | Raport optymalizacji OCR Vision |
+| [reports/ANALIZA_DOKLADNOSCI_OCR.md](reports/ANALIZA_DOKLADNOSCI_OCR.md) | Analiza dokładności OCR |
+
+## Archiwum
+
+Folder `archive/` zawiera stare notatki i specyfikacje projektowe.
+
 ## Struktura projektu
 
 ```
 OCR_V2/
 ├── app/                    # Kod aplikacji
 │   ├── db/                 # Warstwa bazy danych
+│   │   ├── models.py       # Modele SQLAlchemy
+│   │   ├── connection.py   # Połączenie z bazą
+│   │   └── repositories/   # Repozytoria danych
 │   ├── telegram/           # Bot Telegram
-│   └── ...
+│   │   ├── bot.py          # Główna klasa bota
+│   │   ├── handlers/       # Handlery komend
+│   │   └── keyboards.py    # Klawiatury inline
+│   ├── services/           # Serwisy aplikacji
+│   ├── dictionaries/       # Słowniki produktów/sklepów
+│   ├── ocr.py              # OCR Vision backend
+│   ├── paddle_ocr.py       # OCR Paddle backend
+│   ├── classifier.py       # Kategoryzacja produktów
+│   └── main.py             # FastAPI endpoints
+├── alembic/                # Migracje bazy danych
 ├── docs/                   # Dokumentacja (jesteś tutaj)
+│   ├── archive/            # Stare notatki
+│   └── reports/            # Raporty techniczne
+├── monitoring/             # Konfiguracja Prometheus/Loki/Grafana
+├── n8n-workflows/          # Workflow n8n
 ├── paragony/               # Paragony do przetworzenia
 │   └── inbox/              # Wrzuć tutaj zdjęcia
-├── vault/                  # Wygenerowane pliki
+├── scripts/                # Skrypty pomocnicze
+│   ├── init-db.sql         # Schemat bazy danych
+│   ├── migrate_data.py     # Migracja danych do PostgreSQL
+│   ├── quick_ocr.py        # Szybki test OCR
+│   └── receipt_ocr.py      # Standalone OCR
+├── vault/                  # Wygenerowane pliki Obsidian
 │   ├── paragony/           # Historia paragonów
 │   └── logs/               # Logi i feedback
-├── scripts/                # Skrypty pomocnicze
 ├── docker-compose.yml      # Konfiguracja Docker
-└── CLAUDE.md               # Dokumentacja techniczna
+├── Dockerfile              # Build aplikacji
+├── CLAUDE.md               # Dokumentacja techniczna
+└── README.md               # Główny README
 ```
 
 ## Pomoc

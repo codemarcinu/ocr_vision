@@ -1,0 +1,1478 @@
+Doskonale! Teraz widzę pełną architekturę Twojego systemu ocr_vision. To solidny projekt z hybrydowym podejściem OCR (PaddleOCR + LLM) i Human-in-the-Loop walidacją. Przeanalizowałem kod i dokumentację, a oto konkretne rekomendacje ulepszeń.
+
+## 🎯 Analiza obecnego systemu
+
+**Twoja konfiguracja:**
+- RTX 3060 12GB VRAM - idealne do lokalnych modeli
+- PaddleOCR (szybki) + qwen2.5:7b (LLM structuring)
+- FastAPI backend z Telegram botem
+- Hybrydowy parsing: regex fallback + LLM
+- Walidacja human-in-the-loop dla rozbieżności >5 PLN lub >10%
+
+**Zidentyfikowane bottlenecki z raportu:**
+1. Czas przetwarzania: ~90s/stronę (vision model) vs 11s (paddle)
+2. VRAM overflow podczas self-verification (500 errors)
+3. Błędy cen wagowych (cena/kg zamiast końcowej)
+4. Brak niektórych produktów (23/24)
+
+***
+
+## 🚀 Rekomendacje optymalizacji backendu
+
+### 1. **Hybrydowy pipeline z pre-processingiem obrazu**
+
+**Problem:** PaddleOCR może mieć problemy z niską jakością skanów paragonów
+**Rozwiązanie:** Dodaj pre-processing przed OCR
+
+```python
+# Nowy plik: app/image_preprocessor.py
+
+import cv2
+import numpy as np
+from pathlib import Path
+from PIL import Image
+
+def enhance_receipt_image(image_path: Path) -> Path:
+    """
+    Pre-process receipt image for better OCR accuracy.
+    Returns path to enhanced temp image.
+    """
+    # Load image
+    img = cv2.imread(str(image_path))
+    
+    # 1. Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # 2. Denoise
+    denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
+    
+    # 3. Adaptive threshold (better for uneven lighting)
+    binary = cv2.adaptiveThreshold(
+        denoised, 255, 
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY, 
+        11, 2
+    )
+    
+    # 4. Deskew (align receipt)
+    angle = detect_skew_angle(binary)
+    if abs(angle) > 0.5:  # Only rotate if significant skew
+        rotated = rotate_image(binary, angle)
+    else:
+        rotated = binary
+    
+    # 5. Contrast enhancement (CLAHE)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(rotated)
+    
+    # 6. Morphological operations (clean up noise)
+    kernel = np.ones((1,1), np.uint8)
+    cleaned = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel)
+    
+    # Save to temp file
+    temp_path = image_path.parent / f"{image_path.stem}_enhanced.png"
+    cv2.imwrite(str(temp_path), cleaned)
+    
+    return temp_path
+
+
+def detect_skew_angle(image: np.ndarray) -> float:
+    """Detect skew angle using Hough transform."""
+    edges = cv2.Canny(image, 50, 150, apertureSize=3)
+    lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
+    
+    if lines is None:
+        return 0.0
+    
+    angles = []
+    for rho, theta in lines[:10]:  # Use first 10 lines
+        angle = np.degrees(theta) - 90
+        if abs(angle) < 45:  # Filter outliers
+            angles.append(angle)
+    
+    return np.median(angles) if angles else 0.0
+
+
+def rotate_image(image: np.ndarray, angle: float) -> np.ndarray:
+    """Rotate image by given angle."""
+    h, w = image.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(image, M, (w, h), 
+                          flags=cv2.INTER_CUBIC, 
+                          borderMode=cv2.BORDER_REPLICATE)
+```
+
+**Integracja w `paddle_ocr.py`:**
+```python
+from app.image_preprocessor import enhance_receipt_image
+
+async def extract_text_from_image(image_path: Path) -> tuple[str, Optional[str]]:
+    """Extract text from image using PaddleOCR with preprocessing."""
+    if not image_path.exists():
+        return "", f"File not found: {image_path}"
+    
+    # PRE-PROCESS IMAGE FOR BETTER OCR
+    try:
+        enhanced_path = enhance_receipt_image(image_path)
+        process_path = enhanced_path
+    except Exception as e:
+        logger.warning(f"Pre-processing failed, using original: {e}")
+        process_path = image_path
+    
+    try:
+        ocr = get_ocr()
+        result = ocr.ocr(str(process_path), cls=True)
+        
+        # ... rest of existing code ...
+        
+    finally:
+        # Clean up enhanced image
+        if process_path != image_path and process_path.exists():
+            process_path.unlink()
+```
+
+**Korzyści:**
+- +20-40% accuracy OCR dla niskiej jakości paragonów
+- Lepsze wykrywanie tekstu przy niejednolitym oświetleniu
+- Korekcja pochylonych skanów
+
+***
+
+### 2. **Asynchroniczne przetwarzanie z kolejką zadań**
+
+**Problem:** Synchroniczne przetwarzanie blokuje API
+**Rozwiązanie:** Kolejka zadań z RQ (Redis Queue) - lżejsza od Celery
+
+```python
+# Nowy plik: app/task_queue.py
+
+from redis import Redis
+from rq import Queue
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Redis connection
+redis_conn = Redis(host='localhost', port=6379, db=0, decode_responses=True)
+task_queue = Queue('receipt_processing', connection=redis_conn)
+
+def process_receipt_async(receipt_id: str, image_path: str) -> dict:
+    """Background task for receipt processing."""
+    from app.paddle_ocr import extract_products_paddle
+    from app.classifier import categorize_products
+    from app.obsidian_writer import write_receipt_file, update_pantry_file
+    import asyncio
+    
+    # Run async function in sync context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        receipt, error = loop.run_until_complete(
+            extract_products_paddle(Path(image_path))
+        )
+        
+        if error:
+            return {"success": False, "error": error}
+        
+        categorized, cat_error = loop.run_until_complete(
+            categorize_products(receipt.products)
+        )
+        
+        receipt_file = write_receipt_file(receipt, categorized, Path(image_path).name)
+        update_pantry_file(categorized, receipt)
+        
+        return {
+            "success": True,
+            "receipt_id": receipt_id,
+            "products_count": len(receipt.products),
+            "total": receipt.suma
+        }
+    
+    except Exception as e:
+        logger.error(f"Task failed: {e}")
+        return {"success": False, "error": str(e)}
+    
+    finally:
+        loop.close()
+```
+
+**Modyfikacja `main.py`:**
+```python
+from app.task_queue import task_queue, process_receipt_async
+
+@app.post("/process-receipt-async")
+async def process_receipt_async_endpoint(file: UploadFile = File(...)):
+    """Queue receipt for async processing."""
+    # Save file
+    inbox_path = settings.INBOX_DIR / file.filename
+    with open(inbox_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
+    # Enqueue task
+    job = task_queue.enqueue(
+        process_receipt_async,
+        receipt_id=str(uuid.uuid4()),
+        image_path=str(inbox_path),
+        job_timeout='5m'  # 5 minutes timeout
+    )
+    
+    return {
+        "job_id": job.id,
+        "status": "queued",
+        "message": "Receipt queued for processing"
+    }
+
+@app.get("/job/{job_id}")
+async def get_job_status(job_id: str):
+    """Check job status."""
+    from rq.job import Job
+    
+    try:
+        job = Job.fetch(job_id, connection=redis_conn)
+        
+        if job.is_finished:
+            return {"status": "completed", "result": job.result}
+        elif job.is_failed:
+            return {"status": "failed", "error": str(job.exc_info)}
+        else:
+            return {"status": "processing", "progress": job.meta.get('progress', 0)}
+    
+    except Exception as e:
+        return {"status": "not_found", "error": str(e)}
+```
+
+**Docker Compose - dodaj Redis:**
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  rq-worker:
+    build: .
+    command: rq worker receipt_processing --url redis://redis:6379
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./paragony:/data/paragony
+      - ./vault:/data/vault
+
+volumes:
+  redis_data:
+```
+
+**Korzyści:**
+- API odpowiada natychmiast (non-blocking)
+- Możliwość przetwarzania wielu paragonów równolegle
+- Retry mechanism dla failed jobs
+- Monitoring postępu
+
+***
+
+### 3. **Batch processing dla GPU**
+
+**Problem:** RTX 3060 12GB jest underutilized przy single-image processing
+**Rozwiązanie:** Batch inference dla LLM
+
+```python
+# Modyfikacja w paddle_ocr.py
+
+async def structure_batch_with_llm(
+    raw_texts: list[str], 
+    prompts: list[str]
+) -> list[tuple[Optional[dict], Optional[str]]]:
+    """Process multiple receipts in a single LLM call."""
+    
+    # Combine all texts with separators
+    combined_prompt = ""
+    for i, (text, prompt) in enumerate(zip(raw_texts, prompts)):
+        combined_prompt += f"\n\n=== PARAGON {i+1} ===\n{prompt}{text}\n"
+    
+    combined_prompt += "\n\nReturn JSON array: [{products:[],...}, {products:[],...}, ...]"
+    
+    payload = {
+        "model": settings.CLASSIFIER_MODEL,
+        "prompt": combined_prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.1,
+            "num_predict": 4000,  # Increased for batch
+            "num_ctx": 8192,      # Larger context
+        }
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.OLLAMA_BASE_URL}/api/generate",
+                json=payload
+            )
+            result = response.json()
+            
+            # Parse batch response
+            batch_data = json.loads(result["response"])
+            
+            return [(data, None) for data in batch_data]
+    
+    except Exception as e:
+        # Fallback to individual processing
+        logger.warning(f"Batch processing failed: {e}, falling back to individual")
+        return [await structure_with_llm(text, prompt) 
+                for text, prompt in zip(raw_texts, prompts)]
+```
+
+**Korzyści:**
+- 2-3x szybsze przetwarzanie dla multiple receipts
+- Lepsze wykorzystanie GPU VRAM
+- Fallback do single processing przy błędach
+
+***
+
+### 4. **Optymalizacja parsowania cen wagowych**
+
+**Problem:** Model myli cenę/kg z ceną końcową
+**Rozwiązanie:** Post-processing regex dla produktów wagowych
+
+```python
+# Nowy plik: app/price_fixer.py
+
+import re
+from typing import Optional
+from app.models import Product
+
+WEIGHT_PATTERNS = [
+    r'×\s*(\d+[.,]\d+)',           # × 0.28
+    r'(\d+[.,]\d+)\s*kg',          # 0.28 kg
+    r'(\d+[.,]\d+)\s*g',           # 280 g
+]
+
+def fix_weighted_product_price(
+    product: Product, 
+    raw_text: str
+) -> Product:
+    """
+    Detect and fix prices for weighted products.
+    
+    If price is suspiciously high (>40 zł) and there's weight info,
+    likely extracted price/kg instead of final price.
+    """
+    if product.cena < 40:  # Price seems reasonable
+        return product
+    
+    # Search for product line in raw text
+    escaped_name = re.escape(product.nazwa[:15])  # First 15 chars
+    pattern = f"{escaped_name}.*?(\d+[.,]\d{{2}})"
+    
+    matches = re.findall(pattern, raw_text, re.IGNORECASE)
+    
+    if not matches:
+        return product
+    
+    # Extract all numbers from product line
+    prices = [float(p.replace(',', '.')) for p in matches]
+    
+    # Find weight multiplier
+    for weight_pattern in WEIGHT_PATTERNS:
+        weight_match = re.search(weight_pattern, raw_text[raw_text.find(product.nazwa):])
+        if weight_match:
+            weight = float(weight_match.group(1).replace(',', '.'))
+            
+            # Calculate expected price: price_per_kg × weight
+            for price_per_kg in prices:
+                if price_per_kg > 10:  # Reasonable price/kg
+                    expected_price = round(price_per_kg * weight, 2)
+                    
+                    # Find closest actual price to expected
+                    for actual_price in prices:
+                        if 0.5 < actual_price < 50:  # Reasonable final price range
+                            if abs(actual_price - expected_price) < 2:  # Within 2 PLN
+                                logger.info(
+                                    f"Fixed weighted product price: {product.nazwa} "
+                                    f"{product.cena} → {actual_price} "
+                                    f"({price_per_kg}/kg × {weight}kg)"
+                                )
+                                product.cena = actual_price
+                                product.warning = f"Skorygowano z {product.cena:.2f} (prawdopodobnie cena/kg)"
+                                return product
+    
+    return product
+```
+
+**Integracja:**
+```python
+# W paddle_ocr.py, po ekstrakcji produktów:
+
+from app.price_fixer import fix_weighted_product_price
+
+for p in products:
+    # ... existing code ...
+    
+    # Fix weighted products
+    fixed_product = fix_weighted_product_price(p, raw_text)
+    products.append(fixed_product)
+```
+
+***
+
+### 5. **Caching modeli Ollama**
+
+**Problem:** Modele są unloadowane po każdym użyciu, powodując opóźnienia
+**Rozwiązanie:** Smart caching z keep-alive
+
+```python
+# Modyfikacja w config.py
+
+class Settings(BaseSettings):
+    # ... existing settings ...
+    
+    OLLAMA_KEEP_ALIVE: str = "10m"  # Keep models in VRAM for 10 minutes
+    MODEL_CACHE_SIZE: int = 2       # Max models in VRAM simultaneously
+
+
+# Nowy plik: app/model_manager.py
+
+from datetime import datetime, timedelta
+from typing import Optional
+import httpx
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ModelManager:
+    """Manages Ollama model loading and caching."""
+    
+    def __init__(self):
+        self.loaded_models = {}  # {model_name: last_used_timestamp}
+        self.max_cache_size = settings.MODEL_CACHE_SIZE
+    
+    async def preload_model(self, model_name: str):
+        """Preload model into VRAM."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                await client.post(
+                    f"{settings.OLLAMA_BASE_URL}/api/generate",
+                    json={
+                        "model": model_name,
+                        "prompt": "warmup",
+                        "keep_alive": settings.OLLAMA_KEEP_ALIVE,
+                        "options": {"num_predict": 1}
+                    }
+                )
+            
+            self.loaded_models[model_name] = datetime.now()
+            logger.info(f"Preloaded model: {model_name}")
+        
+        except Exception as e:
+            logger.error(f"Failed to preload {model_name}: {e}")
+    
+    async def ensure_loaded(self, model_name: str):
+        """Ensure model is loaded, preload if necessary."""
+        if model_name not in self.loaded_models:
+            await self.preload_model(model_name)
+        else:
+            self.loaded_models[model_name] = datetime.now()
+    
+    async def cleanup_old_models(self):
+        """Unload models not used recently."""
+        if len(self.loaded_models) <= self.max_cache_size:
+            return
+        
+        # Sort by last used time
+        sorted_models = sorted(
+            self.loaded_models.items(),
+            key=lambda x: x [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/41248297/7e67f9fa-a314-4cef-b8e1-fb5caa866a2a/specyfikacja-i-ollama-models.md)
+        )
+        
+        # Unload oldest models
+        models_to_unload = sorted_models[:len(sorted_models) - self.max_cache_size]
+        
+        for model_name, _ in models_to_unload:
+            await self._unload_model(model_name)
+            del self.loaded_models[model_name]
+    
+    async def _unload_model(self, model_name: str):
+        """Force unload model from VRAM."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"{settings.OLLAMA_BASE_URL}/api/generate",
+                    json={
+                        "model": model_name,
+                        "keep_alive": 0  # Immediate unload
+                    }
+                )
+            logger.info(f"Unloaded model: {model_name}")
+        except Exception as e:
+            logger.warning(f"Failed to unload {model_name}: {e}")
+
+# Global instance
+model_manager = ModelManager()
+
+
+# Startup event w main.py:
+@app.on_event("startup")
+async def startup_event():
+    """Preload frequently used models."""
+    await model_manager.preload_model(settings.CLASSIFIER_MODEL)
+    # OCR model loaded on-demand (heavy)
+```
+
+**Korzyści:**
+- -2-3s na każde wywołanie LLM (brak czasu ładowania)
+- Inteligentne zarządzanie VRAM
+- Możliwość preloadingu podczas startu
+
+***
+
+### 6. **Parallel processing dla multi-page PDF**
+
+**Problem:** Strony PDF przetwarzane sekwencyjnie
+**Rozwiązanie:** Równoległe przetwarzanie stron
+
+```python
+# Modyfikacja w main.py
+
+import asyncio
+
+async def _process_file(file_path: Path) -> ProcessingResult:
+    # ... existing PDF conversion code ...
+    
+    if len(image_paths) > 1:
+        # Process pages in parallel (max 2 at a time to avoid VRAM overflow)
+        semaphore = asyncio.Semaphore(2)
+        
+        async def process_page_with_semaphore(image_path, page_num):
+            async with semaphore:
+                logger.info(f"Processing page {page_num}/{len(image_paths)}")
+                receipt, error = await extract_products_paddle(image_path)
+                return receipt, error, page_num
+        
+        # Process all pages concurrently
+        tasks = [
+            process_page_with_semaphore(img, i+1) 
+            for i, img in enumerate(image_paths)
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        
+        # Combine results
+        for receipt, error, page_num in results:
+            if receipt and receipt.products:
+                all_products.extend(receipt.products)
+                if receipt.raw_text:
+                    all_raw_texts.append(receipt.raw_text)
+                # ... rest of combining logic ...
+    
+    else:
+        # Single page - process normally
+        receipt, error = await extract_products_paddle(image_paths[0])
+```
+
+**Korzyści:**
+- ~50% redukcja czasu dla 3-stronicowego PDF
+- Lepsze wykorzystanie CPU podczas oczekiwania na Ollama
+- Configurable concurrency limit (avoid VRAM overflow)
+
+***
+
+### 7. **Database dla szybszego queryowania**
+
+**Problem:** Markdown files nie są efektywne dla analityki
+**Rozwiązanie:** PostgreSQL z cache dla często używanych zapytań
+
+```yaml
+# docker-compose.yml - dodaj PostgreSQL
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pantry
+      POSTGRES_USER: pantry
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+```python
+# Nowy plik: app/database.py
+
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from datetime import datetime
+
+Base = declarative_base()
+
+class ReceiptDB(Base):
+    __tablename__ = "receipts"
+    
+    id = Column(Integer, primary_key=True)
+    filename = Column(String, unique=True)
+    store = Column(String, index=True)
+    date = Column(DateTime, index=True)
+    total = Column(Float)
+    products_count = Column(Integer)
+    products_json = Column(JSON)
+    raw_text = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProductDB(Base):
+    __tablename__ = "products"
+    
+    id = Column(Integer, primary_key=True)
+    receipt_id = Column(Integer, index=True)
+    name = Column(String, index=True)
+    normalized_name = Column(String, index=True)
+    category = Column(String, index=True)
+    price = Column(Float)
+    original_price = Column(Float)
+    discount = Column(Float)
+    purchased_at = Column(DateTime, index=True)
+
+
+# Fast analytics queries
+async def get_spending_by_store(days: int = 30) -> dict:
+    """Get spending breakdown by store for last N days."""
+    # Using SQL is 100x faster than parsing markdown files
+    query = """
+    SELECT store, SUM(total) as spent, COUNT(*) as visits
+    FROM receipts
+    WHERE date >= NOW() - INTERVAL '%s days'
+    GROUP BY store
+    ORDER BY spent DESC
+    """
+    # ... execute query ...
+```
+
+**Integracja:**
+```python
+# W main.py po zapisaniu markdown:
+
+from app.database import save_receipt_to_db
+
+# ... existing code ...
+
+# Also save to database for fast queries
+await save_receipt_to_db(receipt, categorized, filename)
+```
+
+**Korzyści:**
+- Zapytania analityczne 100x szybsze
+- Możliwość złożonych filtrów i agregacji
+- Markdown nadal jako human-readable backup
+
+***
+
+## 📊 Podsumowanie ulepszeń i expected impact
+
+| Optymalizacja | Szybkość | Dokładność | Złożoność impl. |
+|---------------|----------|------------|-----------------|
+| 1. Image pre-processing | +10% | +20-40% | Średnia |
+| 2. Task queue (RQ) | +200% (non-blocking) | 0% | Średnia |
+| 3. Batch GPU processing | +100-200% | 0% | Wysoka |
+| 4. Price fixing (weighted) | 0% | +15% | Niska |
+| 5. Model caching | +30% | 0% | Niska |
+| 6. Parallel PDF pages | +50% | 0% | Średnia |
+| 7. PostgreSQL analytics | +10000% (queries) | 0% | Średnia |
+
+**Priorytet implementacji:**
+1. #4 Price fixing - najmniejszy effort, bezpośredni fix błędu z raportu
+2. #5 Model caching - prosty performance boost
+3. #1 Pre-processing - biggest accuracy improvement
+4. #2 Task queue - UX improvement (non-blocking)
+5. #6 Parallel processing - speed dla multi-page
+6. #7 Database - dla długoterminowej skalowalności
+7. #3 Batch processing - advanced optimization
+
+***
+
+## 🔧 Quick wins - co zrobić teraz
+
+```bash
+# 1. Dodaj pre-processing (requirements.txt)
+opencv-python==4.9.0.80
+opencv-contrib-python==4.9.0.80
+
+# 2. Implement price fixer
+# Skopiuj kod z sekcji #4 do app/price_fixer.py
+# Dodaj import w paddle_ocr.py
+
+# 3. Model caching
+# Edit config.py: OLLAMA_KEEP_ALIVE = "10m"
+# Remove unload_model() calls w main.py dla często używanych modeli
+```
+
+
+
+Świetnie! Widzę Twoją implementację vision OCR. Teraz mogę zaproponować optymalizacje specyficznie dla modelu vision jako głównego silnika. Widzę, że masz już zaawansowane rozwiązanie z:
+- Two-stage fallback (raw text → JSON)
+- Self-verification (ale z VRAM issues)
+- Store detection
+- Discount handling
+
+## 🎯 Optymalizacje dla Vision Model jako głównego silnika
+
+### 1. **Eliminacja VRAM overflow podczas self-verification**
+
+**Problem z raportu:** Ollama 500 error - prawdopodobnie przekroczenie 12GB VRAM
+**Przyczyna:** Wysyłanie obrazu + długi prompt + kontekst weryfikacji
+
+**Rozwiązanie: Text-only verification**
+
+```python
+# Modyfikacja w app/ocr.py - funkcja _verify_extraction
+
+async def _verify_extraction(
+    raw_text: str,  # Zamiast image_base64
+    receipt: Receipt, 
+    original_data: dict
+) -> Optional[Receipt]:
+    """
+    Text-only verification - no image reprocessing.
+    Saves VRAM and avoids 500 errors.
+    """
+    products_summary = "\n".join([
+        f"  - {p.nazwa}: {p.cena} PLN" + (f" (było {p.cena_oryginalna}, rabat {p.rabat})" if p.rabat else "")
+        for p in receipt.products
+    ])
+
+    difference = receipt.suma - receipt.calculated_total if receipt.suma else 0
+
+    # Simplified verification prompt - text analysis only
+    verification_prompt = f"""You extracted products from a Polish receipt but there's a mismatch.
+
+ORIGINAL OCR TEXT:
+{raw_text[:2000]}  # Limit to avoid token overflow
+
+EXTRACTED PRODUCTS:
+{products_summary}
+
+PROBLEM:
+- Sum of products: {receipt.calculated_total} PLN
+- Receipt total: {receipt.suma} PLN
+- Difference: {difference:+.2f} PLN ({abs(difference/receipt.suma*100):.1f}%)
+
+ANALYZE THE TEXT and identify the issue:
+1. Did you extract FINAL prices (after "Rabat" discounts)?
+2. For weighted items (kg), did you use total value not unit price?
+3. Are there duplicate or missing products?
+4. Are there fake products (summary lines, taxes)?
+
+Return CORRECTED JSON with adjusted products:
+{{"products":[{{"nazwa":"name","cena":FINAL_PRICE,"cena_przed":BEFORE,"rabat":DISCOUNT}}],"suma":{receipt.suma}}}
+
+Focus on making product sum match {receipt.suma} PLN."""
+
+    # Use TEXT MODEL for verification (no image, less VRAM)
+    response_text, error = await call_ollama(
+        verification_prompt,
+        image_base64=None,  # NO IMAGE
+        model=settings.CLASSIFIER_MODEL,  # qwen2.5:7b text model
+        timeout=120.0
+    )
+
+    if error:
+        logger.warning(f"Verification failed: {error}")
+        return None
+
+    verified_data = parse_json_response(response_text)
+    if not verified_data:
+        logger.warning("Verification returned unparseable response")
+        return None
+
+    # Build receipt, preserve metadata from original
+    verified_receipt, _ = _build_receipt(verified_data, raw_text)
+    
+    if verified_receipt:
+        # Preserve original metadata if verification didn't extract it
+        verified_receipt.sklep = verified_receipt.sklep or receipt.sklep
+        verified_receipt.data = verified_receipt.data or receipt.data
+        verified_receipt.suma = receipt.suma  # Keep original total
+    
+    return verified_receipt
+
+
+# Modyfikacja w extract_products_from_image - wywołanie verification
+
+async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receipt], Optional[str]]:
+    # ... existing code ...
+    
+    # Self-verification
+    if receipt.suma and receipt.calculated_total:
+        difference = abs(receipt.suma - receipt.calculated_total)
+        percentage = (difference / receipt.suma) * 100 if receipt.suma > 0 else 0
+
+        # ZWIĘKSZONY threshold: 15% zamiast 10% (mniej false positives)
+        if difference > 5 and percentage > 15:  # Changed from 10% to 15%
+            logger.warning(f"Total mismatch: receipt={receipt.suma}, calculated={receipt.calculated_total}, diff={difference:.2f} ({percentage:.1f}%)")
+            logger.info("Running text-only verification...")
+
+            # TEXT-ONLY VERIFICATION (bez ponownego wysyłania obrazu)
+            verified_receipt = await _verify_extraction(
+                response_text,  # Use raw OCR text, not image
+                receipt, 
+                data
+            )
+            
+            if verified_receipt:
+                new_diff = abs(verified_receipt.suma - verified_receipt.calculated_total) if verified_receipt.suma else difference
+                improvement = ((difference - new_diff) / difference * 100) if difference > 0 else 0
+                
+                if new_diff < difference * 0.8:  # At least 20% improvement
+                    logger.info(f"Verification improved match by {improvement:.0f}%: {difference:.2f} → {new_diff:.2f}")
+                    return verified_receipt, None
+                else:
+                    logger.info(f"Verification improvement insufficient ({improvement:.0f}%), keeping original")
+
+    return receipt, None
+```
+
+**Korzyści:**
+- ✅ Eliminuje 500 errors (no VRAM overflow)
+- ✅ Szybsze (text model ~5s vs vision ~30s)
+- ✅ Nadal intelligent verification
+
+***
+
+### 2. **Prompt engineering dla lepszej ekstrakcji cen wagowych**
+
+**Problem:** Model ekstrahuje cenę/kg zamiast końcowej
+**Rozwiązanie:** Bardziej explicit prompt z EXAMPLE-ami
+
+```python
+# Ulepszone prompty w app/ocr.py
+
+OCR_PROMPT = """Analyze this Polish grocery store receipt image and extract ALL products with FINAL prices.
+
+🔴 CRITICAL - WEIGHTED PRODUCTS (kg/g):
+Receipt shows: ProductName  0.396 × 28.20 = 11.17
+               Rabat -3.29
+               7.88
+
+CORRECT extraction: {"nazwa": "ProductName", "cena": 7.88, "cena_przed": 11.17, "rabat": 3.29}
+❌ WRONG: {"cena": 28.20} - this is price PER KG, not what customer paid!
+❌ WRONG: {"cena": 11.17} - this is BEFORE discount, not final!
+
+RULE: For weighted items, ALWAYS use the LAST number in the product block.
+
+🔴 BIEDRONKA FORMAT (3-line products):
+Line 1: Mięs.SłoikKWMix280g  PTU B  1×  8.89  8.89
+Line 2:                      Rabat         -2.76
+Line 3:                                     6.14
+
+Extract: {"nazwa": "Mięs.SłoikKWMix280g", "cena": 6.14, "cena_przed": 8.89, "rabat": 2.76}
+
+The LAST number (6.14) is what customer paid = "cena".
+
+🟢 EXAMPLES FROM REAL RECEIPTS:
+
+Example 1 (weighted with discount):
+BoczWędzKraWęd  kg  PTU B  0.396×  28.20  11.17
+                           Rabat          -3.29
+                                           7.88
+→ {"nazwa": "BoczWędzKraWęd kg", "cena": 7.88, "cena_przed": 11.17, "rabat": 3.29}
+
+Example 2 (simple discount):
+Tagl Mar Pasta400g  PTU A  1×  4.99  4.99
+                           Rabat     -2.47
+→ {"nazwa": "Tagl Mar Pasta400g", "cena": 2.52, "cena_przed": 4.99, "rabat": 2.47}
+
+Example 3 (no discount):
+Mleko UHT 1.5% 1l  PTU A  1×  3.29  3.29
+→ {"nazwa": "Mleko UHT 1.5% 1l", "cena": 3.29}
+
+🟡 SUMMARY LINES TO IGNORE:
+- "Sprzedaż opodatkowana PTU A/B" - this is TAX, not a product
+- "Suma PLN 144.48" - this is TOTAL
+- "Karta płatnicza 144.48" - this is PAYMENT METHOD
+- "GOTÓWKA", "RESZTA", "WYDANO" - payment details
+
+📋 OUTPUT FORMAT:
+{
+  "products": [
+    {"nazwa": "product name", "cena": 7.88, "cena_przed": 11.17, "rabat": 3.29}
+  ],
+  "sklep": "store name",
+  "data": "YYYY-MM-DD",
+  "suma": 144.48
+}
+
+Rules:
+- "cena" = FINAL price (last number in block)
+- "cena_przed" = price before discount (optional)
+- "rabat" = discount amount as POSITIVE number (optional)
+- All prices use DOT as decimal separator (7.88 not 7,88)
+- Extract EVERY product - do not skip any
+- Return ONLY valid JSON (no markdown, no explanation)"""
+```
+
+**Korzyści:**
+- Więcej przykładów = lepsze zrozumienie
+- Visual formatting (emoji) przyciąga uwagę modelu
+- Concrete examples from real receipts
+
+***
+
+### 3. **Model caching + keep-alive dla vision model**
+
+**Problem:** Vision model jest unloadowany po każdym użyciu
+**Rozwiązanie:** Smart keep-alive + preloading
+
+```python
+# Modyfikacja w app/config.py
+
+class Settings(BaseSettings):
+    # ... existing ...
+    
+    # Vision model caching
+    VISION_MODEL_KEEP_ALIVE: str = "15m"  # Keep vision model loaded for 15 min
+    TEXT_MODEL_KEEP_ALIVE: str = "30m"    # Text model longer (used more often)
+    
+    # Preload models on startup
+    PRELOAD_MODELS_ON_STARTUP: bool = True
+
+
+# Modyfikacja w app/ocr.py - funkcja call_ollama
+
+async def call_ollama(
+    prompt: str,
+    image_base64: Optional[str] = None,
+    model: Optional[str] = None,
+    timeout: float = 300.0,
+    keep_alive: Optional[str] = None  # NEW PARAMETER
+) -> tuple[str, Optional[str]]:
+    """Call Ollama API with smart keep-alive."""
+    
+    model_name = model or settings.OCR_MODEL
+    
+    # Determine keep-alive based on model type
+    if keep_alive is None:
+        if image_base64:  # Vision model
+            keep_alive = settings.VISION_MODEL_KEEP_ALIVE
+        else:  # Text model
+            keep_alive = settings.TEXT_MODEL_KEEP_ALIVE
+    
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+        "keep_alive": keep_alive,  # ADD KEEP-ALIVE
+        "options": {
+            "temperature": 0.1,
+            "top_p": 0.8,
+            "top_k": 20,
+            "num_predict": 4096,
+            "num_ctx": 4096,
+        }
+    }
+
+    if image_base64:
+        payload["images"] = [image_base64]
+
+    # ... rest unchanged ...
+
+
+# USUŃ wszystkie wywołania unload_model() w main.py
+# Modele będą automatycznie unloadowane po keep_alive timeout
+
+# W main.py - startup event
+@app.on_event("startup")
+async def startup_event():
+    """Initialize and preload models."""
+    settings.ensure_directories()
+    logger.info("Smart Pantry Tracker started")
+    
+    if settings.PRELOAD_MODELS_ON_STARTUP:
+        logger.info("Preloading models...")
+        from app.ocr import call_ollama
+        
+        # Preload text model (lightweight)
+        await call_ollama(
+            "warmup", 
+            model=settings.CLASSIFIER_MODEL,
+            keep_alive=settings.TEXT_MODEL_KEEP_ALIVE
+        )
+        
+        logger.info(f"✓ Preloaded {settings.CLASSIFIER_MODEL}")
+        # Vision model loaded on-demand (heavy)
+    
+    await bot.start()
+```
+
+**Korzyści:**
+- -5-10s per request (no model loading time)
+- Vision model stays warm during active usage
+- Auto-cleanup after 15min inactivity
+
+***
+
+### 4. **Image pre-processing specyficzne dla vision models**
+
+**Problem:** Vision models mogą mieć problemy z low-quality scans
+**Rozwiązanie:** Lightweight preprocessing before base64 encoding
+
+```python
+# Nowy plik: app/vision_preprocessor.py
+
+import cv2
+import numpy as np
+from pathlib import Path
+from PIL import Image
+import logging
+
+logger = logging.getLogger(__name__)
+
+def preprocess_for_vision(image_path: Path) -> Path:
+    """
+    Lightweight preprocessing for vision models.
+    Vision models are better at handling noise than traditional OCR,
+    so we only do essential corrections.
+    """
+    try:
+        # Load image
+        img = cv2.imread(str(image_path))
+        
+        if img is None:
+            logger.warning(f"Failed to load image: {image_path}")
+            return image_path
+        
+        # 1. Resize if too large (vision models work better with 1024-2048px width)
+        height, width = img.shape[:2]
+        max_width = 2048
+        
+        if width > max_width:
+            scale = max_width / width
+            new_width = max_width
+            new_height = int(height * scale)
+            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+            logger.info(f"Resized image: {width}x{height} → {new_width}x{new_height}")
+        
+        # 2. Auto-contrast (CLAHE for better text visibility)
+        # Convert to LAB color space
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        
+        # Apply CLAHE to L channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        l = clahe.apply(l)
+        
+        # Merge back
+        lab = cv2.merge([l, a, b])
+        img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        
+        # 3. Light denoising (preserve text edges)
+        img = cv2.fastNlMeansDenoisingColored(img, None, h=6, hColor=6, templateWindowSize=7, searchWindowSize=21)
+        
+        # 4. Deskew only if significant angle
+        angle = detect_skew_angle(img)
+        if abs(angle) > 2.0:  # Only rotate if > 2 degrees
+            img = rotate_image(img, angle)
+            logger.info(f"Deskewed by {angle:.1f}°")
+        
+        # Save to temp file
+        temp_path = image_path.parent / f"{image_path.stem}_processed.jpg"
+        cv2.imwrite(str(temp_path), img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        
+        return temp_path
+    
+    except Exception as e:
+        logger.error(f"Preprocessing failed: {e}")
+        return image_path
+
+
+def detect_skew_angle(img: np.ndarray) -> float:
+    """Detect skew angle using Hough transform."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
+    
+    if lines is None:
+        return 0.0
+    
+    angles = []
+    for rho, theta in lines[:20]:
+        angle = np.degrees(theta) - 90
+        if abs(angle) < 45:
+            angles.append(angle)
+    
+    return np.median(angles) if angles else 0.0
+
+
+def rotate_image(img: np.ndarray, angle: float) -> np.ndarray:
+    """Rotate image by given angle."""
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(img, M, (w, h), 
+                          flags=cv2.INTER_CUBIC, 
+                          borderMode=cv2.BORDER_REPLICATE)
+```
+
+**Integracja w ocr.py:**
+
+```python
+from app.vision_preprocessor import preprocess_for_vision
+
+async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receipt], Optional[str]]:
+    """Extract with preprocessing."""
+    
+    if not image_path.exists():
+        return None, f"File not found: {image_path}"
+    
+    # PREPROCESS IMAGE
+    processed_path = preprocess_for_vision(image_path)
+    
+    try:
+        image_base64 = await encode_image(processed_path)
+    except Exception as e:
+        logger.error(f"Failed to encode image: {e}")
+        return None, f"Failed to read image: {e}"
+    finally:
+        # Cleanup temp file
+        if processed_path != image_path and processed_path.exists():
+            processed_path.unlink()
+    
+    # ... rest unchanged ...
+```
+
+**Korzyści:**
+- +10-20% accuracy dla low-quality scans
+- Resize → faster processing + less VRAM
+- Minimal overhead (~1-2s)
+
+***
+
+### 5. **Parallel multi-page processing dla vision model**
+
+**Problem:** 3-stronicowy PDF = 3× 90s = 4.5 min
+**Rozwiązanie:** Process 2 pages at a time (RTX 3060 może handle)
+
+```python
+# Modyfikacja w main.py
+
+async def _process_file(file_path: Path) -> ProcessingResult:
+    # ... existing PDF conversion ...
+    
+    if len(image_paths) > 1:
+        logger.info(f"Multi-page PDF: {len(image_paths)} pages, processing in parallel (max 2 concurrent)")
+        
+        # Semaphore: max 2 pages at once (avoid VRAM overflow)
+        # Vision model ~6GB VRAM each, so 2×6GB = 12GB (perfect fit)
+        semaphore = asyncio.Semaphore(2)
+        
+        async def process_page_safe(img_path, page_num):
+            async with semaphore:
+                logger.info(f"📄 Processing page {page_num}/{len(image_paths)}")
+                start_time = asyncio.get_event_loop().time()
+                
+                from app.ocr import extract_products_from_image
+                receipt, error = await extract_products_from_image(img_path)
+                
+                elapsed = asyncio.get_event_loop().time() - start_time
+                logger.info(f"✓ Page {page_num} done in {elapsed:.1f}s")
+                
+                return receipt, error, page_num
+        
+        # Launch all pages concurrently
+        tasks = [
+            process_page_safe(img, i+1) 
+            for i, img in enumerate(image_paths)
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Page processing failed: {result}")
+                continue
+            
+            receipt, error, page_num = result
+            
+            if receipt and receipt.products:
+                logger.info(f"Page {page_num}: {len(receipt.products)} products")
+                all_products.extend(receipt.products)
+                
+                if receipt.raw_text:
+                    all_raw_texts.append(receipt.raw_text)
+                
+                # Combine metadata
+                if combined_receipt is None:
+                    combined_receipt = receipt
+                else:
+                    if not combined_receipt.sklep and receipt.sklep:
+                        combined_receipt.sklep = receipt.sklep
+                    if not combined_receipt.data and receipt.data:
+                        combined_receipt.data = receipt.data
+    
+    else:
+        # Single page - process normally
+        from app.ocr import extract_products_from_image
+        receipt, error = await extract_products_from_image(image_paths[0])
+        # ... existing handling ...
+    
+    # ... rest of combining logic unchanged ...
+```
+
+**Korzyści:**
+- **~50% faster** dla multi-page PDF (4.5min → 2.5min)
+- Perfect fit dla RTX 3060 12GB (2×6GB)
+- Graceful error handling per page
+
+***
+
+### 6. **Smart caching wyników OCR**
+
+**Problem:** Reprocessing tego samego pliku trwa tak samo długo
+**Rozwiązanie:** Cache OCR results in Redis
+
+```python
+# Nowy plik: app/ocr_cache.py
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Optional
+import redis
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Redis connection
+try:
+    redis_client = redis.Redis(
+        host='localhost',
+        port=6379,
+        db=1,  # Use separate DB for OCR cache
+        decode_responses=True,
+        socket_connect_timeout=2
+    )
+    redis_client.ping()
+    CACHE_AVAILABLE = True
+    logger.info("OCR cache (Redis) available")
+except (redis.ConnectionError, redis.TimeoutError):
+    CACHE_AVAILABLE = False
+    logger.warning("OCR cache (Redis) not available - running without cache")
+
+
+def get_image_hash(image_path: Path) -> str:
+    """Calculate SHA256 hash of image file."""
+    sha256 = hashlib.sha256()
+    with open(image_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def get_cached_ocr(image_path: Path) -> Optional[dict]:
+    """Get cached OCR result if available."""
+    if not CACHE_AVAILABLE:
+        return None
+    
+    try:
+        image_hash = get_image_hash(image_path)
+        cache_key = f"ocr:vision:{image_hash}"
+        
+        cached = redis_client.get(cache_key)
+        if cached:
+            logger.info(f"✓ OCR cache HIT for {image_path.name}")
+            return json.loads(cached)
+        
+        logger.debug(f"OCR cache MISS for {image_path.name}")
+        return None
+    
+    except Exception as e:
+        logger.warning(f"Cache read failed: {e}")
+        return None
+
+
+def cache_ocr_result(image_path: Path, result: dict, ttl_hours: int = 24):
+    """Cache OCR result for future use."""
+    if not CACHE_AVAILABLE:
+        return
+    
+    try:
+        image_hash = get_image_hash(image_path)
+        cache_key = f"ocr:vision:{image_hash}"
+        
+        redis_client.setex(
+            cache_key,
+            ttl_hours * 3600,  # TTL in seconds
+            json.dumps(result)
+        )
+        
+        logger.info(f"✓ Cached OCR result for {image_path.name} (TTL: {ttl_hours}h)")
+    
+    except Exception as e:
+        logger.warning(f"Cache write failed: {e}")
+
+
+def invalidate_cache(image_path: Path):
+    """Invalidate cached result for specific image."""
+    if not CACHE_AVAILABLE:
+        return
+    
+    try:
+        image_hash = get_image_hash(image_path)
+        cache_key = f"ocr:vision:{image_hash}"
+        redis_client.delete(cache_key)
+        logger.info(f"✓ Invalidated cache for {image_path.name}")
+    except Exception as e:
+        logger.warning(f"Cache invalidation failed: {e}")
+```
+
+**Integracja w ocr.py:**
+
+```python
+from app.ocr_cache import get_cached_ocr, cache_ocr_result
+
+async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receipt], Optional[str]]:
+    """Extract with caching."""
+    
+    if not image_path.exists():
+        return None, f"File not found: {image_path}"
+    
+    # CHECK CACHE FIRST
+    cached = get_cached_ocr(image_path)
+    if cached:
+        # Rebuild receipt from cached data
+        receipt, _ = _build_receipt(cached, cached.get("raw_text", ""))
+        if receipt:
+            logger.info(f"🚀 Loaded from cache: {len(receipt.products)} products")
+            return receipt, None
+    
+    # ... existing OCR processing ...
+    
+    # Build receipt
+    receipt, build_error = _build_receipt(data, response_text)
+    
+    if receipt and not build_error:
+        # CACHE RESULT
+        cache_data = {
+            "products": [
+                {
+                    "nazwa": p.nazwa,
+                    "cena": p.cena,
+                    "cena_przed": p.cena_oryginalna,
+                    "rabat": p.rabat
+                }
+                for p in receipt.products
+            ],
+            "sklep": receipt.sklep,
+            "data": receipt.data,
+            "suma": receipt.suma,
+            "raw_text": response_text
+        }
+        cache_ocr_result(image_path, cache_data, ttl_hours=48)
+    
+    return receipt, build_error
+```
+
+**Docker Compose - Redis (jeśli jeszcze nie masz):**
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+volumes:
+  redis_data:
+```
+
+**Korzyści:**
+- **Instant** reprocessing (cache hit = 0.1s vs 90s)
+- Szczególnie użyteczne dla Telegram bota (users często retry)
+- 48h TTL = reasonable cache size
+
+***
+
+## 📊 Podsumowanie optymalizacji dla Vision Model
+
+| Optymalizacja | Szybkość | Dokładność | VRAM | Priorytet |
+|---------------|----------|------------|------|-----------|
+| 1. Text-only verification | 0% | +5-10% | ✅ Fix 500 errors | 🔴 KRYTYCZNY |
+| 2. Better prompts (examples) | 0% | +15-20% | 0 | 🔴 WYSOKI |
+| 3. Model keep-alive | +20-30% | 0% | 0 | 🟡 ŚREDNI |
+| 4. Image preprocessing | +5% | +10-15% | 0 | 🟡 ŚREDNI |
+| 5. Parallel multi-page | +50% | 0% | Same (2×6GB) | 🟢 NICE TO HAVE |
+| 6. Redis caching | +99% (cache hit) | 0% | 0 | 🟢 NICE TO HAVE |
+
+***
+
+## 🚀 Quick implementation plan
+
+### **Faza 1: Critical fixes (1-2h)**
+
+```bash
+# 1. Fix verification VRAM overflow
+# Edit app/ocr.py: _verify_extraction → text-only
+
+# 2. Better prompts
+# Edit app/ocr.py: OCR_PROMPT → add examples
+
+# 3. Model keep-alive
+# Edit app/config.py: add VISION_MODEL_KEEP_ALIVE
+# Edit app/ocr.py: call_ollama → add keep_alive parameter
+# Edit app/main.py: remove unload_model() calls
+```
+
+### **Faza 2: Performance boost (2-3h)**
+
+```bash
+# 4. Image preprocessing
+# Add requirements.txt: opencv-python
+# Create app/vision_preprocessor.py
+# Edit app/ocr.py: add preprocess_for_vision()
+
+# 5. Parallel processing
+# Edit app/main.py: add semaphore + asyncio.gather()
+```
+
+### **Faza 3: Advanced (optional, 2-3h)**
+
+```bash
+# 6. Redis caching
+# Edit docker-compose.yml: add redis service
+# Create app/ocr_cache.py
+# Edit app/ocr.py: add caching calls
+```
+
+***
+
+## 🎯 Expected results po implementacji
+
+**Przed optymalizacją:**
+- 3-stronicowy PDF: ~4.5 min (3×90s)
+- VRAM errors: 500 podczas verification
+- Ceny wagowe: często błędne
+- Reprocessing: zawsze full 90s
+
+**Po optymalizacji:**
+- 3-stronicowy PDF: ~2.5 min (parallel)
+- VRAM errors: eliminated (text-only verification)
+- Ceny wagowe: +20% accuracy (better prompts)
+- Reprocessing: <1s (cache hit)
+- Keep-alive: -10s per request (no loading time)
+
