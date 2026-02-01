@@ -52,14 +52,15 @@ Receipt (photo/PDF) → OCR → Validation → [Review?] → Categorization → 
 
 1. **`app/main.py`** - FastAPI endpoints receive image/PDF uploads, parallel PDF processing
 2. **`app/pdf_converter.py`** - Converts PDF to PNG images (one per page) using pdf2image
-3. **`app/ocr.py`** / **`app/paddle_ocr.py`** - OCR extraction (vision model or PaddleOCR hybrid)
-4. **`app/store_prompts.py`** - Store-specific LLM prompts for accurate extraction
-5. **`app/price_fixer.py`** - Post-processor: detects suspicious prices (unit price vs final)
-6. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
-7. **`app/db/`** - PostgreSQL database layer with SQLAlchemy async ORM
-8. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
-9. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
-10. **`app/services/obsidian_sync.py`** - Regenerates vault from database
+3. **`app/ocr.py`** / **`app/paddle_ocr.py`** / **`app/deepseek_ocr.py`** - OCR extraction backends
+4. **`app/ollama_client.py`** - Shared HTTP client with connection pooling for all Ollama API calls
+5. **`app/store_prompts.py`** - Store-specific LLM prompts for accurate extraction
+6. **`app/price_fixer.py`** - Post-processor: detects suspicious prices (unit price vs final)
+7. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
+8. **`app/db/`** - PostgreSQL database layer with SQLAlchemy async ORM
+9. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
+10. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
+11. **`app/services/obsidian_sync.py`** - Regenerates vault from database
 
 Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → **Price Fixer** → validation → normalization → categorization → **PostgreSQL** + `vault/`
 
@@ -370,6 +371,7 @@ class DiscountDetail(BaseModel):
 OLLAMA_BASE_URL=http://host.docker.internal:11434  # Ollama API
 OCR_MODEL=deepseek-ocr                              # Vision model for OCR (deepseek-ocr recommended)
 OCR_BACKEND=deepseek                                # "deepseek" (recommended), "vision", or "paddle"
+OCR_FALLBACK_MODEL=qwen3-vl:8b                      # Fallback vision model when DeepSeek-OCR fails
 STRUCTURING_MODEL=qwen2.5:7b                        # LLM for JSON structuring (deepseek backend)
 CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model (primary)
 CLASSIFIER_MODEL_B=gpt-oss:20b                      # A/B test model (optional)
@@ -410,7 +412,7 @@ Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30
 
 | Backend | Speed | Accuracy | Notes |
 |---------|-------|----------|-------|
-| **`deepseek`** (DeepSeek-OCR + LLM) | **~20s** | **Best** | **Recommended.** Fast + accurate. Uses separate models for OCR and structuring |
+| **`deepseek`** (DeepSeek-OCR + LLM) | **~15s** | **Best** | **Recommended.** Fast + accurate. Combined structuring + categorization. Has fallback if loops |
 | `vision` (qwen2.5vl:7b) | ~4 min | Best | Single model, slower but accurate |
 | `paddle` (PaddleOCR + LLM) | ~11s | Good | Fastest but less accurate for complex receipts |
 
@@ -421,7 +423,7 @@ Set via `OCR_BACKEND=deepseek` (recommended), `OCR_BACKEND=vision`, or `OCR_BACK
 The `deepseek` backend uses a two-model pipeline for optimal speed and accuracy:
 
 ```
-Image → DeepSeek-OCR (~10-15s) → Raw Text → qwen2.5:7b (~7s) → JSON
+Image → DeepSeek-OCR (~6-10s) → Raw Text → qwen2.5:7b (~7s) → JSON + Categories
                                     ↓
                          Preserve layout prompt
                          (keeps prices with products)
@@ -432,18 +434,21 @@ Image → DeepSeek-OCR (~10-15s) → Raw Text → qwen2.5:7b (~7s) → JSON
 OCR_MODEL=deepseek-ocr          # Fast vision model for text extraction
 OCR_BACKEND=deepseek            # Enable deepseek pipeline
 STRUCTURING_MODEL=qwen2.5:7b    # LLM for JSON structuring (optional, defaults to CLASSIFIER_MODEL)
+OCR_FALLBACK_MODEL=qwen3-vl:8b  # Fallback when DeepSeek-OCR fails (default: qwen3-vl:8b)
 ```
 
 **Key features:**
 - Uses `/api/chat` endpoint for DeepSeek-OCR (not `/api/generate`)
 - "Preserve layout" prompt keeps product names and prices together
+- **Combined structuring + categorization** in single LLM call (saves ~7s)
+- **Connection pooling** via `ollama_client.py` (saves ~100ms per request)
 - Output limited with `num_predict=2048` to prevent infinite loops
-- Falls back gracefully on DeepSeek-OCR "Backgrounds" bug
+- Automatic **fallback to vision backend** when DeepSeek-OCR fails (loops, timeout)
 
 **Performance comparison:**
 | Pipeline | Time | Notes |
 |----------|------|-------|
-| DeepSeek-OCR + qwen2.5:7b | **20s** | Recommended |
+| DeepSeek-OCR + qwen2.5:7b | **13-17s** | Recommended (optimized with combined structuring + categorization) |
 | DeepSeek-OCR + gpt-oss | 95s | More accurate but much slower |
 | qwen3-vl:8b (single model) | 80s | Slower, thinking mode issues |
 
@@ -729,3 +734,17 @@ curl -X POST http://localhost:8000/obsidian/sync/all
 - **Cause:** Was models unloaded after every request
 - **Solution:** `VISION_MODEL_KEEP_ALIVE=10m`, `TEXT_MODEL_KEEP_ALIVE=30m`
 - **Low VRAM:** Set `UNLOAD_MODELS_AFTER_USE=true` to revert to old behavior
+
+### DeepSeek-OCR enters infinite repetition loop
+- **Status:** MITIGATED - System detects and falls back to vision backend
+- **Symptom:** Logs show "DeepSeek-OCR n-gram repetition detected" or patterns like "Backgrounds" repeated many times
+- **Cause:** Known DeepSeek-OCR bug on some images (complex layouts, multilingual text)
+- **Solution 1:** Ensure fallback model is installed: `ollama pull qwen3-vl:8b`
+- **Solution 2:** Set different fallback: `OCR_FALLBACK_MODEL=qwen2.5vl:7b`
+- **Relevant code:** `app/deepseek_ocr.py:_detect_repetition()` detects loops, triggers fallback
+
+### DeepSeek fallback returns 500 error
+- **Symptom:** "Ollama error: Server error '500 Internal Server Error'" in fallback
+- **Cause:** Fallback model not installed (default: `qwen3-vl:8b`)
+- **Solution:** Install the fallback model: `ollama pull qwen3-vl:8b`
+- **Alternative:** Change fallback to installed model: `OCR_FALLBACK_MODEL=minicpm-v`
