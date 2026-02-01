@@ -368,8 +368,9 @@ class DiscountDetail(BaseModel):
 
 ```bash
 OLLAMA_BASE_URL=http://host.docker.internal:11434  # Ollama API
-OCR_MODEL=qwen2.5vl:7b                              # Vision model for OCR
-OCR_BACKEND=vision                                  # "vision" (LLM-based) or "paddle" (PaddleOCR + LLM)
+OCR_MODEL=deepseek-ocr                              # Vision model for OCR (deepseek-ocr recommended)
+OCR_BACKEND=deepseek                                # "deepseek" (recommended), "vision", or "paddle"
+STRUCTURING_MODEL=qwen2.5:7b                        # LLM for JSON structuring (deepseek backend)
 CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model (primary)
 CLASSIFIER_MODEL_B=gpt-oss:20b                      # A/B test model (optional)
 CLASSIFIER_AB_MODE=primary                          # "primary", "secondary", or "both"
@@ -395,8 +396,12 @@ PDF_MAX_PARALLEL_PAGES=2                            # Concurrent pages for multi
 ## Ollama Models Required
 
 ```bash
-ollama pull qwen2.5vl:7b    # OCR extraction (recommended, 6GB, requires num_ctx=4096)
-ollama pull qwen2.5:7b      # Product categorization
+# Recommended (deepseek pipeline - fastest + accurate)
+ollama pull deepseek-ocr    # Fast OCR extraction (6.7GB)
+ollama pull qwen2.5:7b      # Structuring + categorization (4.7GB)
+
+# Alternative (vision backend - slower but single model)
+ollama pull qwen2.5vl:7b    # OCR extraction (6GB, requires num_ctx=4096)
 ```
 
 Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30m by default). Set `UNLOAD_MODELS_AFTER_USE=true` for low VRAM systems.
@@ -405,10 +410,42 @@ Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30
 
 | Backend | Speed | Accuracy | Notes |
 |---------|-------|----------|-------|
-| `vision` (qwen2.5vl:7b) | **~4 min** | Best | Recommended. 3/3 success, 24 products extracted |
-| `paddle` (PaddleOCR + LLM) | ~11s | Good | Faster but less accurate for complex receipts |
+| **`deepseek`** (DeepSeek-OCR + LLM) | **~20s** | **Best** | **Recommended.** Fast + accurate. Uses separate models for OCR and structuring |
+| `vision` (qwen2.5vl:7b) | ~4 min | Best | Single model, slower but accurate |
+| `paddle` (PaddleOCR + LLM) | ~11s | Good | Fastest but less accurate for complex receipts |
 
-Set via `OCR_BACKEND=vision` or `OCR_BACKEND=paddle` in docker-compose.yml.
+Set via `OCR_BACKEND=deepseek` (recommended), `OCR_BACKEND=vision`, or `OCR_BACKEND=paddle` in docker-compose.yml.
+
+### DeepSeek Pipeline (OCR_BACKEND=deepseek)
+
+The `deepseek` backend uses a two-model pipeline for optimal speed and accuracy:
+
+```
+Image → DeepSeek-OCR (~10-15s) → Raw Text → qwen2.5:7b (~7s) → JSON
+                                    ↓
+                         Preserve layout prompt
+                         (keeps prices with products)
+```
+
+**Configuration:**
+```bash
+OCR_MODEL=deepseek-ocr          # Fast vision model for text extraction
+OCR_BACKEND=deepseek            # Enable deepseek pipeline
+STRUCTURING_MODEL=qwen2.5:7b    # LLM for JSON structuring (optional, defaults to CLASSIFIER_MODEL)
+```
+
+**Key features:**
+- Uses `/api/chat` endpoint for DeepSeek-OCR (not `/api/generate`)
+- "Preserve layout" prompt keeps product names and prices together
+- Output limited with `num_predict=2048` to prevent infinite loops
+- Falls back gracefully on DeepSeek-OCR "Backgrounds" bug
+
+**Performance comparison:**
+| Pipeline | Time | Notes |
+|----------|------|-------|
+| DeepSeek-OCR + qwen2.5:7b | **20s** | Recommended |
+| DeepSeek-OCR + gpt-oss | 95s | More accurate but much slower |
+| qwen3-vl:8b (single model) | 80s | Slower, thinking mode issues |
 
 ### Vision Model Notes (OCR_BACKEND=vision)
 

@@ -29,11 +29,14 @@ services:
       - paddleocr_cache:/root/.paddleocr
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OCR_MODEL=qwen2.5vl:7b
-      - OCR_BACKEND=paddle
+      # DeepSeek pipeline: fast OCR + LLM structuring (~20s total)
+      - OCR_MODEL=deepseek-ocr
+      - OCR_BACKEND=deepseek
+      - STRUCTURING_MODEL=qwen2.5:7b
       - CLASSIFIER_MODEL=qwen2.5:7b
-      - CLASSIFIER_MODEL_B=gpt-oss:20b
-      - CLASSIFIER_AB_MODE=both
+      # A/B testing (optional)
+      # - CLASSIFIER_MODEL_B=gpt-oss:20b
+      # - CLASSIFIER_AB_MODE=both
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - BOT_ENABLED=true

@@ -27,9 +27,11 @@ from app.services.obsidian_sync import obsidian_sync
 from prometheus_fastapi_instrumentator import Instrumentator
 from app.telegram.bot import bot
 
-# Import PaddleOCR backend if configured
+# Import alternative OCR backends if configured
 if settings.OCR_BACKEND == "paddle":
     from app.paddle_ocr import extract_products_paddle, extract_total_from_text
+elif settings.OCR_BACKEND == "deepseek":
+    from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -200,6 +202,8 @@ async def _process_single_page(
         # Use configured OCR backend
         if settings.OCR_BACKEND == "paddle":
             receipt, ocr_error = await extract_products_paddle(image_path)
+        elif settings.OCR_BACKEND == "deepseek":
+            receipt, ocr_error = await extract_products_deepseek(image_path, is_multi_page=is_multi_page)
         else:
             receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
@@ -246,6 +250,8 @@ async def _process_pages_sequential(
         # Use configured OCR backend
         if settings.OCR_BACKEND == "paddle":
             receipt, ocr_error = await extract_products_paddle(image_path)
+        elif settings.OCR_BACKEND == "deepseek":
+            receipt, ocr_error = await extract_products_deepseek(image_path, is_multi_page=is_multi_page)
         else:
             receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 

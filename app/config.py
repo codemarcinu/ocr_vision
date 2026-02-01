@@ -34,8 +34,12 @@ class Settings:
     # "secondary" - use CLASSIFIER_MODEL_B as primary
     # "both" - run both, use primary, log comparison
 
-    # OCR backend: "vision" (LLM vision model) or "paddle" (PaddleOCR + LLM)
+    # OCR backend: "vision" (LLM vision model), "paddle" (PaddleOCR + LLM), or "deepseek" (DeepSeek-OCR + LLM)
     OCR_BACKEND: str = os.getenv("OCR_BACKEND", "vision")
+
+    # Structuring model for deepseek backend (converts OCR text to JSON)
+    # If not set, uses CLASSIFIER_MODEL
+    STRUCTURING_MODEL: str = os.getenv("STRUCTURING_MODEL", "")
 
     # Model keep-alive settings (how long to keep models loaded in memory)
     # Vision models use more VRAM, so shorter keep-alive
