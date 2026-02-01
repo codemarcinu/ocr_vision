@@ -371,7 +371,7 @@ class DiscountDetail(BaseModel):
 OLLAMA_BASE_URL=http://host.docker.internal:11434  # Ollama API
 OCR_MODEL=deepseek-ocr                              # Vision model for OCR (deepseek-ocr recommended)
 OCR_BACKEND=deepseek                                # "deepseek" (recommended), "vision", or "paddle"
-OCR_FALLBACK_MODEL=qwen3-vl:8b                      # Fallback vision model when DeepSeek-OCR fails
+OCR_FALLBACK_MODEL=qwen2.5vl:7b                     # Fallback vision model when DeepSeek-OCR fails
 STRUCTURING_MODEL=qwen2.5:7b                        # LLM for JSON structuring (deepseek backend)
 CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model (primary)
 CLASSIFIER_MODEL_B=gpt-oss:20b                      # A/B test model (optional)
@@ -401,6 +401,7 @@ PDF_MAX_PARALLEL_PAGES=2                            # Concurrent pages for multi
 # Recommended (deepseek pipeline - fastest + accurate)
 ollama pull deepseek-ocr    # Fast OCR extraction (6.7GB)
 ollama pull qwen2.5:7b      # Structuring + categorization (4.7GB)
+ollama pull qwen2.5vl:7b    # Fallback for when DeepSeek-OCR fails (6GB)
 
 # Alternative (vision backend - slower but single model)
 ollama pull qwen2.5vl:7b    # OCR extraction (6GB, requires num_ctx=4096)
@@ -434,7 +435,7 @@ Image → DeepSeek-OCR (~6-10s) → Raw Text → qwen2.5:7b (~7s) → JSON + Cat
 OCR_MODEL=deepseek-ocr          # Fast vision model for text extraction
 OCR_BACKEND=deepseek            # Enable deepseek pipeline
 STRUCTURING_MODEL=qwen2.5:7b    # LLM for JSON structuring (optional, defaults to CLASSIFIER_MODEL)
-OCR_FALLBACK_MODEL=qwen3-vl:8b  # Fallback when DeepSeek-OCR fails (default: qwen3-vl:8b)
+OCR_FALLBACK_MODEL=qwen2.5vl:7b # Fallback when DeepSeek-OCR fails (default: qwen2.5vl:7b)
 ```
 
 **Key features:**
@@ -459,9 +460,9 @@ OCR_FALLBACK_MODEL=qwen3-vl:8b  # Fallback when DeepSeek-OCR fails (default: qwe
 | **`qwen2.5vl:7b`** | 6.0GB | **Best** | Default. 3/3 success, requires num_ctx=4096. 76% GPU + 24% CPU offload on 12GB |
 | `qwen2.5vl:3b` | 3.2GB | Partial | Niestabilny, błędy GGML na niektórych obrazach |
 | `llama3.2-vision` | 7.8GB | Partial | 2/3 success, może odmówić przetwarzania |
-| `qwen3-vl:8b` | 6.1GB | Avoid | Thinking mode - odpowiedź w polu `thinking` zamiast `content` |
+| `qwen3-vl:8b` | 6.1GB | Avoid | Thinking mode - odpowiedź w polu `thinking` zamiast `content` (obsługa dodana w app/ocr.py) |
 | `minicpm-v` | 5.5GB | Fallback | Działa, ale mniej dokładny niż qwen2.5vl |
-| `deepseek-ocr` | 6.7GB | Broken | Ollama 0.14+ bug: "SameBatch" error |
+| `deepseek-ocr` | 6.7GB | Issues | Ollama 0.15+: czasami zwraca puste odpowiedzi dla obrazów, fallback do qwen2.5vl:7b |
 
 ### Classifier A/B Testing
 
@@ -735,16 +736,31 @@ curl -X POST http://localhost:8000/obsidian/sync/all
 - **Solution:** `VISION_MODEL_KEEP_ALIVE=10m`, `TEXT_MODEL_KEEP_ALIVE=30m`
 - **Low VRAM:** Set `UNLOAD_MODELS_AFTER_USE=true` to revert to old behavior
 
+### DeepSeek-OCR returns empty response
+- **Status:** FIXED - Automatic fallback to qwen2.5vl:7b
+- **Symptom:** Logs show "DeepSeek-OCR returned empty response" with `eval_count: 1`
+- **Cause:** Bug in deepseek-ocr model (Ollama 0.15+) - generates only 1 token for images
+- **Solution:** System automatically falls back to `qwen2.5vl:7b` for both single images and multipage PDFs
+- **Fallback model:** `ollama pull qwen2.5vl:7b` (must be installed)
+- **Relevant code:** `app/deepseek_ocr.py:ocr_page_only()` and `extract_products_deepseek()`
+
 ### DeepSeek-OCR enters infinite repetition loop
 - **Status:** MITIGATED - System detects and falls back to vision backend
 - **Symptom:** Logs show "DeepSeek-OCR n-gram repetition detected" or patterns like "Backgrounds" repeated many times
 - **Cause:** Known DeepSeek-OCR bug on some images (complex layouts, multilingual text)
-- **Solution 1:** Ensure fallback model is installed: `ollama pull qwen3-vl:8b`
-- **Solution 2:** Set different fallback: `OCR_FALLBACK_MODEL=qwen2.5vl:7b`
+- **Solution:** Ensure fallback model is installed: `ollama pull qwen2.5vl:7b`
 - **Relevant code:** `app/deepseek_ocr.py:_detect_repetition()` detects loops, triggers fallback
+
+### qwen3-vl:8b returns empty content
+- **Status:** FIXED - System reads from `thinking` field
+- **Symptom:** `response.message.content` is empty, but `response.message.thinking` contains the answer
+- **Cause:** qwen3-vl uses "thinking mode" by default
+- **Solution:** Code in `app/ocr.py:call_ollama()` now reads from `thinking` field when `content` is empty
+- **Recommendation:** Use `qwen2.5vl:7b` instead (no thinking mode issues)
 
 ### DeepSeek fallback returns 500 error
 - **Symptom:** "Ollama error: Server error '500 Internal Server Error'" in fallback
-- **Cause:** Fallback model not installed (default: `qwen3-vl:8b`)
+- **Cause:** Fallback model not installed (default: `qwen2.5vl:7b`)
+- **Solution:** Install the fallback model: `ollama pull qwen2.5vl:7b`
 - **Solution:** Install the fallback model: `ollama pull qwen3-vl:8b`
 - **Alternative:** Change fallback to installed model: `OCR_FALLBACK_MODEL=minicpm-v`
