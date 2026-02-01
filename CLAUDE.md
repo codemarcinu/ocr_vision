@@ -151,13 +151,18 @@ Different stores have different receipt formats. The system detects the store fr
 For PDFs with multiple pages (e.g., long receipts):
 1. Pages are converted to PNG images
 2. **Parallel processing**: Pages are OCR'd concurrently (controlled by `PDF_MAX_PARALLEL_PAGES`)
-3. Products from all pages are **combined** into a single Receipt
-4. **Raw text from all pages is merged** to extract the final payment total
-5. Payment info (e.g., "Karta płatnicza 144.48") is typically on the last page
+3. **Per-page verification is SKIPPED** (to prevent corrupting totals with partial page sums)
+4. Products from all pages are **combined** into a single Receipt
+5. **Total extraction priority**:
+   - Try regex extraction from combined raw text (for paddle backend)
+   - Fall back to suma from last page (for vision backend)
+   - Fall back to calculated sum of all products
 6. Total is validated against sum of all products
 7. Temp images are cleaned up after processing
 
 **Performance**: With `PDF_MAX_PARALLEL_PAGES=2`, a 3-page PDF processes in ~2.5 min instead of ~4.5 min.
+
+**Important**: Per-page verification is disabled for multi-page PDFs because each page only contains partial products. Verification would "fix" the total to the partial sum, which is incorrect.
 
 ### Human-in-the-Loop Validation
 
@@ -456,17 +461,24 @@ curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.jpg" | jq '
 - **Solution:** `_verify_extraction()` uses `qwen2.5:7b` text model with raw OCR text
 
 ### Vision OCR: Unit prices instead of final prices
-- **Status:** IMPROVED - Enhanced prompts + price fixer
+- **Status:** FIXED - Lower threshold for weighted products
 - **Symptom:** Weighted products (kg) show per-kg price, not total
 - **Solution 1:** OCR prompt has ASCII-art examples showing correct price extraction
-- **Solution 2:** `price_fixer.py` flags suspicious prices (>40 PLN) with warnings
-- **Check logs:** `grep -i "price warning" pantry-api`
+- **Solution 2:** `price_fixer.py` flags suspicious prices with lower threshold (15 PLN) for weighted products
+- **Check logs:** `grep -i "price warning\|Likely unit price" pantry-api`
 
 ### Vision OCR: Summary page products
+- **Status:** FIXED - Generic names filter
 - **Symptom:** Fake products like `product1: 48.16 zł`
 - **Cause:** Last page (payment summary) being parsed as products
-- **Fix:** Summary page detection (< 150 chars) should skip these
-- **Fallback:** Filter catches generic names and suspicious prices
+- **Solution 1:** Summary page detection (< 150 chars) skips these pages
+- **Solution 2:** Generic names filter (regex) catches `product\d*`, `item\d*`, etc.
+
+### Vision OCR: Multi-page PDF wrong total
+- **Status:** FIXED - Per-page verification disabled
+- **Symptom:** Total shows first page sum (e.g., 64.17) instead of full receipt (144.48)
+- **Cause:** Was running verification per-page, which "fixed" total to partial sum
+- **Solution:** `is_multi_page=True` skips per-page verification; uses last page suma
 
 ### Vision OCR: Slow processing (~90s/page)
 - **Status:** IMPROVED - Parallel processing for multi-page PDFs
