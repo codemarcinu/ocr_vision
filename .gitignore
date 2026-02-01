@@ -56,3 +56,6 @@ nul
 *.log
 .DS_Store
 Thumbs.db
+
+# Windows Zone.Identifier metadata files
+*:Zone.Identifier
