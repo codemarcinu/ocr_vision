@@ -1,0 +1,101 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Słownik normalizacji nazw sklepów - mapuje różne warianty na znormalizowaną nazwę"
+  },
+  "stores": {
+    "Lidl": [
+      "lidl",
+      "li dl",
+      "lidl sp",
+      "lidl polska",
+      "lidl sp.",
+      "lidl radomskiego",
+      "lidl sp. z o.o",
+      "lidl sp. zo.o"
+    ],
+    "Biedronka": [
+      "biedronka",
+      "biedronka s.a",
+      "biedronka sp",
+      "jeronimo martins",
+      "jeronimo",
+      "jmp s.a"
+    ],
+    "Żabka": [
+      "żabka",
+      "zabka",
+      "żabka polska"
+    ],
+    "Kaufland": [
+      "kaufland",
+      "kaufland polska",
+      "kaufland.pl"
+    ],
+    "Auchan": [
+      "auchan",
+      "auchan polska",
+      "auchan hipermarket"
+    ],
+    "Carrefour": [
+      "carrefour",
+      "carrefour polska",
+      "carrefour express"
+    ],
+    "Netto": [
+      "netto",
+      "netto polska"
+    ],
+    "Dino": [
+      "dino",
+      "dino polska"
+    ],
+    "Lewiatan": [
+      "lewiatan",
+      "psh lewiatan"
+    ],
+    "Polo Market": [
+      "polo market",
+      "polomarket"
+    ],
+    "Intermarché": [
+      "intermarche",
+      "intermarché"
+    ],
+    "Stokrotka": [
+      "stokrotka"
+    ],
+    "Freshmarket": [
+      "freshmarket",
+      "fresh market"
+    ],
+    "Społem": [
+      "spolem",
+      "społem",
+      "pss społem"
+    ],
+    "Chata Polska": [
+      "chata polska"
+    ],
+    "Makro": [
+      "makro",
+      "makro cash"
+    ],
+    "Selgros": [
+      "selgros",
+      "selgros cash"
+    ],
+    "Rossmann": [
+      "rossmann"
+    ],
+    "Hebe": [
+      "hebe"
+    ],
+    "Action": [
+      "action"
+    ],
+    "Pepco": [
+      "pepco"
+    ]
+  }
+}

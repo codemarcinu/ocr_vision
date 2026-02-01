@@ -1,0 +1,58 @@
+# Environment and secrets
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# Personal data - receipts and output
+paragony/inbox/*
+paragony/processed/*
+vault/paragony/*
+vault/logs/*
+vault/*.md
+!vault/.gitkeep
+!vault/paragony/.gitkeep
+!vault/logs/.gitkeep
+!paragony/inbox/.gitkeep
+!paragony/processed/.gitkeep
+
+# Test files with personal receipts
+do testów/
+
+# Validation files
+WALIDACJA/
+
+# Personal notes (remove if you want to include them)
+brief.md
+specyfikacja
+opis
+"\#*Doskonale*.md"
+
+# Misc
+nul
+*.log
+.DS_Store
+Thumbs.db

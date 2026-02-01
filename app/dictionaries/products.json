@@ -1,0 +1,1411 @@
+{
+  "metadata": {
+    "version": "2.0",
+    "created": "2026-01-31T15:50:38.262005",
+    "updated": "2026-01-31T18:00:00.000000",
+    "description": "Rozszerzony słownik normalizacyjny produktów dla polskich sklepów",
+    "categories": [
+      "nabiał",
+      "mięso",
+      "wędliny",
+      "ryby",
+      "warzywa",
+      "owoce",
+      "napoje",
+      "alkohol",
+      "piekarnia",
+      "słodycze",
+      "przekąski",
+      "konserwy",
+      "makarony",
+      "przyprawy",
+      "mrożonki",
+      "dania_gotowe",
+      "chemia",
+      "kosmetyki",
+      "dla_dzieci",
+      "dla_zwierząt"
+    ],
+    "stores": ["Lidl", "Biedronka", "Kaufland", "Auchan", "Żabka", "Carrefour", "Netto", "Dino"]
+  },
+  "nabiał": {
+    "category_id": "NAB",
+    "description": "Produkty mleczne",
+    "products": [
+      {
+        "raw_names": ["Mleko UHT 3,2%", "Mleko świeże 2%", "Mleko 3.2%", "Mleko pełne", "Mleko 1L", "MLEKO UHT", "Mleko Łaciate", "Mleko Mlekovita"],
+        "normalized_name": "mleko",
+        "default_unit": "l",
+        "typical_price_pln": 4.49
+      },
+      {
+        "raw_names": ["Jogurt naturalny", "Jogurt gęsty", "Jogurt Fruvita", "Jogurt Mix", "Jogurt śmietankowy", "Jogurt 370g", "Jogurt grecki", "Jogurt pitny"],
+        "normalized_name": "jogurt",
+        "default_unit": "g",
+        "typical_price_pln": 2.29
+      },
+      {
+        "raw_names": ["Ser żółty", "Ser w plastrach", "Ser Kasztelan", "Ser Królewski", "Ser plastry", "Ser topiony", "Ser top.plastr", "Ser gouda", "Ser edamski", "Ser tylżycki"],
+        "normalized_name": "ser żółty",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Ser biały", "Ser twarogowy", "Twaróg", "Twaróg półtłusty", "Twaróg chudy", "Serek wiejski", "Almette"],
+        "normalized_name": "twaróg",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Skyr", "Skyr jogurt", "Skyr Danio", "Skyr Piątnica", "Skyr pitny", "Skyr 150g"],
+        "normalized_name": "skyr",
+        "default_unit": "g",
+        "typical_price_pln": 2.49
+      },
+      {
+        "raw_names": ["Masło", "Masło 200g", "Masło 250g", "Masło naturalne", "Masło Extra", "Masło Łaciate", "Kerrygold"],
+        "normalized_name": "masło",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Śmietana 18%", "Śmietana 30%", "Śmietana 12%", "Śmietanka", "Śmietana kuchenna", "Śmietana łowicka", "Smietana"],
+        "normalized_name": "śmietana",
+        "default_unit": "ml",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Jaja", "Jaja świeże", "Jaja M", "Jaja L", "Jaja kurze", "Jaja 10szt", "Jajka", "Jajka świeże"],
+        "normalized_name": "jaja",
+        "default_unit": "szt",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Serek homogenizowany", "Serek waniliowy", "Serek Danio", "Serek Monte", "Serek Frużelok", "Serek truskawkowy"],
+        "normalized_name": "serek",
+        "default_unit": "g",
+        "typical_price_pln": 2.49
+      },
+      {
+        "raw_names": ["Kefir", "Kefir naturalny", "Kefir 1%", "Kefir 2%", "Maślanka"],
+        "normalized_name": "kefir",
+        "default_unit": "ml",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Ser feta", "Feta", "Ser sałatkowy", "Ser grecki"],
+        "normalized_name": "ser feta",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Ser mozzarella", "Mozzarella", "Mozzarella mini", "Ser do pizzy"],
+        "normalized_name": "mozzarella",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Ser pleśniowy", "Ser brie", "Ser camembert", "Ser z niebieską pleśnią", "Gorgonzola"],
+        "normalized_name": "ser pleśniowy",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      }
+    ]
+  },
+  "mięso": {
+    "category_id": "MIE",
+    "description": "Świeże mięso",
+    "products": [
+      {
+        "raw_names": ["Mięso mielone", "Mielone wieprzowe", "Mielone wołowe", "Farsz mielony", "Mielonka", "Mięso miel."],
+        "normalized_name": "mięso mielone",
+        "default_unit": "g",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Schab", "Schab wieprzowy", "Schab bez kości", "Schab 1kg", "Polski schab"],
+        "normalized_name": "schab",
+        "default_unit": "g",
+        "typical_price_pln": 24.99
+      },
+      {
+        "raw_names": ["Filet z kurczaka", "Pierś kurczaka", "Kurczak filet", "Filet drobiowy", "Pierś z kurczaka"],
+        "normalized_name": "filet z kurczaka",
+        "default_unit": "g",
+        "typical_price_pln": 26.99
+      },
+      {
+        "raw_names": ["Udko z kurczaka", "Ćwiartka kurczaka", "Kurczak ćwiartka", "Udka kurczaka", "Pałki kurczaka"],
+        "normalized_name": "udko z kurczaka",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Karkówka", "Karkówka wieprzowa", "Kark wieprzowy", "Karczek"],
+        "normalized_name": "karkówka",
+        "default_unit": "g",
+        "typical_price_pln": 19.99
+      },
+      {
+        "raw_names": ["Żeberka", "Żeberka wieprzowe", "Żeberka paski", "Zeberka"],
+        "normalized_name": "żeberka",
+        "default_unit": "g",
+        "typical_price_pln": 16.99
+      },
+      {
+        "raw_names": ["Wołowina", "Antrykot", "Rostbef", "Wołowina mielona"],
+        "normalized_name": "wołowina",
+        "default_unit": "g",
+        "typical_price_pln": 49.99
+      },
+      {
+        "raw_names": ["Skrzydełka", "Skrzydełka z kurczaka", "Skrzydła kurczaka"],
+        "normalized_name": "skrzydełka",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Indyk filet", "Pierś indyka", "Indyk mielony"],
+        "normalized_name": "indyk",
+        "default_unit": "g",
+        "typical_price_pln": 29.99
+      },
+      {
+        "raw_names": ["Wątróbka", "Wątróbka drobiowa", "Wątroba", "Podroby"],
+        "normalized_name": "wątróbka",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      }
+    ]
+  },
+  "wędliny": {
+    "category_id": "WED",
+    "description": "Wędliny i wyroby mięsne",
+    "products": [
+      {
+        "raw_names": ["Szynka", "Szynka gotowana", "Szynka konserwowa", "Szynka 100g", "Szynka krojona", "Szynka wiejska"],
+        "normalized_name": "szynka",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Kiełbasa", "Kielbasa", "Kiełbasa śląska", "Kiełbasa krakowska", "Kiełbasa zwyczajna", "Kiełbasa podwawelska"],
+        "normalized_name": "kiełbasa",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Parówki", "Parowki", "Parówki cienkie", "Hot dog", "Parówki serowe"],
+        "normalized_name": "parówki",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Boczek", "Boczek wędzony", "Boczek parzony", "Boczek surowy"],
+        "normalized_name": "boczek",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Salami", "Salami pepperoni", "Salami Milano", "Kabanosy salami"],
+        "normalized_name": "salami",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Kabanosy", "Kabanosiki", "Kabanos"],
+        "normalized_name": "kabanosy",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Pasztet", "Pasztet drobiowy", "Pasztet wieprzowy", "Pasztet z drobiem"],
+        "normalized_name": "pasztet",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Mortadela", "Mortadela z oliwkami"],
+        "normalized_name": "mortadela",
+        "default_unit": "g",
+        "typical_price_pln": 4.49
+      },
+      {
+        "raw_names": ["Polędwica", "Polędwica sopocka", "Polędwica wędzona"],
+        "normalized_name": "polędwica",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Baleron", "Baleron wędzony"],
+        "normalized_name": "baleron",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      }
+    ]
+  },
+  "ryby": {
+    "category_id": "RYB",
+    "description": "Ryby i owoce morza",
+    "products": [
+      {
+        "raw_names": ["Łosoś", "Losos", "Łosoś wędzony", "Łosoś filet", "Łosoś plastry"],
+        "normalized_name": "łosoś",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Dorsz", "Dorsz filet", "Filet z dorsza"],
+        "normalized_name": "dorsz",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Śledź", "Sledz", "Śledzie", "Śledź marynowany", "Śledź w oleju", "Filety śledziowe"],
+        "normalized_name": "śledź",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Tuńczyk", "Tunczyk", "Tuńczyk w puszce", "Tuńczyk w sosie"],
+        "normalized_name": "tuńczyk",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Makrela", "Makrela wędzona", "Makrela w oleju"],
+        "normalized_name": "makrela",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Krewetki", "Krewetki koktajlowe", "Krewetki tygrysie"],
+        "normalized_name": "krewetki",
+        "default_unit": "g",
+        "typical_price_pln": 24.99
+      },
+      {
+        "raw_names": ["Mintaj", "Filet z mintaja"],
+        "normalized_name": "mintaj",
+        "default_unit": "g",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Pstrąg", "Pstrąg tęczowy", "Pstrąg filet"],
+        "normalized_name": "pstrąg",
+        "default_unit": "g",
+        "typical_price_pln": 19.99
+      }
+    ]
+  },
+  "warzywa": {
+    "category_id": "WAR",
+    "description": "Warzywa świeże i przetworzone",
+    "products": [
+      {
+        "raw_names": ["Pomidory", "Pomidory luzem", "Pomidory malinowe", "Pomidory koktajlowe", "Pomidory cherry"],
+        "normalized_name": "pomidory",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Ogórki", "Ogorki", "Ogórki gruntowe", "Ogórki szklarniowe", "Ogórek"],
+        "normalized_name": "ogórki",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Ziemniaki", "Kartofle", "Ziemniaki jadalne", "Ziemniaki młode"],
+        "normalized_name": "ziemniaki",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Cebula", "Cebula biała", "Cebula czerwona"],
+        "normalized_name": "cebula",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Marchew", "Marchewka", "Marchew młoda"],
+        "normalized_name": "marchew",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Papryka", "Papryka czerwona", "Papryka żółta", "Papryka zielona", "Papryka mix"],
+        "normalized_name": "papryka",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Kapusta", "Kapusta biała", "Kapusta czerwona", "Kapusta kiszona", "Kapusta pekińska"],
+        "normalized_name": "kapusta",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Sałata", "Sałata lodowa", "Sałata masłowa", "Sałata rzymska", "Mix sałat"],
+        "normalized_name": "sałata",
+        "default_unit": "szt",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Czosnek", "Główka czosnku"],
+        "normalized_name": "czosnek",
+        "default_unit": "szt",
+        "typical_price_pln": 1.49
+      },
+      {
+        "raw_names": ["Pieczarki", "Grzyby", "Pieczarki białe", "Pieczarki brązowe"],
+        "normalized_name": "pieczarki",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Brokuł", "Brokuły", "Brokul"],
+        "normalized_name": "brokuł",
+        "default_unit": "szt",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Kalafior", "Kalafior biały"],
+        "normalized_name": "kalafior",
+        "default_unit": "szt",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Cukinia", "Cukinia zielona"],
+        "normalized_name": "cukinia",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Bakłażan", "Oberżyna"],
+        "normalized_name": "bakłażan",
+        "default_unit": "szt",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Por", "Pory"],
+        "normalized_name": "por",
+        "default_unit": "szt",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Szpinak", "Szpinak świeży", "Szpinak baby"],
+        "normalized_name": "szpinak",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Kukurydza", "Kukurydza konserwowa", "Kukurydza w puszce"],
+        "normalized_name": "kukurydza",
+        "default_unit": "g",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Groszek", "Groszek konserwowy", "Groszek zielony"],
+        "normalized_name": "groszek",
+        "default_unit": "g",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Fasola", "Fasola konserwowa", "Fasola czerwona", "Fasola biała"],
+        "normalized_name": "fasola",
+        "default_unit": "g",
+        "typical_price_pln": 4.49
+      },
+      {
+        "raw_names": ["Rzodkiewka", "Rzodkiew"],
+        "normalized_name": "rzodkiewka",
+        "default_unit": "pęczek",
+        "typical_price_pln": 2.49
+      },
+      {
+        "raw_names": ["Seler", "Seler naciowy", "Seler korzeniowy"],
+        "normalized_name": "seler",
+        "default_unit": "szt",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Burak", "Buraki", "Buraki czerwone", "Burak ćwikłowy"],
+        "normalized_name": "buraki",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      }
+    ]
+  },
+  "owoce": {
+    "category_id": "OWO",
+    "description": "Owoce świeże",
+    "products": [
+      {
+        "raw_names": ["Banany", "Banan", "Banany żółte"],
+        "normalized_name": "banany",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Jabłka", "Jablka", "Jabłko", "Jabłka Gala", "Jabłka Champion"],
+        "normalized_name": "jabłka",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Pomarańcze", "Pomarancze", "Pomarańcza"],
+        "normalized_name": "pomarańcze",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Cytryny", "Cytryna"],
+        "normalized_name": "cytryny",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Winogrona", "Winogrona białe", "Winogrona czerwone", "Winogrona bezpestkowe"],
+        "normalized_name": "winogrona",
+        "default_unit": "g",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Truskawki", "Truskawka"],
+        "normalized_name": "truskawki",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Borówki", "Borowki", "Borówka amerykańska", "Jagody"],
+        "normalized_name": "borówki",
+        "default_unit": "g",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Maliny", "Malina"],
+        "normalized_name": "maliny",
+        "default_unit": "g",
+        "typical_price_pln": 16.99
+      },
+      {
+        "raw_names": ["Gruszki", "Gruszka", "Gruszki Conference"],
+        "normalized_name": "gruszki",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Śliwki", "Sliwki", "Śliwka"],
+        "normalized_name": "śliwki",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Brzoskwinie", "Brzoskwinia", "Nektarynki", "Nektaryna"],
+        "normalized_name": "brzoskwinie",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Mango", "Mango świeże"],
+        "normalized_name": "mango",
+        "default_unit": "szt",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Ananas", "Ananas świeży"],
+        "normalized_name": "ananas",
+        "default_unit": "szt",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Kiwi", "Kiwi zielone", "Kiwi gold"],
+        "normalized_name": "kiwi",
+        "default_unit": "szt",
+        "typical_price_pln": 1.49
+      },
+      {
+        "raw_names": ["Arbuz", "Arbuz kawałek"],
+        "normalized_name": "arbuz",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Melon", "Melon żółty", "Melon kantalupa"],
+        "normalized_name": "melon",
+        "default_unit": "szt",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Awokado", "Avocado"],
+        "normalized_name": "awokado",
+        "default_unit": "szt",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Granat", "Owoc granatu"],
+        "normalized_name": "granat",
+        "default_unit": "szt",
+        "typical_price_pln": 5.99
+      }
+    ]
+  },
+  "napoje": {
+    "category_id": "NAP",
+    "description": "Napoje bezalkoholowe",
+    "products": [
+      {
+        "raw_names": ["Woda mineralna", "Woda źródlana", "Woda 1.5L", "Woda 5L", "Woda niegazowana", "Woda gazowana"],
+        "normalized_name": "woda",
+        "default_unit": "l",
+        "typical_price_pln": 1.99
+      },
+      {
+        "raw_names": ["Sok pomarańczowy", "Sok jabłkowy", "Sok 100%", "Sok Tymbark", "Sok Hortex"],
+        "normalized_name": "sok",
+        "default_unit": "l",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Cola", "Coca-Cola", "Pepsi", "Napój gazowany", "Napoj gazowany"],
+        "normalized_name": "napój gazowany",
+        "default_unit": "l",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Fanta", "Sprite", "7up", "Mirinda"],
+        "normalized_name": "napój gazowany owocowy",
+        "default_unit": "l",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Energy drink", "Red Bull", "Tiger", "Monster", "Burn"],
+        "normalized_name": "energy drink",
+        "default_unit": "ml",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Woda smakowa", "Woda z sokiem", "Oaza"],
+        "normalized_name": "woda smakowa",
+        "default_unit": "l",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Ice tea", "Herbata mrożona", "Lipton Ice Tea", "Nestea"],
+        "normalized_name": "ice tea",
+        "default_unit": "l",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Nektar", "Nektar owocowy", "Nektar wieloowocowy"],
+        "normalized_name": "nektar",
+        "default_unit": "l",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Kompot", "Napój owocowy"],
+        "normalized_name": "kompot",
+        "default_unit": "l",
+        "typical_price_pln": 2.99
+      }
+    ]
+  },
+  "alkohol": {
+    "category_id": "ALK",
+    "description": "Napoje alkoholowe",
+    "products": [
+      {
+        "raw_names": ["Piwo", "Piwo jasne", "Piwo lager", "Tyskie", "Żywiec", "Lech", "Perła", "Warka"],
+        "normalized_name": "piwo",
+        "default_unit": "ml",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Piwo bezalkoholowe", "Piwo 0%", "Piwo 0.0%"],
+        "normalized_name": "piwo bezalkoholowe",
+        "default_unit": "ml",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Wino czerwone", "Wino białe", "Wino różowe", "Wino półsłodkie", "Wino wytrawne"],
+        "normalized_name": "wino",
+        "default_unit": "ml",
+        "typical_price_pln": 19.99
+      },
+      {
+        "raw_names": ["Wódka", "Wodka", "Żubrówka", "Sobieski", "Absolut"],
+        "normalized_name": "wódka",
+        "default_unit": "ml",
+        "typical_price_pln": 29.99
+      },
+      {
+        "raw_names": ["Whisky", "Whiskey", "Jack Daniels", "Jim Beam"],
+        "normalized_name": "whisky",
+        "default_unit": "ml",
+        "typical_price_pln": 59.99
+      },
+      {
+        "raw_names": ["Cydr", "Cider", "Cydr jabłkowy"],
+        "normalized_name": "cydr",
+        "default_unit": "ml",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Radler", "Piwo z lemoniadą"],
+        "normalized_name": "radler",
+        "default_unit": "ml",
+        "typical_price_pln": 3.99
+      }
+    ]
+  },
+  "piekarnia": {
+    "category_id": "PIE",
+    "description": "Pieczywo",
+    "products": [
+      {
+        "raw_names": ["Chleb", "Chleb pszenny", "Chleb żytni", "Chleb razowy", "Chleb mieszany", "Chleb tostowy", "Chleb tost."],
+        "normalized_name": "chleb",
+        "default_unit": "szt",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Bułka", "Bułki", "Bułka pszenna", "Bułka kajzerka", "Bułki grahamki"],
+        "normalized_name": "bułki",
+        "default_unit": "szt",
+        "typical_price_pln": 0.59
+      },
+      {
+        "raw_names": ["Bagietka", "Bagietka pszenna", "Bagietka francuska"],
+        "normalized_name": "bagietka",
+        "default_unit": "szt",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Rogal", "Rogalik", "Rogale maślane", "Croissant"],
+        "normalized_name": "rogalik",
+        "default_unit": "szt",
+        "typical_price_pln": 1.99
+      },
+      {
+        "raw_names": ["Drożdżówka", "Drożdżówki", "Drożdżówka z serem", "Drożdżówka z makiem"],
+        "normalized_name": "drożdżówka",
+        "default_unit": "szt",
+        "typical_price_pln": 2.49
+      },
+      {
+        "raw_names": ["Pączek", "Pączki", "Donut"],
+        "normalized_name": "pączek",
+        "default_unit": "szt",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Tortilla", "Wrap", "Placki tortilla"],
+        "normalized_name": "tortilla",
+        "default_unit": "szt",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Pieczywo chrupkie", "Wafle ryżowe", "Pieczywo lekkie"],
+        "normalized_name": "pieczywo chrupkie",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      }
+    ]
+  },
+  "słodycze": {
+    "category_id": "SLO",
+    "description": "Słodycze i desery",
+    "products": [
+      {
+        "raw_names": ["Czekolada", "Czekolada mleczna", "Czekolada gorzka", "Czekolada Milka", "Wedel"],
+        "normalized_name": "czekolada",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Ciastka", "Ciasteczka", "Ciastka kruche", "Herbatniki", "Markizy"],
+        "normalized_name": "ciastka",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Baton", "Batonik", "Snickers", "Mars", "Twix", "KitKat"],
+        "normalized_name": "batonik",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Żelki", "Zelki", "Haribo", "Nimm2", "Żelki owocowe"],
+        "normalized_name": "żelki",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Cukierki", "Landrynki", "Cukierki czekoladowe"],
+        "normalized_name": "cukierki",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Wafle", "Wafelki", "Prince Polo", "Grześki"],
+        "normalized_name": "wafle",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Nutella", "Krem czekoladowy", "Krem orzechowy", "Krem Nocciolata"],
+        "normalized_name": "krem czekoladowy",
+        "default_unit": "g",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Lody", "Lody waniliowe", "Lody czekoladowe", "Lody Magnum"],
+        "normalized_name": "lody",
+        "default_unit": "ml",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Pudding", "Deser mleczny", "Monte", "Zott"],
+        "normalized_name": "deser mleczny",
+        "default_unit": "g",
+        "typical_price_pln": 2.49
+      },
+      {
+        "raw_names": ["Guma do żucia", "Orbit", "Mentos", "Airwaves"],
+        "normalized_name": "guma do żucia",
+        "default_unit": "op",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Miód", "Miód pszczeli", "Miód wielokwiatowy"],
+        "normalized_name": "miód",
+        "default_unit": "g",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Dżem", "Konfitury", "Dżem truskawkowy"],
+        "normalized_name": "dżem",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      }
+    ]
+  },
+  "przekąski": {
+    "category_id": "PRZ",
+    "description": "Przekąski słone",
+    "products": [
+      {
+        "raw_names": ["Chipsy", "Chipsy ziemniaczane", "Lay's", "Pringles"],
+        "normalized_name": "chipsy",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Paluszki", "Paluszki solone", "Paluszki Beskidzkie"],
+        "normalized_name": "paluszki",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Krakersy", "Krakuski", "Cracker"],
+        "normalized_name": "krakersy",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Orzechy", "Orzeszki", "Orzeszki ziemne", "Orzechy solone", "Fistaszki"],
+        "normalized_name": "orzeszki",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Nachos", "Tortilla chips"],
+        "normalized_name": "nachos",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Popcorn", "Popcorn do mikrofali", "Popcorn solony"],
+        "normalized_name": "popcorn",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      }
+    ]
+  },
+  "konserwy": {
+    "category_id": "KON",
+    "description": "Konserwy i przetwory",
+    "products": [
+      {
+        "raw_names": ["Pomidory krojone", "Pomidory w puszce", "Passata", "Przecier pomidorowy"],
+        "normalized_name": "pomidory w puszce",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Koncentrat pomidorowy", "Pasta pomidorowa"],
+        "normalized_name": "koncentrat pomidorowy",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Ogórki kiszone", "Ogórki konserwowe", "Ogórki małosolne"],
+        "normalized_name": "ogórki kiszone",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Ketchup", "Keczup", "Sos pomidorowy"],
+        "normalized_name": "ketchup",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Majonez", "Majonez Winiary", "Majonez Kielecki"],
+        "normalized_name": "majonez",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Musztarda", "Musztarda sarepska", "Musztarda francuska"],
+        "normalized_name": "musztarda",
+        "default_unit": "g",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Sos sałatkowy", "Dressing", "Sos czosnkowy"],
+        "normalized_name": "sos sałatkowy",
+        "default_unit": "ml",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Pesto", "Pesto bazyliowe", "Pesto rosso"],
+        "normalized_name": "pesto",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Oliwki", "Oliwki zielone", "Oliwki czarne"],
+        "normalized_name": "oliwki",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      }
+    ]
+  },
+  "makarony": {
+    "category_id": "MAK",
+    "description": "Makarony, kasze, ryż",
+    "products": [
+      {
+        "raw_names": ["Makaron", "Makaron spaghetti", "Makaron penne", "Makaron świderki", "Lubella"],
+        "normalized_name": "makaron",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Ryż", "Ryż biały", "Ryż basmati", "Ryż jaśminowy", "Ryż długoziarnisty"],
+        "normalized_name": "ryż",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Kasza", "Kasza gryczana", "Kasza jęczmienna", "Kasza jaglana", "Kasza pęczak"],
+        "normalized_name": "kasza",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Mąka", "Mąka pszenna", "Mąka tortowa", "Mąka razowa"],
+        "normalized_name": "mąka",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Cukier", "Cukier biały", "Cukier puder"],
+        "normalized_name": "cukier",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Płatki owsiane", "Owsianka", "Płatki górskie"],
+        "normalized_name": "płatki owsiane",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Płatki kukurydziane", "Corn Flakes", "Płatki śniadaniowe"],
+        "normalized_name": "płatki śniadaniowe",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Musli", "Muesli", "Granola"],
+        "normalized_name": "musli",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Kuskus", "Couscous"],
+        "normalized_name": "kuskus",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Soczewica", "Soczewica czerwona", "Soczewica zielona"],
+        "normalized_name": "soczewica",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Ciecierzyca", "Cieciorka"],
+        "normalized_name": "ciecierzyca",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      }
+    ]
+  },
+  "przyprawy": {
+    "category_id": "PRY",
+    "description": "Przyprawy i dodatki",
+    "products": [
+      {
+        "raw_names": ["Sól", "Sól morska", "Sól jodowana", "Sól himalajska"],
+        "normalized_name": "sól",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Pieprz", "Pieprz mielony", "Pieprz czarny"],
+        "normalized_name": "pieprz",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Papryka słodka", "Papryka ostra", "Papryka wędzona"],
+        "normalized_name": "papryka mielona",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Oregano", "Bazylia", "Tymianek", "Zioła prowansalskie"],
+        "normalized_name": "zioła",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Przyprawa do kurczaka", "Przyprawa do mięs", "Vegeta"],
+        "normalized_name": "przyprawa",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Olej słonecznikowy", "Olej rzepakowy", "Olej roślinny"],
+        "normalized_name": "olej",
+        "default_unit": "l",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Oliwa z oliwek", "Oliwa extra virgin"],
+        "normalized_name": "oliwa",
+        "default_unit": "ml",
+        "typical_price_pln": 19.99
+      },
+      {
+        "raw_names": ["Ocet", "Ocet jabłkowy", "Ocet balsamiczny", "Ocet winny"],
+        "normalized_name": "ocet",
+        "default_unit": "ml",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Sos sojowy", "Sos teriyaki"],
+        "normalized_name": "sos sojowy",
+        "default_unit": "ml",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Cynamon", "Cynamon mielony"],
+        "normalized_name": "cynamon",
+        "default_unit": "g",
+        "typical_price_pln": 3.49
+      },
+      {
+        "raw_names": ["Kurkuma", "Curry"],
+        "normalized_name": "kurkuma",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      }
+    ]
+  },
+  "mrożonki": {
+    "category_id": "MRO",
+    "description": "Produkty mrożone",
+    "products": [
+      {
+        "raw_names": ["Frytki", "Frytki mrożone", "Frytki karbowane"],
+        "normalized_name": "frytki",
+        "default_unit": "g",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Pizza mrożona", "Pizza", "Pizza Ristorante", "Pizza Feliciana"],
+        "normalized_name": "pizza mrożona",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Pierogi mrożone", "Pierogi ruskie", "Pierogi z mięsem"],
+        "normalized_name": "pierogi mrożone",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Warzywa mrożone", "Mieszanka warzywna", "Warzywa na patelnię"],
+        "normalized_name": "warzywa mrożone",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Owoce mrożone", "Mieszanka owocowa mrożona"],
+        "normalized_name": "owoce mrożone",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Paluszki rybne", "Ryba panierowana"],
+        "normalized_name": "paluszki rybne",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Nuggetsy", "Nugetsy kurczaka", "Nuggets"],
+        "normalized_name": "nuggetsy",
+        "default_unit": "g",
+        "typical_price_pln": 11.99
+      },
+      {
+        "raw_names": ["Krokiety", "Krokiety mrożone"],
+        "normalized_name": "krokiety",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Lody mrożone", "Lody familijne", "Lody w kubełku"],
+        "normalized_name": "lody mrożone",
+        "default_unit": "ml",
+        "typical_price_pln": 14.99
+      }
+    ]
+  },
+  "dania_gotowe": {
+    "category_id": "DAN",
+    "description": "Dania gotowe i instant",
+    "products": [
+      {
+        "raw_names": ["Zupa instant", "Zupka chińska", "Ramen instant"],
+        "normalized_name": "zupa instant",
+        "default_unit": "g",
+        "typical_price_pln": 2.49
+      },
+      {
+        "raw_names": ["Żurek", "Żur", "Zupa żurek"],
+        "normalized_name": "żurek",
+        "default_unit": "ml",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Bigos", "Bigos staropolski"],
+        "normalized_name": "bigos",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Gołąbki", "Gołąbki w sosie"],
+        "normalized_name": "gołąbki",
+        "default_unit": "g",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Sałatka gotowa", "Sałatka warzywna", "Coleslaw"],
+        "normalized_name": "sałatka gotowa",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Hummus", "Pasta z ciecierzycy"],
+        "normalized_name": "hummus",
+        "default_unit": "g",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Sushi", "Zestaw sushi"],
+        "normalized_name": "sushi",
+        "default_unit": "g",
+        "typical_price_pln": 19.99
+      }
+    ]
+  },
+  "napoje_gorące": {
+    "category_id": "NGO",
+    "description": "Kawa, herbata i kakao",
+    "products": [
+      {
+        "raw_names": ["Kawa mielona", "Kawa ziarnista", "Kawa Jacobs", "Kawa Lavazza", "Kawa rozpuszczalna", "Nescafe"],
+        "normalized_name": "kawa",
+        "default_unit": "g",
+        "typical_price_pln": 19.99
+      },
+      {
+        "raw_names": ["Herbata", "Herbata czarna", "Herbata zielona", "Herbata Lipton", "Herbata owocowa"],
+        "normalized_name": "herbata",
+        "default_unit": "op",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Kakao", "Kakao DecoMorreno", "Kakao naturalne"],
+        "normalized_name": "kakao",
+        "default_unit": "g",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Kapsułki do kawy", "Kapsułki Nespresso", "Kapsułki Dolce Gusto"],
+        "normalized_name": "kapsułki do kawy",
+        "default_unit": "op",
+        "typical_price_pln": 24.99
+      }
+    ]
+  },
+  "chemia": {
+    "category_id": "CHE",
+    "description": "Chemia domowa",
+    "products": [
+      {
+        "raw_names": ["Proszek do prania", "Proszek Persil", "Proszek Ariel"],
+        "normalized_name": "proszek do prania",
+        "default_unit": "g",
+        "typical_price_pln": 24.99
+      },
+      {
+        "raw_names": ["Płyn do prania", "Kapsułki do prania", "Żel do prania"],
+        "normalized_name": "płyn do prania",
+        "default_unit": "ml",
+        "typical_price_pln": 29.99
+      },
+      {
+        "raw_names": ["Płyn do naczyń", "Ludwik", "Fairy"],
+        "normalized_name": "płyn do naczyń",
+        "default_unit": "ml",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Tabletki do zmywarki", "Kapsułki do zmywarki"],
+        "normalized_name": "tabletki do zmywarki",
+        "default_unit": "op",
+        "typical_price_pln": 29.99
+      },
+      {
+        "raw_names": ["Płyn do WC", "Domestos", "Żel do WC"],
+        "normalized_name": "płyn do WC",
+        "default_unit": "ml",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Płyn uniwersalny", "Ajax", "Płyn do podłóg"],
+        "normalized_name": "płyn uniwersalny",
+        "default_unit": "ml",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Papier toaletowy", "Papier Velvet", "Papier Regina"],
+        "normalized_name": "papier toaletowy",
+        "default_unit": "op",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Ręcznik papierowy", "Ręczniki kuchenne"],
+        "normalized_name": "ręcznik papierowy",
+        "default_unit": "op",
+        "typical_price_pln": 6.99
+      },
+      {
+        "raw_names": ["Worki na śmieci", "Worki 60L", "Worki 120L"],
+        "normalized_name": "worki na śmieci",
+        "default_unit": "op",
+        "typical_price_pln": 5.99
+      },
+      {
+        "raw_names": ["Odświeżacz powietrza", "Brise", "Glade", "Air Wick"],
+        "normalized_name": "odświeżacz powietrza",
+        "default_unit": "szt",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Płyn do szyb", "Cif do szyb"],
+        "normalized_name": "płyn do szyb",
+        "default_unit": "ml",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Płyn do płukania", "Silan", "Lenor"],
+        "normalized_name": "płyn do płukania",
+        "default_unit": "ml",
+        "typical_price_pln": 12.99
+      }
+    ]
+  },
+  "kosmetyki": {
+    "category_id": "KOS",
+    "description": "Kosmetyki i higiena osobista",
+    "products": [
+      {
+        "raw_names": ["Szampon", "Szampon do włosów", "Head&Shoulders", "Schauma"],
+        "normalized_name": "szampon",
+        "default_unit": "ml",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Żel pod prysznic", "Żel do mycia ciała", "Nivea", "Dove"],
+        "normalized_name": "żel pod prysznic",
+        "default_unit": "ml",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Mydło", "Mydło w kostce", "Mydło w płynie", "Palmolive"],
+        "normalized_name": "mydło",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Pasta do zębów", "Colgate", "Blend-a-med", "Elmex"],
+        "normalized_name": "pasta do zębów",
+        "default_unit": "ml",
+        "typical_price_pln": 8.99
+      },
+      {
+        "raw_names": ["Szczoteczka do zębów", "Szczoteczka Oral-B"],
+        "normalized_name": "szczoteczka do zębów",
+        "default_unit": "szt",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Dezodorant", "Antyperspirant", "Rexona", "Nivea deo"],
+        "normalized_name": "dezodorant",
+        "default_unit": "ml",
+        "typical_price_pln": 11.99
+      },
+      {
+        "raw_names": ["Krem do rąk", "Krem do twarzy", "Krem Nivea"],
+        "normalized_name": "krem",
+        "default_unit": "ml",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Maszynka do golenia", "Gillette", "Wilkinson"],
+        "normalized_name": "maszynka do golenia",
+        "default_unit": "op",
+        "typical_price_pln": 24.99
+      },
+      {
+        "raw_names": ["Podpaski", "Tampony", "Always", "OB"],
+        "normalized_name": "artykuły higieniczne",
+        "default_unit": "op",
+        "typical_price_pln": 9.99
+      },
+      {
+        "raw_names": ["Chusteczki higieniczne", "Chusteczki nawilżane"],
+        "normalized_name": "chusteczki",
+        "default_unit": "op",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Odżywka do włosów", "Maska do włosów"],
+        "normalized_name": "odżywka do włosów",
+        "default_unit": "ml",
+        "typical_price_pln": 14.99
+      }
+    ]
+  },
+  "dla_dzieci": {
+    "category_id": "DZI",
+    "description": "Produkty dla dzieci",
+    "products": [
+      {
+        "raw_names": ["Pieluchy", "Pampers", "Huggies", "Pieluchy jednorazowe"],
+        "normalized_name": "pieluchy",
+        "default_unit": "op",
+        "typical_price_pln": 39.99
+      },
+      {
+        "raw_names": ["Chusteczki dla dzieci", "Chusteczki nawilżane dla niemowląt"],
+        "normalized_name": "chusteczki dla dzieci",
+        "default_unit": "op",
+        "typical_price_pln": 7.99
+      },
+      {
+        "raw_names": ["Mleko modyfikowane", "Mleko dla niemowląt", "Nan", "Bebiko"],
+        "normalized_name": "mleko modyfikowane",
+        "default_unit": "g",
+        "typical_price_pln": 49.99
+      },
+      {
+        "raw_names": ["Kaszka dla dzieci", "Kaszka mleczna", "Gerber", "BoboVita"],
+        "normalized_name": "kaszka dla dzieci",
+        "default_unit": "g",
+        "typical_price_pln": 12.99
+      },
+      {
+        "raw_names": ["Słoiczek dla dzieci", "Obiadek dla dzieci", "Danie dla niemowląt"],
+        "normalized_name": "słoiczek dla dzieci",
+        "default_unit": "g",
+        "typical_price_pln": 4.99
+      },
+      {
+        "raw_names": ["Sok dla dzieci", "Sok Gerber", "Napój dla dzieci"],
+        "normalized_name": "sok dla dzieci",
+        "default_unit": "ml",
+        "typical_price_pln": 3.99
+      }
+    ]
+  },
+  "dla_zwierząt": {
+    "category_id": "ZWI",
+    "description": "Karma i akcesoria dla zwierząt",
+    "products": [
+      {
+        "raw_names": ["Karma dla kota", "Whiskas", "Felix", "Sheba", "Karma mokra dla kota"],
+        "normalized_name": "karma dla kota",
+        "default_unit": "g",
+        "typical_price_pln": 2.99
+      },
+      {
+        "raw_names": ["Karma dla psa", "Pedigree", "Cesar", "Karma mokra dla psa"],
+        "normalized_name": "karma dla psa",
+        "default_unit": "g",
+        "typical_price_pln": 3.99
+      },
+      {
+        "raw_names": ["Karma sucha dla kota", "Sucha karma kot"],
+        "normalized_name": "karma sucha dla kota",
+        "default_unit": "g",
+        "typical_price_pln": 19.99
+      },
+      {
+        "raw_names": ["Karma sucha dla psa", "Sucha karma pies"],
+        "normalized_name": "karma sucha dla psa",
+        "default_unit": "g",
+        "typical_price_pln": 24.99
+      },
+      {
+        "raw_names": ["Żwirek dla kota", "Piasek dla kota"],
+        "normalized_name": "żwirek dla kota",
+        "default_unit": "l",
+        "typical_price_pln": 14.99
+      },
+      {
+        "raw_names": ["Przysmak dla kota", "Przysmak dla psa", "Dreamies", "Pedigree Dentastix"],
+        "normalized_name": "przysmak dla zwierząt",
+        "default_unit": "g",
+        "typical_price_pln": 5.99
+      }
+    ]
+  }
+}
