@@ -321,11 +321,18 @@ async def call_ollama(
 # MAIN OCR FUNCTIONS
 # =============================================================================
 
-async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receipt], Optional[str]]:
+async def extract_products_from_image(
+    image_path: Path,
+    is_multi_page: bool = False
+) -> tuple[Optional[Receipt], Optional[str]]:
     """
     Extract products from receipt image using vision model.
     Uses two-stage fallback if primary extraction fails.
     Includes self-verification step if totals don't match.
+
+    Args:
+        image_path: Path to the image file
+        is_multi_page: If True, skip per-page verification (will be done after combining all pages)
     """
     if not image_path.exists():
         return None, f"File not found: {image_path}"
@@ -378,7 +385,8 @@ async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receip
         return None, build_error
 
     # Self-verification: Check if totals match
-    if receipt.suma and receipt.calculated_total:
+    # Skip verification for multi-page PDFs - will be done after combining all pages
+    if receipt.suma and receipt.calculated_total and not is_multi_page:
         difference = abs(receipt.suma - receipt.calculated_total)
         percentage = (difference / receipt.suma) * 100 if receipt.suma > 0 else 0
 
@@ -396,6 +404,8 @@ async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receip
                     return verified_receipt, None
                 else:
                     logger.info("Verification didn't improve, keeping original")
+    elif is_multi_page:
+        logger.debug("Skipping per-page verification for multi-page PDF")
 
     return receipt, None
 
@@ -543,9 +553,22 @@ def _build_receipt(data: dict, raw_response: str) -> tuple[Optional[Receipt], Op
                 continue
 
             # Skip generic/placeholder names (e.g., "product1", "item2")
+            # Use both list check and regex for robustness
             name_base = re.sub(r'\d+$', '', name_upper)  # Remove trailing numbers
+            name_lower = name.lower()
+
+            # Check against generic names list (uppercase)
             if name_base in generic_names or any(name_upper.startswith(g) for g in generic_names):
                 logger.warning(f"Skipping generic name: {name} = {price}")
+                continue
+
+            # Regex patterns for generic names (case-insensitive backup)
+            generic_patterns = [
+                r'^product\d*$', r'^item\d*$', r'^produkt\d*$',
+                r'^pozycja\d*$', r'^artykul\d*$', r'^towar\d*$'
+            ]
+            if any(re.match(p, name_lower) for p in generic_patterns):
+                logger.warning(f"Skipping generic name (regex): {name} = {price}")
                 continue
 
             # Skip invalid prices

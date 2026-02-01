@@ -57,6 +57,7 @@ WEIGHTED_NAME_PATTERNS = [
 GENERAL_PRICE_THRESHOLD = 40.0   # Most grocery items are below this
 MEAT_PRICE_THRESHOLD = 60.0      # Meat products can be more expensive
 PREMIUM_PRICE_THRESHOLD = 80.0   # Very few items exceed this
+WEIGHTED_PRICE_THRESHOLD = 15.0  # Weighted products (kg) - unit prices often 15-40 PLN/kg
 
 # Meat-related patterns (allow higher prices)
 MEAT_PATTERNS = [
@@ -110,9 +111,24 @@ def is_meat_product(product: Product) -> bool:
 
 
 def get_price_threshold(product: Product) -> float:
-    """Get appropriate price threshold for product type."""
+    """Get appropriate price threshold for product type.
+
+    Priority:
+    1. Weighted products (kg) - lowest threshold (unit prices often 15-40 PLN/kg)
+    2. Meat products - higher threshold (can be expensive)
+    3. General products - default threshold
+    """
+    # Weighted products have the lowest threshold
+    # because unit prices (per kg) are often extracted instead of total
+    if is_weighted_product(product):
+        # Meat sold by weight gets slightly higher threshold
+        if is_meat_product(product):
+            return 25.0  # Meat by weight can be 20-30 PLN/kg legitimately
+        return WEIGHTED_PRICE_THRESHOLD
+
     if is_meat_product(product):
         return MEAT_PRICE_THRESHOLD
+
     return GENERAL_PRICE_THRESHOLD
 
 
@@ -130,18 +146,26 @@ def check_suspicious_price(product: Product) -> Optional[str]:
         return None
 
     # Weighted products with high prices are most suspicious
+    # (likely OCR extracted price/kg instead of final price)
     if is_weighted_product(product):
-        if price > threshold:
-            return (
-                f"Possible unit price (per kg) instead of total. "
-                f"Price {price:.2f} zł exceeds threshold {threshold:.2f} zł for weighted product."
-            )
+        return (
+            f"Likely unit price (per kg) instead of total. "
+            f"Price {price:.2f} zł exceeds {threshold:.2f} zł threshold for weighted product. "
+            f"Look for pattern 'X.XXX x {price:.2f}' followed by actual total."
+        )
 
     # Non-weighted products with very high prices
     if price > PREMIUM_PRICE_THRESHOLD:
         return (
             f"Unusually high price {price:.2f} zł. "
             f"Verify this is correct and not a subtotal or unit price."
+        )
+
+    # Products above general threshold but not weighted/premium
+    if price > GENERAL_PRICE_THRESHOLD:
+        return (
+            f"High price {price:.2f} zł exceeds typical threshold. "
+            f"Verify this is the final price."
         )
 
     return None

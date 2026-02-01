@@ -15,6 +15,7 @@ from app.dictionaries import normalize_store_name, normalize_product
 from app.store_prompts import detect_store_from_text, get_prompt_for_store, get_store_display_name
 from app.receipt_parser import parse_receipt_hybrid
 from app.feedback_logger import log_unmatched_product
+from app.price_fixer import fix_products
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,11 @@ async def extract_products_paddle(image_path: Path) -> tuple[Optional[Receipt], 
                 rabaty_szczegoly=rabaty_szczegoly,
             ))
 
+        # Run price fixer post-processing to flag suspicious prices
+        products, price_warnings = fix_products(products)
+        if price_warnings:
+            logger.info(f"Price fixer found {len(price_warnings)} suspicious prices")
+
         receipt = Receipt(
             products=products,
             sklep=parsed.sklep or get_store_display_name(detected_store),
@@ -299,7 +305,11 @@ async def extract_products_paddle(image_path: Path) -> tuple[Optional[Receipt], 
     # Step 5: Build products list from LLM response
     products_data = data if isinstance(data, list) else data.get("products", [])
     skip_patterns = ['PTU', 'VAT', 'SUMA', 'TOTAL', 'RAZEM', 'PARAGON', 'FISKALNY',
-                     'KAUCJ', 'ZWROT', 'OPAKOW', 'PŁATN', 'PLATN', 'KARTA']
+                     'KAUCJ', 'ZWROT', 'OPAKOW', 'PŁATN', 'PLATN', 'KARTA', 'SPRZEDA',
+                     'GOTÓWKA', 'RESZTA', 'WYDANO', 'NUMER', 'TRANS', 'OPODATK']
+
+    # Generic/placeholder names to skip (from bad OCR or summary pages)
+    generic_names = ['PRODUCT', 'ITEM', 'PRODUKT', 'POZYCJA', 'ARTYKUŁ', 'TOWAR']
 
     products = []
     for p in products_data:
@@ -307,11 +317,20 @@ async def extract_products_paddle(image_path: Path) -> tuple[Optional[Receipt], 
             name = str(p.get("nazwa") or p.get("product") or p.get("name") or "").strip()
             price = float(p.get("cena") or p.get("price") or 0)
 
-            if not name or len(name) < 2:
+            # Skip empty or too short names (real products have at least 4 chars)
+            if not name or len(name) < 4:
+                logger.debug(f"Skipping short name: '{name}'")
                 continue
 
             name_upper = name.upper()
             if any(pat in name_upper for pat in skip_patterns):
+                logger.debug(f"Skipping summary line: {name}")
+                continue
+
+            # Skip generic/placeholder names (e.g., "product1", "item2")
+            name_base = re.sub(r'\d+$', '', name_upper)  # Remove trailing numbers
+            if name_base in generic_names or any(name_upper.startswith(g) for g in generic_names):
+                logger.warning(f"Skipping generic name: {name} = {price}")
                 continue
 
             # Skip if price is suspiciously high or zero
@@ -372,7 +391,12 @@ async def extract_products_paddle(image_path: Path) -> tuple[Optional[Receipt], 
     if not products:
         return None, "No products found in receipt"
 
-    # Step 4: Extract metadata with fallbacks
+    # Run price fixer post-processing to flag suspicious prices
+    products, price_warnings = fix_products(products)
+    if price_warnings:
+        logger.info(f"Price fixer found {len(price_warnings)} suspicious prices")
+
+    # Step 6: Extract metadata with fallbacks
     metadata = data if isinstance(data, dict) else {}
 
     # Date: LLM result or regex fallback

@@ -16,7 +16,7 @@ from app.config import settings
 from app.dictionary_api import router as dictionary_router
 from app.models import HealthStatus, ProcessingResult, Receipt
 from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
-from app.ocr import extract_products_from_image, unload_model
+from app.ocr import extract_products_from_image, extract_total_from_text, unload_model
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -163,11 +163,14 @@ async def _process_single_page(
         page_info = f" (page {page_num+1}/{total_pages})" if total_pages > 1 else ""
         logger.info(f"Starting OCR ({settings.OCR_BACKEND}) for: {filename}{page_info}")
 
+        # For multi-page PDFs, skip per-page verification (done after combining)
+        is_multi_page = total_pages > 1
+
         # Use configured OCR backend
         if settings.OCR_BACKEND == "paddle":
             receipt, ocr_error = await extract_products_paddle(image_path)
         else:
-            receipt, ocr_error = await extract_products_from_image(image_path)
+            receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
         return page_num, (receipt, ocr_error)
 
@@ -202,6 +205,9 @@ async def _process_pages_sequential(
     results = []
     total_pages = len(image_paths)
 
+    # For multi-page PDFs, skip per-page verification (done after combining)
+    is_multi_page = total_pages > 1
+
     for i, image_path in enumerate(image_paths):
         page_info = f" (page {i+1}/{total_pages})" if total_pages > 1 else ""
         logger.info(f"Starting OCR ({settings.OCR_BACKEND}) for: {filename}{page_info}")
@@ -210,7 +216,7 @@ async def _process_pages_sequential(
         if settings.OCR_BACKEND == "paddle":
             receipt, ocr_error = await extract_products_paddle(image_path)
         else:
-            receipt, ocr_error = await extract_products_from_image(image_path)
+            receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
         results.append((receipt, ocr_error))
 
@@ -326,18 +332,33 @@ async def _process_file(file_path: Path) -> ProcessingResult:
 
             # For multi-page PDFs, re-extract total from combined raw text
             # Payment info (Karta płatnicza) is typically on the last page
-            if len(image_paths) > 1 and all_raw_texts and settings.OCR_BACKEND == "paddle":
+            if len(image_paths) > 1 and all_raw_texts:
                 combined_raw_text = "\n".join(all_raw_texts)
                 combined_receipt.raw_text = combined_raw_text
 
                 # Try to extract final payment total from combined text
+                # extract_total_from_text works for both vision and paddle backends
                 final_total = extract_total_from_text(combined_raw_text)
                 if final_total:
                     logger.info(f"Multi-page PDF: extracted payment total {final_total} from combined text")
                     combined_receipt.suma = final_total
                 else:
-                    logger.warning(f"Multi-page PDF: no payment total found, using calculated sum {calculated_total}")
-                    combined_receipt.suma = calculated_total
+                    # For vision backend, raw_text is JSON not receipt text
+                    # Fall back to suma from last page that has it
+                    last_page_suma = None
+                    for page_num in reversed(range(len(page_results))):
+                        page_receipt, _ = page_results[page_num]
+                        if page_receipt and page_receipt.suma:
+                            last_page_suma = page_receipt.suma
+                            break
+
+                    if last_page_suma and abs(last_page_suma - calculated_total) < abs(calculated_total * 0.15):
+                        # Use last page suma if it's reasonably close to calculated
+                        logger.info(f"Multi-page PDF: using last page suma {last_page_suma} (calculated: {calculated_total})")
+                        combined_receipt.suma = last_page_suma
+                    else:
+                        logger.warning(f"Multi-page PDF: no reliable total found, using calculated sum {calculated_total}")
+                        combined_receipt.suma = calculated_total
 
             # Fallback: if no total set, use calculated
             if not combined_receipt.suma:
