@@ -267,11 +267,63 @@ class Product(BaseModel):
   - `get_total_correction_keyboard()` - Total correction options
 - **`formatters.py`** - Message formatting utilities
   - `format_review_receipt()` - Format receipt for human review with warnings
+- **`notifications.py`** - Scheduled notifications with APScheduler
+  - Daily digest at 9:00 AM with pending files, unmatched products, weekly stats
+  - `start_scheduler(bot)` / `stop_scheduler()` for lifecycle management
 - **`handlers/`** - Command handlers:
   - `receipts.py` - Photo/PDF processing with review flow, `/recent`, `/reprocess`, `/pending`
   - `pantry.py` - `/pantry`, `/use`, `/remove`, `/search`
-  - `stats.py` - `/stats`, `/stores`, `/categories`
+  - `stats.py` - `/stats`, `/stores`, `/categories`, `/rabaty` (alias: `/discounts`)
   - `errors.py` - `/errors`, `/clearerrors`
+  - `json_import.py` - Import receipts from JSON text (paste structured JSON into chat)
+
+**All Telegram commands:**
+| Command | Description |
+|---------|-------------|
+| `/start`, `/help` | Show help message |
+| `/recent [N]` | Last N receipts (default: 5) |
+| `/reprocess <file>` | Reprocess failed receipt |
+| `/pending` | Files waiting in inbox |
+| `/pantry [category]` | View pantry contents |
+| `/use <product>` | Mark product as consumed |
+| `/remove <product>` | Remove from pantry |
+| `/search <query>` | Search products |
+| `/stats [week/month]` | Spending statistics |
+| `/stores` | Spending by store |
+| `/categories` | Spending by category |
+| `/rabaty`, `/discounts` | Discount report |
+| `/errors` | OCR error log |
+| `/clearerrors` | Clear error log |
+
+### JSON Import via Telegram
+
+Send JSON directly to the bot to import pre-structured receipts:
+
+```json
+{
+  "transakcja": {
+    "sklep": "Biedronka, ul. Przykładowa 1",
+    "data_godzina": "2026-01-31 14:30",
+    "suma_calkowita": 45.99
+  },
+  "produkty": [
+    {
+      "nazwa_oryginalna": "MLEKO 3.2%",
+      "nazwa_znormalizowana": "mleko",
+      "kategoria": "Nabiał",
+      "cena_koncowa": 4.99,
+      "rabat": -0.50
+    }
+  ]
+}
+```
+
+### Web UI (`app/web/`)
+
+- **`dictionary.html`** - Single-page web app for dictionary management
+  - Access via: `http://localhost:8000/web/dictionary`
+  - Tabs: Unmatched products, Dictionary browser, Shortcuts management
+  - Features: Learn products, add shortcuts, browse by category
 
 ## Key Configuration
 
@@ -318,7 +370,9 @@ class DiscountDetail(BaseModel):
 OLLAMA_BASE_URL=http://host.docker.internal:11434  # Ollama API
 OCR_MODEL=qwen2.5vl:7b                              # Vision model for OCR
 OCR_BACKEND=vision                                  # "vision" (LLM-based) or "paddle" (PaddleOCR + LLM)
-CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model
+CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model (primary)
+CLASSIFIER_MODEL_B=gpt-oss:20b                      # A/B test model (optional)
+CLASSIFIER_AB_MODE=primary                          # "primary", "secondary", or "both"
 TELEGRAM_BOT_TOKEN=xxx                              # From .env file
 TELEGRAM_CHAT_ID=123456                             # Authorized user ID (0 = allow all)
 BOT_ENABLED=true                                    # Enable/disable Telegram bot
@@ -367,6 +421,41 @@ Set via `OCR_BACKEND=vision` or `OCR_BACKEND=paddle` in docker-compose.yml.
 | `minicpm-v` | 5.5GB | Fallback | Działa, ale mniej dokładny niż qwen2.5vl |
 | `deepseek-ocr` | 6.7GB | Broken | Ollama 0.14+ bug: "SameBatch" error |
 
+### Classifier A/B Testing
+
+Compare classifier models (e.g., `qwen2.5:7b` vs `gpt-oss:20b`) to evaluate accuracy and performance.
+
+**Configuration:**
+```bash
+CLASSIFIER_MODEL=qwen2.5:7b      # Primary model (always available)
+CLASSIFIER_MODEL_B=gpt-oss:20b   # Secondary model for A/B testing
+CLASSIFIER_AB_MODE=primary       # Testing mode (see below)
+```
+
+**Modes:**
+| Mode | Behavior | Use case |
+|------|----------|----------|
+| `primary` | Use model A, also run B in background and log comparison | Production with logging |
+| `secondary` | Use model B as primary | Switch to new model |
+| `both` | Run both, use A, log comparison | Full comparison testing |
+
+**Results:**
+- Logged to `vault/logs/classifier_ab_test.jsonl`
+- View via API: `GET /reports/classifier-ab`
+- Metrics: agreement rate, timing, error rates
+
+**Example test:**
+```bash
+# Enable A/B testing
+export CLASSIFIER_MODEL_B=gpt-oss:20b
+export CLASSIFIER_AB_MODE=both
+
+# Process some receipts, then check results
+curl http://localhost:8000/reports/classifier-ab
+```
+
+**Note:** `gpt-oss:20b` (13 GB) won't fit alongside vision model on 12 GB GPU. Models will swap, increasing latency. Consider using `CLASSIFIER_AB_MODE=primary` for production.
+
 ## Output Files
 
 - `vault/paragony/*.md` - Individual receipt history with YAML frontmatter
@@ -380,6 +469,7 @@ Set via `OCR_BACKEND=vision` or `OCR_BACKEND=paddle` in docker-compose.yml.
 
 ### Dictionary Management (`/dictionary/*`)
 - `GET /dictionary/stats` - Dictionary statistics
+- `GET /dictionary/categories` - List categories with product counts
 - `GET /dictionary/products?category=&search=` - List/search products
 - `POST /dictionary/products/add` - Add product variant
 - `GET /dictionary/stores` - List stores with aliases
@@ -422,6 +512,9 @@ Set via `OCR_BACKEND=vision` or `OCR_BACKEND=paddle` in docker-compose.yml.
 
 ### Metrics
 - `GET /metrics` - Prometheus metrics (via `prometheus_fastapi_instrumentator`)
+
+### Web Interface
+- `GET /web/dictionary` - Dictionary management UI (HTML page)
 
 ## Monitoring Stack
 
@@ -475,7 +568,17 @@ Key tables:
 Files:
 - `scripts/init-db.sql` - Initial schema
 - `app/db/models.py` - SQLAlchemy ORM models
-- `app/db/repositories/` - Data access layer
+- `app/db/repositories/` - Data access layer (repository pattern)
+- `app/dependencies.py` - FastAPI dependency injection for repositories
+
+**Repository pattern usage:**
+```python
+from app.dependencies import ProductRepoDep, ReceiptRepoDep
+
+@router.get("/products")
+async def list_products(repo: ProductRepoDep):
+    return await repo.list_all()
+```
 
 ### Alembic Migrations
 
