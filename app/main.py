@@ -1,9 +1,11 @@
 """FastAPI application for Smart Pantry Tracker."""
 
+import asyncio
 import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -149,6 +151,72 @@ async def reprocess_receipt(filename: str):
     return await _process_file(file_path)
 
 
+async def _process_single_page(
+    image_path: Path,
+    page_num: int,
+    total_pages: int,
+    filename: str,
+    semaphore: asyncio.Semaphore
+) -> tuple[int, tuple[Optional[Receipt], Optional[str]]]:
+    """Process a single page with semaphore for concurrency control."""
+    async with semaphore:
+        page_info = f" (page {page_num+1}/{total_pages})" if total_pages > 1 else ""
+        logger.info(f"Starting OCR ({settings.OCR_BACKEND}) for: {filename}{page_info}")
+
+        # Use configured OCR backend
+        if settings.OCR_BACKEND == "paddle":
+            receipt, ocr_error = await extract_products_paddle(image_path)
+        else:
+            receipt, ocr_error = await extract_products_from_image(image_path)
+
+        return page_num, (receipt, ocr_error)
+
+
+async def _process_pages_parallel(
+    image_paths: list[Path],
+    filename: str
+) -> list[tuple[Optional[Receipt], Optional[str]]]:
+    """Process multiple pages in parallel using semaphore for concurrency control."""
+    semaphore = asyncio.Semaphore(settings.PDF_MAX_PARALLEL_PAGES)
+    total_pages = len(image_paths)
+
+    # Create tasks for all pages
+    tasks = [
+        _process_single_page(image_path, i, total_pages, filename, semaphore)
+        for i, image_path in enumerate(image_paths)
+    ]
+
+    # Run all tasks concurrently (semaphore limits actual parallelism)
+    results = await asyncio.gather(*tasks)
+
+    # Sort by page number and extract just the receipt/error tuples
+    results.sort(key=lambda x: x[0])
+    return [result[1] for result in results]
+
+
+async def _process_pages_sequential(
+    image_paths: list[Path],
+    filename: str
+) -> list[tuple[Optional[Receipt], Optional[str]]]:
+    """Process pages sequentially (for single-page or when parallel is disabled)."""
+    results = []
+    total_pages = len(image_paths)
+
+    for i, image_path in enumerate(image_paths):
+        page_info = f" (page {i+1}/{total_pages})" if total_pages > 1 else ""
+        logger.info(f"Starting OCR ({settings.OCR_BACKEND}) for: {filename}{page_info}")
+
+        # Use configured OCR backend
+        if settings.OCR_BACKEND == "paddle":
+            receipt, ocr_error = await extract_products_paddle(image_path)
+        else:
+            receipt, ocr_error = await extract_products_from_image(image_path)
+
+        results.append((receipt, ocr_error))
+
+    return results
+
+
 async def _process_file(file_path: Path) -> ProcessingResult:
     """Internal processing logic."""
     filename = file_path.name
@@ -177,28 +245,31 @@ async def _process_file(file_path: Path) -> ProcessingResult:
         else:
             image_paths = [file_path]
 
-        # Step 1: OCR (process all pages)
+        # Step 1: OCR (process all pages - parallel for multi-page PDFs)
         all_products = []
         all_raw_texts = []  # Collect raw text from all pages for total extraction
         combined_receipt: Receipt | None = None
 
-        for i, image_path in enumerate(image_paths):
-            page_info = f" (page {i+1}/{len(image_paths)})" if len(image_paths) > 1 else ""
-            logger.info(f"Starting OCR ({settings.OCR_BACKEND}) for: {filename}{page_info}")
+        # Process pages - use parallel processing for multi-page PDFs
+        if len(image_paths) > 1 and settings.PDF_MAX_PARALLEL_PAGES > 1:
+            # Parallel processing for multi-page PDFs
+            logger.info(f"Processing {len(image_paths)} pages in parallel (max {settings.PDF_MAX_PARALLEL_PAGES} concurrent)")
+            page_results = await _process_pages_parallel(image_paths, filename)
+        else:
+            # Sequential processing for single pages or when parallel is disabled
+            page_results = await _process_pages_sequential(image_paths, filename)
 
-            # Use configured OCR backend
-            if settings.OCR_BACKEND == "paddle":
-                receipt, ocr_error = await extract_products_paddle(image_path)
-            else:
-                receipt, ocr_error = await extract_products_from_image(image_path)
+        # Combine results from all pages
+        for page_num, (page_receipt, page_error) in enumerate(page_results):
+            page_info = f" (page {page_num+1}/{len(image_paths)})" if len(image_paths) > 1 else ""
 
-            if ocr_error or not receipt:
+            if page_error or not page_receipt:
                 # For multi-page PDFs, skip pages without products (e.g. summary pages)
                 if len(image_paths) > 1:
-                    logger.warning(f"Page {i+1}/{len(image_paths)} has no products, skipping: {ocr_error or 'No data'}")
+                    logger.warning(f"Page {page_num+1}/{len(image_paths)} has no products, skipping: {page_error or 'No data'}")
                     continue
                 # For single-page documents, this is an error
-                error_msg = ocr_error or "OCR returned no data"
+                error_msg = page_error or "OCR returned no data"
                 logger.error(f"OCR failed for {filename}{page_info}: {error_msg}")
 
                 error_file = write_error_file(filename, error_msg)
@@ -213,23 +284,23 @@ async def _process_file(file_path: Path) -> ProcessingResult:
                 )
 
             # Combine results from all pages
-            all_products.extend(receipt.products)
+            all_products.extend(page_receipt.products)
 
             # Collect raw text for combined total extraction
-            if receipt.raw_text:
-                all_raw_texts.append(receipt.raw_text)
+            if page_receipt.raw_text:
+                all_raw_texts.append(page_receipt.raw_text)
 
             # Use metadata from first page (or update if later page has better data)
             if combined_receipt is None:
-                combined_receipt = receipt
+                combined_receipt = page_receipt
             else:
                 # Keep first page's metadata but combine products
                 combined_receipt.products = all_products
                 # If first page didn't have store/date, use from this page
-                if not combined_receipt.sklep and receipt.sklep:
-                    combined_receipt.sklep = receipt.sklep
-                if not combined_receipt.data and receipt.data:
-                    combined_receipt.data = receipt.data
+                if not combined_receipt.sklep and page_receipt.sklep:
+                    combined_receipt.sklep = page_receipt.sklep
+                if not combined_receipt.data and page_receipt.data:
+                    combined_receipt.data = page_receipt.data
 
         # Check if any products were found across all pages
         if not all_products:
@@ -292,8 +363,10 @@ async def _process_file(file_path: Path) -> ProcessingResult:
 
             receipt = combined_receipt
 
-        # Unload OCR model to free memory
-        await unload_model(settings.OCR_MODEL)
+        # Optionally unload OCR model to free memory (controlled by UNLOAD_MODELS_AFTER_USE)
+        if settings.UNLOAD_MODELS_AFTER_USE:
+            await unload_model(settings.OCR_MODEL)
+            logger.debug("Unloaded OCR model (UNLOAD_MODELS_AFTER_USE=true)")
 
         # Step 2: Categorize
         logger.info(f"Categorizing {len(receipt.products)} products")
@@ -302,8 +375,10 @@ async def _process_file(file_path: Path) -> ProcessingResult:
         if cat_error:
             logger.warning(f"Categorization warning: {cat_error}")
 
-        # Unload classifier model
-        await unload_model(settings.CLASSIFIER_MODEL)
+        # Optionally unload classifier model
+        if settings.UNLOAD_MODELS_AFTER_USE:
+            await unload_model(settings.CLASSIFIER_MODEL)
+            logger.debug("Unloaded classifier model (UNLOAD_MODELS_AFTER_USE=true)")
 
         # Step 3: Write files
         try:

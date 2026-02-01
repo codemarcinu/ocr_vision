@@ -61,6 +61,7 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
         "model": settings.CLASSIFIER_MODEL,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": settings.TEXT_MODEL_KEEP_ALIVE,
         "options": {
             "temperature": 0.1
         }

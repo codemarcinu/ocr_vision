@@ -16,6 +16,17 @@ class Settings:
     # OCR backend: "vision" (LLM vision model) or "paddle" (PaddleOCR + LLM)
     OCR_BACKEND: str = os.getenv("OCR_BACKEND", "vision")
 
+    # Model keep-alive settings (how long to keep models loaded in memory)
+    # Vision models use more VRAM, so shorter keep-alive
+    VISION_MODEL_KEEP_ALIVE: str = os.getenv("VISION_MODEL_KEEP_ALIVE", "10m")
+    TEXT_MODEL_KEEP_ALIVE: str = os.getenv("TEXT_MODEL_KEEP_ALIVE", "30m")
+
+    # Whether to unload models after use (set to true for low VRAM systems)
+    UNLOAD_MODELS_AFTER_USE: bool = os.getenv("UNLOAD_MODELS_AFTER_USE", "false").lower() == "true"
+
+    # PDF parallel processing (number of pages to process concurrently)
+    PDF_MAX_PARALLEL_PAGES: int = int(os.getenv("PDF_MAX_PARALLEL_PAGES", "2"))
+
     # Paths
     BASE_DIR: Path = Path("/data")
     INBOX_DIR: Path = BASE_DIR / "paragony" / "inbox"

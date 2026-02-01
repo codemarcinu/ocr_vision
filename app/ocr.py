@@ -14,6 +14,7 @@ from app.models import Product, Receipt, DiscountDetail
 from app.dictionaries import normalize_product
 from app.store_prompts import detect_store_from_text, get_store_display_name
 from app.feedback_logger import log_unmatched_product
+from app.price_fixer import fix_products
 
 logger = logging.getLogger(__name__)
 
@@ -24,32 +25,51 @@ logger = logging.getLogger(__name__)
 # Primary prompt - optimized for Polish receipts with discount handling
 OCR_PROMPT = """Analyze this Polish grocery store receipt image and extract ALL products with their FINAL prices.
 
-CRITICAL RULES - READ CAREFULLY:
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL: FINAL PRICE = LAST NUMBER IN PRODUCT BLOCK (after all discounts)
+═══════════════════════════════════════════════════════════════════════════════
 
-1. EXTRACT EVERY PRODUCT: The "products" array MUST contain ALL items from the receipt.
-   - Do not skip any products, even if partially visible
-   - Each product occurrence is a SEPARATE item (don't merge duplicates)
+WEIGHTED PRODUCTS - PAY ATTENTION:
+For products sold by weight (kg), you'll see multiple numbers. IGNORE the unit price!
 
-2. FINAL PRICE RULE: For each product, extract the FINAL price (after all discounts).
-   - If you see "Rabat" (discount) below a product, the FINAL price is the LAST number in that block
-   - Example: Product 11.17 → Rabat -3.29 → 7.88 means cena should be 7.88
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  BoczWędz B kg       │ ← Product name with "kg" = weighted product          │
+│  0.279 x 28.20   B   │ ← 0.279kg × 28.20zł/kg (IGNORE 28.20 - unit price!) │
+│               7.88   │ ← THIS IS THE FINAL PRICE = 7.88 zł                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+  ✗ WRONG: cena: 28.20 (this is price per kg, not total!)
+  ✓ RIGHT: cena: 7.88  (this is what customer pays)
 
-3. WEIGHTED PRODUCTS (kg): For products sold by weight:
-   - You'll see: ProductName kg  Qty × UnitPrice  Value
-   - IGNORE the unit price per kg (e.g., 28.20/kg)
-   - Use the final calculated amount (or price after discount)
-   - Example: "BoczWedz 0.396 × 28.20 = 11.17, Rabat -3.29, 7.88" → cena: 7.88
+PRODUCTS WITH DISCOUNTS:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Pomidor Malin B     │                                                      │
+│  0.602 x 18.49   B   │ ← Calculation shown                                  │
+│              11.13   │ ← Price before discount                              │
+│  Rabat        -3.34  │ ← Discount                                           │
+│               7.79   │ ← FINAL PRICE after discount = 7.79 zł               │
+└─────────────────────────────────────────────────────────────────────────────┘
+  ✗ WRONG: cena: 11.13 or cena: 18.49
+  ✓ RIGHT: cena: 7.79, cena_przed: 11.13, rabat: 3.34
 
-4. BIEDRONKA FORMAT:
-   - Line 1: ProductName  PTU  Qty×  UnitPrice  Value
-   - Line 2 (optional): Rabat  -X.XX
-   - Line 3 (optional): FinalPrice
-   - ALWAYS take the LAST number before next product!
+REGULAR PRODUCTS:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Mleko 2% 1L    B    │                                                      │
+│               3.49   │ ← FINAL PRICE = 3.49 zł                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+EXTRACTION RULES:
+1. EVERY product line = one entry in "products" array
+2. "cena" = ALWAYS the LAST number in product block (after Rabat if present)
+3. "cena_przed" = price BEFORE discount (optional)
+4. "rabat" = discount amount as POSITIVE number (optional)
+5. For weighted products: IGNORE the "× XX.XX" unit price - use calculated total
 
 Return ONLY valid JSON (no markdown, no explanation):
 {
   "products": [
-    {"nazwa": "product name", "cena": 7.88, "cena_przed": 11.17, "rabat": 3.29}
+    {"nazwa": "BoczWędz B", "cena": 7.88},
+    {"nazwa": "Pomidor Malin", "cena": 7.79, "cena_przed": 11.13, "rabat": 3.34},
+    {"nazwa": "Mleko 2% 1L", "cena": 3.49}
   ],
   "sklep": "store name",
   "data": "YYYY-MM-DD",
@@ -68,8 +88,12 @@ Field definitions:
 IGNORE (not products): PTU/VAT, "Sprzedaż opodatkowana", payment lines, page numbers.
 Prices must use DOT as decimal (7.88 not 7,88)."""
 
-# Verification prompt - model checks its own work
-VERIFICATION_PROMPT = """I extracted products from this receipt but the numbers don't add up.
+# Text-only verification prompt - uses text model to avoid VRAM issues
+# NOTE: This prompt does NOT require the image - it works from extracted text/data only
+TEXT_VERIFICATION_PROMPT = """I extracted products from a receipt but the numbers don't add up. Help me find the errors.
+
+RAW RECEIPT TEXT:
+{raw_text}
 
 EXTRACTED DATA:
 {extracted_data}
@@ -77,12 +101,19 @@ EXTRACTED DATA:
 PROBLEM: Sum of products = {calculated_total} PLN, but receipt total = {receipt_total} PLN
 Difference: {difference} PLN
 
-Please look at the receipt image again and VERIFY/CORRECT the extraction:
+Analyze the raw text and find errors in my extraction:
 
-1. Check each product - is the price correct? Should it be the FINAL price after "Rabat" discount?
-2. For weighted products (kg), did I use unit price instead of total? Fix it.
-3. Are there any products I missed or duplicated?
-4. Are there fake "products" that are actually summaries/taxes?
+1. WEIGHTED PRODUCTS (kg): Did I extract unit price (e.g., 28.20/kg) instead of final calculated price?
+   - Pattern: "0.XXX x YY.YY" followed by a smaller number = that smaller number is the final price
+   - Example: "0.279 x 28.20" then "7.88" → final price is 7.88, NOT 28.20
+
+2. DISCOUNTS: Did I miss "Rabat" lines that reduce the price?
+   - Pattern: price, then "Rabat -X.XX", then final price
+   - The LAST number before next product is the final price
+
+3. MISSING/DUPLICATE products: Are there products in raw text I missed or added twice?
+
+4. FAKE PRODUCTS: Did I include summary lines (SUMA, PTU, RAZEM) as products?
 
 Return CORRECTED JSON with ONLY real products and their FINAL prices:
 {{"products":[{{"nazwa":"name","cena":FINAL_PRICE,"cena_przed":BEFORE_DISCOUNT,"rabat":DISCOUNT}}],"sklep":"store","data":"YYYY-MM-DD","suma":RECEIPT_TOTAL}}
@@ -228,13 +259,26 @@ async def call_ollama(
     prompt: str,
     image_base64: Optional[str] = None,
     model: Optional[str] = None,
-    timeout: float = 300.0
+    timeout: float = 300.0,
+    keep_alive: Optional[str] = None
 ) -> tuple[str, Optional[str]]:
     """Call Ollama API and return response text or error."""
+    used_model = model or settings.OCR_MODEL
+
+    # Auto-select keep_alive based on model type if not specified
+    if keep_alive is None:
+        if image_base64 or used_model == settings.OCR_MODEL:
+            # Vision model - shorter keep-alive due to higher VRAM usage
+            keep_alive = settings.VISION_MODEL_KEEP_ALIVE
+        else:
+            # Text model - longer keep-alive
+            keep_alive = settings.TEXT_MODEL_KEEP_ALIVE
+
     payload = {
-        "model": model or settings.OCR_MODEL,
+        "model": used_model,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": keep_alive,
         "options": {
             "temperature": 0.1,
             "top_p": 0.8,
@@ -341,9 +385,9 @@ async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receip
         # If significant mismatch (>10% or >5 PLN), run verification
         if difference > 5 and percentage > 10:
             logger.warning(f"Total mismatch detected: receipt={receipt.suma}, calculated={receipt.calculated_total}, diff={difference:.2f} ({percentage:.1f}%)")
-            logger.info("Running self-verification...")
+            logger.info("Running text-only verification...")
 
-            verified_receipt = await _verify_extraction(image_base64, receipt, data)
+            verified_receipt = await _verify_extraction(response_text, receipt, data)
             if verified_receipt:
                 # Check if verification improved the match
                 new_diff = abs(verified_receipt.suma - verified_receipt.calculated_total) if verified_receipt.suma else difference
@@ -356,8 +400,13 @@ async def extract_products_from_image(image_path: Path) -> tuple[Optional[Receip
     return receipt, None
 
 
-async def _verify_extraction(image_base64: str, receipt: Receipt, original_data: dict) -> Optional[Receipt]:
-    """Ask model to verify and correct its extraction."""
+async def _verify_extraction(raw_text: str, receipt: Receipt, original_data: dict) -> Optional[Receipt]:
+    """
+    Ask text model to verify and correct extraction.
+
+    Uses text-only model (CLASSIFIER_MODEL) instead of vision model to avoid VRAM 500 errors.
+    The raw_text from OCR provides enough context for verification without re-sending the image.
+    """
     # Format extracted data for verification prompt
     products_summary = "\n".join([
         f"  - {p.nazwa}: {p.cena} PLN" + (f" (było {p.cena_oryginalna}, rabat {p.rabat})" if p.rabat else "")
@@ -372,17 +421,26 @@ Receipt Total (suma): {receipt.suma} PLN"""
 
     difference = receipt.suma - receipt.calculated_total if receipt.suma else 0
 
-    verification_prompt = VERIFICATION_PROMPT.format(
+    # Truncate raw text if too long (keep first 3000 chars for context)
+    truncated_raw = raw_text[:3000] if raw_text else "(no raw text available)"
+
+    verification_prompt = TEXT_VERIFICATION_PROMPT.format(
+        raw_text=truncated_raw,
         extracted_data=extracted_data,
         calculated_total=receipt.calculated_total,
         receipt_total=receipt.suma,
         difference=f"{difference:+.2f}"
     )
 
-    response_text, error = await call_ollama(verification_prompt, image_base64)
+    # Use text model (not vision) to avoid VRAM issues
+    response_text, error = await call_ollama(
+        verification_prompt,
+        image_base64=None,  # No image - text-only verification
+        model=settings.CLASSIFIER_MODEL  # Use text model
+    )
 
     if error:
-        logger.warning(f"Verification failed: {error}")
+        logger.warning(f"Text verification failed: {error}")
         return None
 
     # Parse verified data
@@ -566,6 +624,11 @@ def _build_receipt(data: dict, raw_response: str) -> tuple[Optional[Receipt], Op
 
     if not products:
         return None, "No products found"
+
+    # Run price fixer post-processing to flag suspicious prices
+    products, price_warnings = fix_products(products)
+    if price_warnings:
+        logger.info(f"Price fixer found {len(price_warnings)} suspicious prices")
 
     # Extract date
     receipt_date = metadata.get("data") or metadata.get("date")
