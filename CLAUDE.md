@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Smart Pantry Tracker - OCR receipt processing system using Ollama LLMs for product extraction and categorization, outputting to Obsidian markdown files. Includes a Telegram bot for mobile interaction with **human-in-the-loop validation**.
+Smart Pantry Tracker - OCR receipt processing system using Ollama LLMs for product extraction and categorization, with **PostgreSQL database** for data persistence and analytics. Outputs to Obsidian markdown files. Includes a Telegram bot for mobile interaction with **human-in-the-loop validation**.
 
 ## Build & Run Commands
 
@@ -56,10 +56,12 @@ Receipt (photo/PDF) → OCR → Validation → [Review?] → Categorization → 
 4. **`app/store_prompts.py`** - Store-specific LLM prompts for accurate extraction
 5. **`app/price_fixer.py`** - Post-processor: detects suspicious prices (unit price vs final)
 6. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
-7. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
-8. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
+7. **`app/db/`** - PostgreSQL database layer with SQLAlchemy async ORM
+8. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
+9. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
+10. **`app/services/obsidian_sync.py`** - Regenerates vault from database
 
-Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → **Price Fixer** → validation → normalization → categorization → `paragony/processed/` + `vault/`
+Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → **Price Fixer** → validation → normalization → categorization → **PostgreSQL** + `vault/`
 
 ### Vision OCR Pipeline (`app/ocr.py`)
 
@@ -321,6 +323,14 @@ TELEGRAM_BOT_TOKEN=xxx                              # From .env file
 TELEGRAM_CHAT_ID=123456                             # Authorized user ID (0 = allow all)
 BOT_ENABLED=true                                    # Enable/disable Telegram bot
 
+# PostgreSQL Database
+DATABASE_URL=postgresql+asyncpg://pantry:pantry123@postgres:5432/pantry
+DATABASE_POOL_SIZE=5                                # Connection pool size
+DATABASE_MAX_OVERFLOW=10                            # Max overflow connections
+USE_DB_DICTIONARIES=true                            # Use DB for product/store dictionaries
+USE_DB_RECEIPTS=true                                # Store receipts in DB
+GENERATE_OBSIDIAN_FILES=true                        # Generate markdown files alongside DB
+
 # Performance tuning
 VISION_MODEL_KEEP_ALIVE=10m                         # How long vision model stays in VRAM (default: 10m)
 TEXT_MODEL_KEEP_ALIVE=30m                           # How long text model stays in VRAM (default: 30m)
@@ -389,6 +399,27 @@ Set via `OCR_BACKEND=vision` or `OCR_BACKEND=paddle` in docker-compose.yml.
 - `GET /reports/monthly` - Monthly spending breakdown
 - `GET /reports/categories` - Spending by category
 
+### Obsidian Sync (`/obsidian/*`) - requires `USE_DB_RECEIPTS=true`
+- `POST /obsidian/sync/receipt/{id}` - Regenerate markdown for one receipt
+- `POST /obsidian/sync/pantry` - Regenerate spiżarnia.md from database
+- `POST /obsidian/sync/all` - Full vault regeneration from database
+
+### Analytics (`/analytics/*`) - requires `USE_DB_RECEIPTS=true`
+- `GET /analytics/price-trends/{product_id}?months=6` - Price history
+- `GET /analytics/store-comparison?product_ids=1,2,3` - Compare prices across stores
+- `GET /analytics/spending/by-category?start=&end=` - Spending by category
+- `GET /analytics/spending/by-store?start=&end=` - Spending by store
+- `GET /analytics/basket-analysis?min_support=0.1` - Frequently bought together
+- `GET /analytics/top-products?limit=20&by=count|spending` - Top products
+- `GET /analytics/discounts?start=&end=` - Discount statistics
+- `GET /analytics/yearly-comparison` - Year-over-year comparison
+
+### Database Stats (`/db/*`) - requires `USE_DB_RECEIPTS=true`
+- `GET /db/receipts/stats` - Receipt statistics
+- `GET /db/receipts/pending` - Receipts pending review
+- `GET /db/pantry/stats` - Pantry statistics
+- `GET /db/feedback/stats` - Unmatched products and corrections stats
+
 ### Metrics
 - `GET /metrics` - Prometheus metrics (via `prometheus_fastapi_instrumentator`)
 
@@ -408,6 +439,65 @@ Logs are collected from Docker containers via Promtail. FastAPI exposes `/metric
 ## n8n Integration
 
 Optional workflow in `n8n-workflows/folder-watch.json` for automatic processing of files dropped in `paragony/inbox/`.
+
+## Database Setup
+
+### First-time Setup
+
+```bash
+# Start services (PostgreSQL + FastAPI)
+docker-compose up -d
+
+# Check PostgreSQL is ready
+docker exec -it pantry-db psql -U pantry -d pantry -c "\dt"
+
+# Run data migration from JSON/Markdown to PostgreSQL
+docker exec -it pantry-api python scripts/migrate_data.py
+
+# Verify migration
+curl http://localhost:8000/db/receipts/stats
+```
+
+### Database Schema
+
+The database uses PostgreSQL 16 with `pg_trgm` extension for fuzzy text matching.
+
+Key tables:
+- `categories` - Product categories
+- `stores`, `store_aliases` - Stores with OCR alias matching
+- `products`, `product_variants` - Normalized products with raw name variants
+- `product_shortcuts` - Store-specific abbreviations (thermal printer)
+- `receipts`, `receipt_items` - Receipt data
+- `pantry_items` - Current pantry state
+- `price_history` - Price tracking for analytics
+- `unmatched_products`, `review_corrections` - Feedback loop
+
+Files:
+- `scripts/init-db.sql` - Initial schema
+- `app/db/models.py` - SQLAlchemy ORM models
+- `app/db/repositories/` - Data access layer
+
+### Alembic Migrations
+
+```bash
+# Create new migration
+docker exec -it pantry-api alembic revision --autogenerate -m "description"
+
+# Apply migrations
+docker exec -it pantry-api alembic upgrade head
+
+# Rollback
+docker exec -it pantry-api alembic downgrade -1
+```
+
+### Feature Flags
+
+Control database usage via environment variables:
+- `USE_DB_DICTIONARIES=true` - Use PostgreSQL for product/store lookup (with pg_trgm fuzzy search)
+- `USE_DB_RECEIPTS=true` - Store receipts in database
+- `GENERATE_OBSIDIAN_FILES=true` - Also generate markdown files
+
+Set all to `false` to revert to file-only mode.
 
 ## Testing
 
@@ -436,6 +526,14 @@ curl -X POST "http://localhost:8000/dictionary/learn/UNKNOWN_PRODUCT?normalized_
 
 # Check discount details in response
 curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.jpg" | jq '.receipt.products[] | select(.rabaty_szczegoly != null)'
+
+# Test database analytics
+curl http://localhost:8000/analytics/spending/by-category
+curl http://localhost:8000/analytics/top-products?limit=10
+curl http://localhost:8000/analytics/price-trends/1?months=3
+
+# Test Obsidian sync
+curl -X POST http://localhost:8000/obsidian/sync/all
 ```
 
 ## Troubleshooting
