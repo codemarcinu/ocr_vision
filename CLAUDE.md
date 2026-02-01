@@ -393,6 +393,10 @@ VISION_MODEL_KEEP_ALIVE=10m                         # How long vision model stay
 TEXT_MODEL_KEEP_ALIVE=30m                           # How long text model stays in VRAM (default: 30m)
 UNLOAD_MODELS_AFTER_USE=false                       # Force unload after each use (for low VRAM)
 PDF_MAX_PARALLEL_PAGES=2                            # Concurrent pages for multi-page PDF
+
+# Google Cloud Vision (ultimate fallback - disabled by default)
+GOOGLE_VISION_ENABLED=false                         # Enable Google Vision as last-resort OCR fallback
+GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json  # Path to service account JSON
 ```
 
 ## Ollama Models Required
@@ -418,6 +422,32 @@ Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30
 | `paddle` (PaddleOCR + LLM) | ~11s | Good | Fastest but less accurate for complex receipts |
 
 Set via `OCR_BACKEND=deepseek` (recommended), `OCR_BACKEND=vision`, or `OCR_BACKEND=paddle` in docker-compose.yml.
+
+### Google Cloud Vision (Ultimate Fallback)
+
+When ALL local Ollama models fail (DeepSeek-OCR, qwen2.5vl:7b, etc.), the system can fall back to Google Cloud Vision API as a last resort.
+
+**Fallback chain:**
+```
+Receipt → DeepSeek-OCR → [fail] → qwen2.5vl:7b → [fail] → Google Vision → LLM structuring
+```
+
+**Setup:**
+1. Create a Google Cloud project and enable Vision API
+2. Create a Service Account with "Cloud Vision API User" role
+3. Download the JSON key file
+4. Place it at `./credentials/gcp-service-account.json`
+5. Set `GOOGLE_VISION_ENABLED=true` in `.env` or docker-compose.yml
+
+**Cost:** ~$1.50 per 1000 images (Document Text Detection)
+
+**Configuration:**
+```bash
+GOOGLE_VISION_ENABLED=true                          # Enable fallback
+GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json
+```
+
+**Note:** Google Vision only extracts text - structuring is still done by local LLM (qwen2.5:7b). This keeps costs down while ensuring reliable OCR.
 
 ### DeepSeek Pipeline (OCR_BACKEND=deepseek)
 
