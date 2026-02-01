@@ -50,15 +50,16 @@ Receipt (photo/PDF) → OCR → Validation → [Review?] → Categorization → 
                    Telegram Review    Auto-save
 ```
 
-1. **`app/main.py`** - FastAPI endpoints receive image/PDF uploads
+1. **`app/main.py`** - FastAPI endpoints receive image/PDF uploads, parallel PDF processing
 2. **`app/pdf_converter.py`** - Converts PDF to PNG images (one per page) using pdf2image
 3. **`app/ocr.py`** / **`app/paddle_ocr.py`** - OCR extraction (vision model or PaddleOCR hybrid)
 4. **`app/store_prompts.py`** - Store-specific LLM prompts for accurate extraction
-5. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
-6. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
-7. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
+5. **`app/price_fixer.py`** - Post-processor: detects suspicious prices (unit price vs final)
+6. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
+7. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
+8. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
 
-Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → validation → normalization → categorization → `paragony/processed/` + `vault/`
+Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → **Price Fixer** → validation → normalization → categorization → `paragony/processed/` + `vault/`
 
 ### Vision OCR Pipeline (`app/ocr.py`)
 
@@ -90,12 +91,19 @@ Image → Primary Extraction → Build Receipt → Check Totals
    - Stage 2: Parse text to JSON using `qwen2.5:7b` text model
    - Skip if < 150 chars (summary page detection)
 
-3. **Self-Verification** - If totals don't match:
-   - Shows model its extraction + the discrepancy
+3. **Text-Only Verification** - If totals don't match:
+   - Uses `qwen2.5:7b` text model (not vision) to avoid VRAM issues
+   - Shows model the raw OCR text + its extraction + discrepancy
    - Asks to verify and correct mistakes
    - Uses result only if it improves the match
 
-4. **Product Filtering**:
+4. **Price Fixer Post-Processing** (`app/price_fixer.py`):
+   - Detects weighted products (kg) with suspiciously high prices
+   - Flags potential unit prices (per kg) instead of final prices
+   - Adds warnings to products, doesn't modify prices
+   - Thresholds: 40 PLN (general), 60 PLN (meat), 80 PLN (premium)
+
+5. **Product Filtering**:
    - Skip generic names: `product1`, `item2`
    - Skip short names: < 4 characters
    - Skip summary lines: `GOTÓWKA`, `RESZTA`, `PTU`, etc.
@@ -142,12 +150,14 @@ Different stores have different receipt formats. The system detects the store fr
 
 For PDFs with multiple pages (e.g., long receipts):
 1. Pages are converted to PNG images
-2. Each page is OCR'd separately
+2. **Parallel processing**: Pages are OCR'd concurrently (controlled by `PDF_MAX_PARALLEL_PAGES`)
 3. Products from all pages are **combined** into a single Receipt
 4. **Raw text from all pages is merged** to extract the final payment total
 5. Payment info (e.g., "Karta płatnicza 144.48") is typically on the last page
 6. Total is validated against sum of all products
 7. Temp images are cleaned up after processing
+
+**Performance**: With `PDF_MAX_PARALLEL_PAGES=2`, a 3-page PDF processes in ~2.5 min instead of ~4.5 min.
 
 ### Human-in-the-Loop Validation
 
@@ -305,6 +315,12 @@ CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model
 TELEGRAM_BOT_TOKEN=xxx                              # From .env file
 TELEGRAM_CHAT_ID=123456                             # Authorized user ID (0 = allow all)
 BOT_ENABLED=true                                    # Enable/disable Telegram bot
+
+# Performance tuning
+VISION_MODEL_KEEP_ALIVE=10m                         # How long vision model stays in VRAM (default: 10m)
+TEXT_MODEL_KEEP_ALIVE=30m                           # How long text model stays in VRAM (default: 30m)
+UNLOAD_MODELS_AFTER_USE=false                       # Force unload after each use (for low VRAM)
+PDF_MAX_PARALLEL_PAGES=2                            # Concurrent pages for multi-page PDF
 ```
 
 ## Ollama Models Required
@@ -314,7 +330,7 @@ ollama pull qwen2.5vl:7b    # OCR extraction (recommended, 6GB, requires num_ctx
 ollama pull qwen2.5:7b      # Product categorization
 ```
 
-Models are unloaded after use to free VRAM (see `unload_model()` in `ocr.py` - sends `keep_alive: 0`).
+Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30m by default). Set `UNLOAD_MODELS_AFTER_USE=true` for low VRAM systems.
 
 ### OCR Backend Comparison
 
@@ -435,17 +451,16 @@ curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.jpg" | jq '
 - Solution: reprocess the receipt with `/reprocess <filename>`
 
 ### Vision OCR: Ollama 500 errors during verification
-- **Cause:** VRAM exhaustion on verification (image + long prompt)
-- **Symptoms:** Logs show `HTTP/1.1 500 Internal Server Error`
-- **Workaround:** Self-verification gracefully falls back to original extraction
-- **Fix:** Consider text-only verification (without re-sending image)
+- **Status:** FIXED - Verification now uses text-only model
+- **Cause:** Was VRAM exhaustion when re-sending image for verification
+- **Solution:** `_verify_extraction()` uses `qwen2.5:7b` text model with raw OCR text
 
 ### Vision OCR: Unit prices instead of final prices
+- **Status:** IMPROVED - Enhanced prompts + price fixer
 - **Symptom:** Weighted products (kg) show per-kg price, not total
-- **Example:** `BoczWędz 28.20 zł` instead of `7.88 zł`
-- **Cause:** Model doesn't always follow "LAST number = final price" rule
-- **Check logs:** Look for products with price > 20 zł
-- **Workaround:** Human review will catch these
+- **Solution 1:** OCR prompt has ASCII-art examples showing correct price extraction
+- **Solution 2:** `price_fixer.py` flags suspicious prices (>40 PLN) with warnings
+- **Check logs:** `grep -i "price warning" pantry-api`
 
 ### Vision OCR: Summary page products
 - **Symptom:** Fake products like `product1: 48.16 zł`
@@ -454,6 +469,13 @@ curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.jpg" | jq '
 - **Fallback:** Filter catches generic names and suspicious prices
 
 ### Vision OCR: Slow processing (~90s/page)
-- **Expected:** ~4 minutes for 3-page PDF on RTX 3060 12GB
-- **Cause:** Vision models need more compute than text models
-- **Workaround:** Use `paddle` backend for faster (but less accurate) processing
+- **Status:** IMPROVED - Parallel processing for multi-page PDFs
+- **Expected:** ~2.5 min for 3-page PDF (was ~4.5 min) on RTX 3060 12GB
+- **Config:** `PDF_MAX_PARALLEL_PAGES=2` (default)
+- **Alternative:** Use `paddle` backend for faster (but less accurate) processing
+
+### Models loading slowly (cold start)
+- **Status:** FIXED - Models now stay loaded with keep-alive
+- **Cause:** Was models unloaded after every request
+- **Solution:** `VISION_MODEL_KEEP_ALIVE=10m`, `TEXT_MODEL_KEEP_ALIVE=30m`
+- **Low VRAM:** Set `UNLOAD_MODELS_AFTER_USE=true` to revert to old behavior
