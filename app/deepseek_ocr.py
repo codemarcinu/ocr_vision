@@ -26,41 +26,16 @@ from app.dictionaries import normalize_product
 from app.store_prompts import detect_store_from_text, get_store_display_name
 from app.feedback_logger import log_unmatched_product
 from app.price_fixer import fix_products
+from app.ocr_prompts import (
+    OCR_PROMPT_UNIVERSAL,
+    get_structuring_prompt,
+)
+from app.confidence_scoring import calculate_confidence
 
 logger = logging.getLogger(__name__)
 
-# OCR prompt - keep it short but explicit about needing numbers
-# "OCR this image" misses prices; longer prompts cause infinite loops
-DEEPSEEK_OCR_PROMPT = "Read all text and numbers."
-
-# Combined structuring + categorization prompt (saves one LLM call ~7s)
-# Categories are assigned directly during extraction
-STRUCTURING_PROMPT = """Tekst paragonu (OCR):
-
-{ocr_text}
-
-Wyekstrahuj WSZYSTKIE produkty i przypisz im kategorie. Format JSON:
-{{"sklep":"nazwa","data":"YYYY-MM-DD","produkty":[{{"nazwa":"X","cena":0.00,"kategoria":"Nabiał","rabat":0.00}}],"suma":0.00}}
-
-ZASADY EKSTRAKCJI:
-- Uwzględnij KAŻDY produkt (może być 10-30 produktów!)
-- cena = cena KOŃCOWA po rabacie (ostatnia liczba w wierszu)
-- rabat = wartość ujemna pod produktem (np. -1.40 → rabat: 1.40)
-- suma = wartość przy "SUMA", "DO ZAPŁATY" lub "Karta płatnicza"
-
-KATEGORIE (wybierz jedną dla każdego produktu):
-- Nabiał: mleko, ser, jogurt, masło, śmietana, twaróg, kefir
-- Pieczywo: chleb, bułka, bagietka, rogal, drożdżówka
-- Mięso i wędliny: kurczak, wołowina, wieprzowina, szynka, kiełbasa, boczek, parówki
-- Warzywa i owoce: pomidor, ogórek, jabłko, banan, ziemniak, cebula, marchew
-- Napoje: woda, sok, cola, piwo, wino, kawa, herbata
-- Słodycze: czekolada, cukierki, ciastka, lody, wafelki
-- Produkty suche: makaron, ryż, mąka, kasza, płatki, olej
-- Mrożonki: lody, pizza mrożona, warzywa mrożone, ryba mrożona
-- Chemia: proszek, płyn do naczyń, mydło, szampon, papier toaletowy
-- Inne: wszystko co nie pasuje do powyższych
-
-Zwróć TYLKO JSON, bez markdown i komentarzy."""
+# Use optimized universal OCR prompt from ocr_prompts module
+DEEPSEEK_OCR_PROMPT = OCR_PROMPT_UNIVERSAL
 
 
 def extract_total_from_text(text: str) -> Optional[float]:
@@ -233,7 +208,11 @@ async def _call_deepseek_ocr(image_base64: str, timeout: float = 45.0) -> tuple[
     return content, None
 
 
-async def _call_structuring_llm(ocr_text: str, timeout: float = 120.0) -> tuple[Optional[dict], Optional[str]]:
+async def _call_structuring_llm(
+    ocr_text: str,
+    detected_store: str = None,
+    timeout: float = 120.0
+) -> tuple[Optional[dict], Optional[str]]:
     """Call LLM for combined JSON structuring + categorization.
 
     This is a merged step that:
@@ -241,9 +220,12 @@ async def _call_structuring_llm(ocr_text: str, timeout: float = 120.0) -> tuple[
     2. Assigns categories to each product
     3. Extracts store, date, and total
 
+    Uses store-specific prompts for better accuracy.
     By combining structuring and categorization, we save one LLM call (~7s).
     """
-    prompt = STRUCTURING_PROMPT.format(ocr_text=ocr_text)
+    # Get store-specific prompt (or generic if store unknown)
+    prompt_template = get_structuring_prompt(detected_store)
+    prompt = prompt_template.format(ocr_text=ocr_text)
 
     # Use STRUCTURING_MODEL if set, otherwise fall back to CLASSIFIER_MODEL
     model = getattr(settings, 'STRUCTURING_MODEL', None) or settings.CLASSIFIER_MODEL
@@ -395,9 +377,9 @@ async def extract_products_deepseek(
     if detected_store:
         logger.info(f"Detected store: {detected_store}")
 
-    # Step 4: Structure with LLM
-    logger.info("Structuring with LLM...")
-    data, struct_error = await _call_structuring_llm(ocr_text)
+    # Step 4: Structure with LLM (using store-specific prompt)
+    logger.info(f"Structuring with LLM (store: {detected_store or 'generic'})...")
+    data, struct_error = await _call_structuring_llm(ocr_text, detected_store=detected_store)
 
     if struct_error:
         logger.error(f"Structuring failed: {struct_error}")
@@ -550,18 +532,304 @@ async def extract_products_deepseek(
         calculated_total=calculated_total,
     )
 
-    # Check for review need
-    if receipt_total and calculated_total:
-        variance = abs(receipt_total - calculated_total)
-        variance_pct = (variance / calculated_total * 100) if calculated_total > 0 else 0
+    # Calculate confidence score
+    confidence_report = calculate_confidence(receipt)
 
-        if variance > 5.0 or variance_pct > 10:
-            receipt.needs_review = True
-            receipt.review_reasons.append(
-                f"Suma {receipt_total:.2f} zł różni się od sumy produktów {calculated_total:.2f} zł"
+    # Decide if review is needed based on confidence
+    if not confidence_report.auto_save_ok:
+        receipt.needs_review = True
+        if confidence_report.issues:
+            receipt.review_reasons.extend(confidence_report.issues)
+        if not receipt.review_reasons and confidence_report.warnings:
+            # Add first warning as reason if no issues
+            receipt.review_reasons.append(confidence_report.warnings[0])
+
+    logger.info(
+        f"DeepSeek pipeline: {len(products)} products, store={receipt_store}, "
+        f"total={receipt_total}, calculated={calculated_total}, "
+        f"confidence={confidence_report.score:.2f}"
+    )
+
+    return receipt, None
+
+
+# =============================================================================
+# MULTIPAGE PDF PROCESSING (OCR all pages first, then single LLM call)
+# =============================================================================
+
+async def ocr_page_only(image_path: Path) -> tuple[str, Optional[str]]:
+    """Wykonaj tylko OCR na stronie, bez strukturyzacji LLM.
+
+    Używane do przetwarzania wielostronicowych PDF-ów gdzie:
+    1. OCR wszystkich stron (równolegle)
+    2. Połączenie tekstów
+    3. Jeden LLM na cały tekst
+
+    Jeśli DeepSeek-OCR zawiedzie, używa fallback modelu (qwen2.5vl:7b).
+
+    Returns:
+        Tuple (surowy tekst OCR, błąd jeśli wystąpił)
+    """
+    if not image_path.exists():
+        return "", f"File not found: {image_path}"
+
+    try:
+        with open(image_path, "rb") as f:
+            image_base64 = base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        return "", f"Failed to read image: {e}"
+
+    logger.info(f"OCR-only: {image_path.name}")
+    ocr_text, ocr_error = await _call_deepseek_ocr(image_base64)
+
+    if ocr_error:
+        logger.warning(f"OCR-only DeepSeek failed for {image_path.name}: {ocr_error}")
+
+        # Fallback to vision model for raw text extraction
+        fallback_model = settings.OCR_FALLBACK_MODEL
+        logger.info(f"OCR-only falling back to {fallback_model} for {image_path.name}...")
+
+        try:
+            from app.ocr import call_ollama
+
+            # Simple prompt for raw text extraction (not JSON)
+            raw_text_prompt = """Odczytaj CAŁY tekst z tego polskiego paragonu.
+Zachowaj oryginalny układ z cenami po prawej stronie.
+Nie formatuj jako JSON - zwróć surowy tekst paragonu."""
+
+            response_text, error = await call_ollama(
+                raw_text_prompt,
+                image_base64,
+                model=fallback_model
             )
 
-    logger.info(f"DeepSeek pipeline: {len(products)} products, store={receipt_store}, "
-                f"total={receipt_total}, calculated={calculated_total}")
+            if error:
+                logger.error(f"OCR-only fallback ({fallback_model}) failed: {error}")
+                return "", f"DeepSeek failed ({ocr_error}), fallback ({fallback_model}) failed ({error})"
+
+            if response_text and len(response_text) > 50:
+                logger.info(f"OCR-only fallback ({fallback_model}): {image_path.name} → {len(response_text)} chars")
+                return response_text, None
+            else:
+                logger.warning(f"OCR-only fallback ({fallback_model}) returned too short response")
+                return "", f"DeepSeek failed ({ocr_error}), fallback too short"
+
+        except Exception as e:
+            logger.error(f"OCR-only fallback exception: {e}")
+            return "", f"DeepSeek failed ({ocr_error}), fallback exception ({e})"
+
+    logger.info(f"OCR-only: {image_path.name} → {len(ocr_text)} chars")
+    return ocr_text, None
+
+
+async def process_multipage_pdf(
+    image_paths: list[Path],
+    filename: str = "multipage.pdf"
+) -> tuple[Optional[Receipt], Optional[str]]:
+    """Przetwórz wielostronicowy PDF: OCR równolegle → jeden LLM.
+
+    Nowe podejście (zamiast per-page LLM):
+    1. OCR wszystkich stron równolegle
+    2. Połącz teksty z separatorami stron
+    3. Jeden prompt LLM na cały tekst
+    4. LLM widzi pełny kontekst (rabaty, suma na końcu)
+
+    Args:
+        image_paths: Lista ścieżek do obrazów stron (PNG z pdf2image)
+        filename: Nazwa pliku do logów
+
+    Returns:
+        Tuple (Receipt, błąd)
+    """
+    import asyncio
+
+    if not image_paths:
+        return None, "No pages to process"
+
+    total_pages = len(image_paths)
+    logger.info(f"Multipage PDF: {filename} ({total_pages} stron)")
+
+    # Step 1: OCR wszystkich stron równolegle
+    logger.info(f"Step 1: OCR {total_pages} stron równolegle...")
+
+    async def ocr_with_index(idx: int, path: Path) -> tuple[int, str, Optional[str]]:
+        text, error = await ocr_page_only(path)
+        return idx, text, error
+
+    tasks = [ocr_with_index(i, path) for i, path in enumerate(image_paths)]
+    results = await asyncio.gather(*tasks)
+
+    # Posortuj po indeksie i zbierz teksty
+    results_sorted = sorted(results, key=lambda x: x[0])
+
+    page_texts = []
+    ocr_errors = []
+
+    for idx, text, error in results_sorted:
+        if error:
+            ocr_errors.append(f"Strona {idx+1}: {error}")
+            page_texts.append(f"[STRONA {idx+1} - BŁĄD OCR]")
+        elif text.strip():
+            page_texts.append(f"--- STRONA {idx+1}/{total_pages} ---\n{text}")
+        else:
+            page_texts.append(f"[STRONA {idx+1} - PUSTA]")
+
+    # Jeśli wszystkie strony zawiodły, zwróć błąd
+    successful_pages = sum(1 for _, text, error in results_sorted if not error and text.strip())
+    if successful_pages == 0:
+        return None, f"OCR failed for all {total_pages} pages: {ocr_errors}"
+
+    logger.info(f"OCR sukces: {successful_pages}/{total_pages} stron")
+
+    # Step 2: Połącz teksty
+    combined_text = "\n\n".join(page_texts)
+    logger.info(f"Step 2: Połączony tekst: {len(combined_text)} chars")
+
+    # Step 3: Wykryj sklep z połączonego tekstu
+    detected_store = detect_store_from_text(combined_text)
+    if detected_store:
+        logger.info(f"Wykryto sklep: {detected_store}")
+
+    # Step 4: JEDEN LLM na cały tekst
+    logger.info(f"Step 3: Strukturyzacja LLM (store: {detected_store or 'generic'})...")
+    data, struct_error = await _call_structuring_llm(combined_text, detected_store=detected_store)
+
+    if struct_error:
+        logger.error(f"Strukturyzacja failed: {struct_error}")
+        return None, struct_error
+
+    if not data:
+        return None, "LLM returned no data"
+
+    # Step 5: Budowanie Receipt (taki sam kod jak w extract_products_deepseek)
+    products_data = data.get("produkty", data.get("products", []))
+
+    if isinstance(data, list):
+        products_data = data
+
+    if not products_data and "nazwa" in data and "cena" in data:
+        products_data = [data]
+
+    logger.info(f"LLM zwrócił {len(products_data)} produktów")
+
+    skip_patterns = ['PTU', 'VAT', 'SUMA', 'TOTAL', 'RAZEM', 'PARAGON', 'FISKALNY',
+                     'KAUCJ', 'ZWROT', 'OPAKOW', 'PŁATN', 'PLATN', 'KARTA', 'SPRZEDA',
+                     'GOTÓWKA', 'RESZTA', 'WYDANO', 'NUMER', 'TRANS', 'OPODATK', 'STRONA']
+
+    products = []
+    for p in products_data:
+        try:
+            name = str(p.get("nazwa") or p.get("name") or "").strip()
+            price = float(p.get("cena") or p.get("price") or 0)
+
+            if not name or len(name) < 3:
+                continue
+
+            name_upper = name.upper()
+            if any(pat in name_upper for pat in skip_patterns):
+                continue
+
+            if price <= 0 or price > 500:
+                continue
+
+            # Discount
+            discount = None
+            original_price = None
+            try:
+                rabat_val = p.get("rabat")
+                if rabat_val:
+                    discount = abs(float(rabat_val))
+                    original_price = round(price + discount, 2)
+            except (ValueError, TypeError):
+                pass
+
+            category = p.get("kategoria") or p.get("category")
+            norm_result = normalize_product(name, store=detected_store)
+
+            if norm_result.method == "no_match":
+                log_unmatched_product(
+                    raw_name=name,
+                    price=price,
+                    store=detected_store,
+                    confidence=norm_result.confidence
+                )
+
+            rabaty_szczegoly = None
+            if discount:
+                rabaty_szczegoly = [
+                    DiscountDetail(typ="kwotowy", wartosc=discount, opis="Rabat")
+                ]
+
+            products.append(Product(
+                nazwa=name,
+                cena=price,
+                warning=None,
+                nazwa_oryginalna=name,
+                nazwa_znormalizowana=norm_result.normalized_name,
+                kategoria=norm_result.category if norm_result.confidence >= 0.6 else category,
+                confidence=norm_result.confidence if norm_result.confidence >= 0.6 else 0.7 if category else None,
+                cena_oryginalna=original_price,
+                rabat=discount,
+                rabaty_szczegoly=rabaty_szczegoly,
+            ))
+
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Skipping invalid product: {p} - {e}")
+            continue
+
+    if not products:
+        return None, "No products found in multipage PDF"
+
+    # Price fixer
+    products, price_warnings = fix_products(products)
+
+    # Metadata
+    receipt_date = data.get("data") or data.get("date")
+    if not receipt_date:
+        receipt_date = extract_date_from_text(combined_text)
+
+    if detected_store:
+        receipt_store = get_store_display_name(detected_store)
+    else:
+        receipt_store = data.get("sklep") or data.get("store")
+
+    # Total - z LLM lub regex z połączonego tekstu
+    receipt_total = extract_total_from_text(combined_text)
+    if not receipt_total:
+        try:
+            receipt_total = float(data.get("suma") or data.get("total") or 0)
+        except (ValueError, TypeError):
+            receipt_total = None
+
+    calculated_total = round(sum(p.cena for p in products), 2)
+
+    if not receipt_total:
+        receipt_total = calculated_total
+
+    # Build receipt
+    receipt = Receipt(
+        products=products,
+        sklep=receipt_store,
+        data=receipt_date,
+        suma=receipt_total,
+        raw_text=combined_text,
+        calculated_total=calculated_total,
+    )
+
+    # Confidence
+    confidence_report = calculate_confidence(receipt)
+
+    if not confidence_report.auto_save_ok:
+        receipt.needs_review = True
+        if confidence_report.issues:
+            receipt.review_reasons.extend(confidence_report.issues)
+        if not receipt.review_reasons and confidence_report.warnings:
+            receipt.review_reasons.append(confidence_report.warnings[0])
+
+    logger.info(
+        f"Multipage PDF done: {len(products)} products, store={receipt_store}, "
+        f"total={receipt_total}, calculated={calculated_total}, "
+        f"confidence={confidence_report.score:.2f}"
+    )
 
     return receipt, None

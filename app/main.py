@@ -32,7 +32,7 @@ from app.telegram.bot import bot
 if settings.OCR_BACKEND == "paddle":
     from app.paddle_ocr import extract_products_paddle, extract_total_from_text
 elif settings.OCR_BACKEND == "deepseek":
-    from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text
+    from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text, process_multipage_pdf
 
 logging.basicConfig(
     level=logging.INFO,
@@ -293,13 +293,36 @@ async def _process_file(file_path: Path) -> ProcessingResult:
         else:
             image_paths = [file_path]
 
-        # Step 1: OCR (process all pages - parallel for multi-page PDFs)
+        # Step 1: OCR (process all pages)
         all_products = []
         all_raw_texts = []  # Collect raw text from all pages for total extraction
         combined_receipt: Receipt | None = None
 
-        # Process pages - use parallel processing for multi-page PDFs
-        if len(image_paths) > 1 and settings.PDF_MAX_PARALLEL_PAGES > 1:
+        # NEW: For multi-page PDFs with deepseek backend, use unified processing
+        # (OCR all pages first, then single LLM call on combined text)
+        if len(image_paths) > 1 and settings.OCR_BACKEND == "deepseek":
+            logger.info(f"Multipage PDF ({len(image_paths)} pages): using unified OCR→LLM pipeline")
+            combined_receipt, ocr_error = await process_multipage_pdf(image_paths, filename)
+
+            if ocr_error or not combined_receipt:
+                error_msg = ocr_error or "Multipage OCR returned no data"
+                logger.error(f"Multipage OCR failed for {filename}: {error_msg}")
+                error_file = write_error_file(filename, error_msg)
+                log_error(filename, error_msg)
+                return ProcessingResult(
+                    success=False,
+                    source_file=filename,
+                    output_file=str(error_file),
+                    error=error_msg,
+                    processed_at=processed_at
+                )
+
+            # Skip the per-page processing loop - go directly to categorization
+            all_products = combined_receipt.products
+            page_results = []  # Empty - not used in unified mode
+
+        # LEGACY: Per-page processing (for single pages or non-deepseek backends)
+        elif len(image_paths) > 1 and settings.PDF_MAX_PARALLEL_PAGES > 1:
             # Parallel processing for multi-page PDFs
             logger.info(f"Processing {len(image_paths)} pages in parallel (max {settings.PDF_MAX_PARALLEL_PAGES} concurrent)")
             page_results = await _process_pages_parallel(image_paths, filename)
@@ -372,9 +395,11 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             calculated_total = round(sum(p.cena for p in all_products), 2)
             combined_receipt.calculated_total = calculated_total
 
-            # For multi-page PDFs, re-extract total from combined raw text
-            # Payment info (Karta płatnicza) is typically on the last page
-            if len(image_paths) > 1 and all_raw_texts:
+            # For multi-page PDFs with LEGACY per-page processing, re-extract total
+            # Skip this for unified mode (deepseek multipage) - already handled
+            is_unified_mode = len(image_paths) > 1 and settings.OCR_BACKEND == "deepseek"
+
+            if len(image_paths) > 1 and all_raw_texts and not is_unified_mode:
                 combined_raw_text = "\n".join(all_raw_texts)
                 combined_receipt.raw_text = combined_raw_text
 
@@ -407,7 +432,8 @@ async def _process_file(file_path: Path) -> ProcessingResult:
                 combined_receipt.suma = calculated_total
 
             # Validate total against sum of products
-            if combined_receipt.suma and calculated_total:
+            # Skip for unified mode - already validated by confidence_scoring
+            if combined_receipt.suma and calculated_total and not is_unified_mode:
                 variance = abs(combined_receipt.suma - calculated_total)
                 variance_pct = (variance / calculated_total * 100) if calculated_total > 0 else 0
 
