@@ -152,6 +152,43 @@ Produktów: 27
 | `/categories` | Wydatki wg kategorii |
 | `/rabaty` | Raport rabatów |
 | `/errors` | Lista błędów OCR |
+| `/feeds` | Lista subskrybowanych kanałów RSS |
+| `/subscribe <URL>` | Dodaj kanał RSS/Atom |
+| `/unsubscribe <ID>` | Usuń kanał RSS |
+| `/summarize <URL>` | Podsumuj stronę internetową |
+| `/refresh` | Pobierz nowe artykuły |
+| `/articles` | Lista ostatnich artykułów |
+
+## RSS/Web Summarizer
+
+System zawiera także agenta do subskrypcji kanałów RSS i podsumowywania stron internetowych.
+
+### Funkcje
+
+- **Subskrypcje RSS/Atom** - dodawaj kanały i automatycznie pobieraj artykuły
+- **Podsumowania na żądanie** - `/summarize <URL>` generuje bullet points
+- **Auto-fetch** - cykliczne pobieranie nowych artykułów (co 4h)
+- **Zapis do Obsidian** - podsumowania w `vault/summaries/`
+
+### Komendy RSS
+
+| Komenda | Opis |
+|---------|------|
+| `/feeds` | Lista subskrybowanych kanałów |
+| `/subscribe <URL>` | Dodaj kanał RSS/Atom |
+| `/unsubscribe <ID>` | Usuń kanał |
+| `/summarize <URL>` | Podsumuj stronę internetową |
+| `/refresh` | Ręczne pobranie artykułów |
+| `/articles [feed_id]` | Lista ostatnich artykułów |
+
+### API RSS
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/rss/feeds` | GET | Lista feedów |
+| `/rss/feeds` | POST | Dodaj feed |
+| `/rss/summarize` | POST | Podsumuj URL |
+| `/rss/articles` | GET | Lista artykułów |
 
 ## Struktura projektu
 
@@ -169,24 +206,35 @@ OCR_V2/
 │   ├── pdf_converter.py    # Konwersja PDF → PNG
 │   ├── models.py           # Modele Pydantic (Receipt, Product)
 │   ├── config.py           # Konfiguracja
+│   ├── rss_fetcher.py      # Pobieranie feedów RSS/Atom
+│   ├── web_scraper.py      # Ekstrakcja treści ze stron
+│   ├── summarizer.py       # Podsumowania LLM
+│   ├── summary_writer.py   # Zapis podsumowań do Obsidian
+│   ├── rss_api.py          # Endpointy API dla RSS
 │   ├── dictionaries/       # Normalizacja nazw produktów/sklepów
 │   │   ├── products.json
 │   │   └── stores.json
+│   ├── db/
+│   │   └── repositories/
+│   │       └── rss.py      # Repository dla RSS/artykułów
 │   └── telegram/
 │       ├── bot.py          # Główna klasa bota + review callbacks
 │       ├── middleware.py   # Autoryzacja
 │       ├── keyboards.py    # Klawiatury inline (w tym review)
 │       ├── formatters.py   # Formatowanie wiadomości
+│       ├── rss_scheduler.py # Scheduler auto-fetch RSS
 │       └── handlers/       # Handlery komend
 │           ├── receipts.py # Zdjęcia/PDF + review flow
 │           ├── pantry.py   # Spiżarnia
 │           ├── stats.py    # Statystyki
-│           └── errors.py   # Błędy
+│           ├── errors.py   # Błędy
+│           └── feeds.py    # Komendy RSS/Summarizer
 ├── paragony/
 │   ├── inbox/              # Folder monitorowany
 │   └── processed/          # Archiwum
 └── vault/
     ├── paragony/           # Historia paragonów (.md)
+    ├── summaries/          # Podsumowania artykułów (.md)
     ├── logs/
     │   └── ocr-errors.md   # Log błędów
     └── spiżarnia.md        # Agregowany widok

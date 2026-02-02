@@ -12,8 +12,9 @@
 4. [Weryfikacja paragonów](#weryfikacja-paragonów)
 5. [Przeglądanie danych](#przeglądanie-danych)
 6. [Obsługiwane sklepy](#obsługiwane-sklepy)
-7. [Słownik produktów](#słownik-produktów)
-8. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
+7. [RSS i podsumowania stron](#rss-i-podsumowania-stron)
+8. [Słownik produktów](#słownik-produktów)
+9. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
 
 ---
 
@@ -250,6 +251,100 @@ System "wie" jak czytać każdy format i wyciąga prawidłowe ceny.
 
 ---
 
+## RSS i podsumowania stron
+
+System zawiera funkcję **subskrypcji kanałów RSS/Atom** oraz **podsumowywania stron internetowych** za pomocą AI.
+
+### Co to robi?
+
+| Funkcja | Opis |
+|---------|------|
+| 📰 Subskrypcje RSS | Śledź ulubione blogi i serwisy informacyjne |
+| 📝 Podsumowania | AI generuje bullet points z kluczowymi informacjami |
+| 🔄 Auto-fetch | Nowe artykuły pobierane automatycznie co 4 godziny |
+| 💾 Zapis do Obsidian | Podsumowania zapisywane w `vault/summaries/` |
+
+### Jak zacząć?
+
+#### Dodaj kanał RSS
+
+W Telegram wpisz:
+```
+/subscribe https://blog.example.com/rss
+```
+
+Bot odpowie:
+```
+✅ Dodano kanał: Example Blog
+📰 Typ: RSS 2.0
+🔗 https://blog.example.com/rss
+```
+
+#### Podsumuj pojedynczą stronę
+
+Aby podsumować dowolny artykuł:
+```
+/summarize https://example.com/article
+```
+
+Bot przeczyta stronę i wygeneruje podsumowanie:
+```
+📝 Podsumowanie: Example Article
+
+• Główny temat artykułu dotyczy...
+• Kluczowe dane: 45% wzrost, 100 nowych użytkowników
+• Autor rekomenduje wdrożenie rozwiązania X
+• Wnioski: technologia Y zyskuje na popularności
+
+📅 2026-02-02 | 🔗 example.com
+```
+
+### Komendy RSS
+
+| Komenda | Co robi |
+|---------|---------|
+| `/feeds` | Lista subskrybowanych kanałów |
+| `/subscribe <URL>` | Dodaj nowy kanał RSS/Atom |
+| `/unsubscribe <ID>` | Usuń kanał (ID z listy `/feeds`) |
+| `/summarize <URL>` | Podsumuj pojedynczą stronę |
+| `/refresh` | Ręcznie pobierz nowe artykuły |
+| `/articles` | Ostatnie pobrane artykuły |
+| `/articles <feed_id>` | Artykuły z konkretnego kanału |
+
+### Automatyczne pobieranie
+
+System automatycznie sprawdza kanały RSS co **4 godziny** i pobiera nowe artykuły. Gdy znajdzie nowe treści, wysyła powiadomienie:
+
+```
+📬 Nowe artykuły (3)
+
+📰 Example Blog:
+  • Tytuł artykułu 1
+  • Tytuł artykułu 2
+
+📰 Another Feed:
+  • Ciekawy artykuł
+```
+
+### Gdzie znajdę podsumowania?
+
+Wszystkie podsumowania są zapisywane w folderze `vault/summaries/` jako pliki markdown. Możesz je przeglądać w Obsidian lub dowolnym edytorze tekstu.
+
+**Przykładowy plik:**
+```
+vault/summaries/2026-02-02_example-article.md
+```
+
+### Obsługiwane formaty
+
+| Format | Przykład |
+|--------|----------|
+| RSS 2.0 | Większość blogów i serwisów |
+| Atom | Blogi na Bloggerze, niektóre serwisy |
+| Strony HTML | Dowolna strona z `/summarize` |
+
+---
+
 ## Słownik produktów
 
 ### Jak działa rozpoznawanie produktów?
@@ -328,4 +423,4 @@ Jeśli masz problemy lub pytania:
 
 ---
 
-*Ostatnia aktualizacja: luty 2025*
+*Ostatnia aktualizacja: luty 2026*

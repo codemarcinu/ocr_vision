@@ -295,6 +295,12 @@ class Product(BaseModel):
 | `/rabaty`, `/discounts` | Discount report |
 | `/errors` | OCR error log |
 | `/clearerrors` | Clear error log |
+| `/feeds` | List subscribed RSS feeds |
+| `/subscribe <URL>` | Add RSS/Atom feed |
+| `/unsubscribe <ID>` | Remove feed |
+| `/summarize <URL>` | Summarize web page on demand |
+| `/refresh` | Manually fetch new articles |
+| `/articles [feed_id]` | List recent articles |
 
 ### JSON Import via Telegram
 
@@ -325,6 +331,59 @@ Send JSON directly to the bot to import pre-structured receipts:
   - Access via: `http://localhost:8000/web/dictionary`
   - Tabs: Unmatched products, Dictionary browser, Shortcuts management
   - Features: Learn products, add shortcuts, browse by category
+
+### RSS/Web Summarizer (`app/rss_*.py`, `app/summarizer.py`)
+
+Agent do subskrypcji kanałów RSS/Atom i podsumowywania stron internetowych na żądanie.
+
+**Architecture:**
+```
+RSS Feed URL → feedparser → Articles → trafilatura → Content → Ollama → Summary
+                                                                            ↓
+                                                              PostgreSQL + Obsidian
+```
+
+**Key files:**
+- `app/rss_fetcher.py` - RSS/Atom feed parsing using feedparser
+- `app/web_scraper.py` - Web content extraction using trafilatura
+- `app/summarizer.py` - LLM summarization using Ollama
+- `app/summary_writer.py` - Obsidian markdown output
+- `app/rss_api.py` - REST API endpoints
+- `app/telegram/handlers/feeds.py` - Telegram commands
+- `app/telegram/rss_scheduler.py` - APScheduler job for auto-fetch
+
+**Database models (`app/db/models.py`):**
+- `RssFeed` - Feed subscriptions (id, name, feed_url, feed_type, is_active, last_fetched)
+- `Article` - Fetched articles (id, feed_id, title, url, content, published_date)
+- `ArticleSummary` - LLM summaries (id, article_id, summary_text, model_used)
+
+**API endpoints (`/rss/*`):**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/rss/feeds` | GET | List all feeds |
+| `/rss/feeds` | POST | Add new feed |
+| `/rss/feeds/{id}` | DELETE | Remove feed |
+| `/rss/articles` | GET | List recent articles |
+| `/rss/summarize` | POST | Summarize URL on demand |
+| `/rss/refresh` | POST | Trigger manual fetch |
+| `/rss/stats` | GET | RSS statistics |
+
+**Summary format (bullet points):**
+```
+- Główny temat/teza
+- Kluczowe fakty i dane
+- Wnioski lub rekomendacje
+```
+
+**Auto-fetch scheduler:**
+- Runs every `RSS_FETCH_INTERVAL_HOURS` (default: 4h)
+- Fetches all active feeds
+- Summarizes new articles
+- Sends Telegram notification
+
+**Output:**
+- Database: `rss_feeds`, `articles`, `article_summaries` tables
+- Obsidian: `vault/summaries/*.md` with YAML frontmatter
 
 ## Key Configuration
 
@@ -397,6 +456,12 @@ PDF_MAX_PARALLEL_PAGES=2                            # Concurrent pages for multi
 # Google Cloud Vision (ultimate fallback - disabled by default)
 GOOGLE_VISION_ENABLED=false                         # Enable Google Vision as last-resort OCR fallback
 GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json  # Path to service account JSON
+
+# RSS/Web Summarizer
+SUMMARIZER_MODEL=                                   # Empty = use CLASSIFIER_MODEL
+SUMMARIZER_ENABLED=true                             # Enable/disable RSS summarizer
+RSS_FETCH_INTERVAL_HOURS=4                          # Auto-fetch interval (default: 4h)
+RSS_MAX_ARTICLES_PER_FEED=10                        # Max articles per feed fetch
 ```
 
 ## Ollama Models Required
