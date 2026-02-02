@@ -11,6 +11,7 @@ from app.db.repositories.feedback import FeedbackRepository
 from app.db.repositories.pantry import PantryRepository
 from app.db.repositories.products import ProductRepository
 from app.db.repositories.receipts import ReceiptRepository
+from app.db.repositories.rss import ArticleRepository, RssFeedRepository
 from app.db.repositories.stores import StoreRepository
 
 
@@ -56,6 +57,16 @@ async def get_analytics_repo(session: DbSession) -> AnalyticsRepository:
     return AnalyticsRepository(session)
 
 
+async def get_feed_repo(session: DbSession) -> RssFeedRepository:
+    """Get RSS feed repository."""
+    return RssFeedRepository(session)
+
+
+async def get_article_repo(session: DbSession) -> ArticleRepository:
+    """Get article repository."""
+    return ArticleRepository(session)
+
+
 # Type aliases for repository dependencies
 ProductRepoDep = Annotated[ProductRepository, Depends(get_product_repo)]
 StoreRepoDep = Annotated[StoreRepository, Depends(get_store_repo)]
@@ -63,3 +74,5 @@ ReceiptRepoDep = Annotated[ReceiptRepository, Depends(get_receipt_repo)]
 PantryRepoDep = Annotated[PantryRepository, Depends(get_pantry_repo)]
 FeedbackRepoDep = Annotated[FeedbackRepository, Depends(get_feedback_repo)]
 AnalyticsRepoDep = Annotated[AnalyticsRepository, Depends(get_analytics_repo)]
+FeedRepoDep = Annotated[RssFeedRepository, Depends(get_feed_repo)]
+ArticleRepoDep = Annotated[ArticleRepository, Depends(get_article_repo)]

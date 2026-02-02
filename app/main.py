@@ -20,6 +20,7 @@ from app.dependencies import AnalyticsRepoDep, FeedbackRepoDep, PantryRepoDep, R
 from app.dictionary_api import router as dictionary_router
 from app.models import HealthStatus, ProcessingResult, Receipt
 from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
+from app.rss_api import router as rss_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
@@ -51,6 +52,7 @@ app = FastAPI(
 # Register API routers
 app.include_router(dictionary_router)
 app.include_router(reports_router)
+app.include_router(rss_router)
 
 
 # Web UI for dictionary management
