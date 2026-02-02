@@ -35,6 +35,11 @@ from app.telegram.handlers.feeds import (
     refresh_command,
     articles_command,
 )
+from app.telegram.handlers.transcription import (
+    transcribe_command,
+    transcriptions_command,
+    note_command,
+)
 
 __all__ = [
     "handle_document",
@@ -60,4 +65,7 @@ __all__ = [
     "summarize_command",
     "refresh_command",
     "articles_command",
+    "transcribe_command",
+    "transcriptions_command",
+    "note_command",
 ]

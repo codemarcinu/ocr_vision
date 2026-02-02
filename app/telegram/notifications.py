@@ -186,6 +186,10 @@ def start_scheduler(bot: Bot) -> None:
     from app.telegram.rss_scheduler import register_rss_scheduler
     register_rss_scheduler(scheduler, bot)
 
+    # Register transcription scheduler
+    from app.telegram.transcription_scheduler import register_transcription_scheduler
+    register_transcription_scheduler(scheduler, bot)
+
     scheduler.start()
     logger.info("Notification scheduler started (daily at 9:00 AM)")
 

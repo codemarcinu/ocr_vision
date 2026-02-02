@@ -24,6 +24,7 @@ from app.telegram.handlers import (
     handle_document,
     handle_photo,
     is_json_receipt,
+    note_command,
     pantry_command,
     pending_command,
     process_json_import,
@@ -36,6 +37,8 @@ from app.telegram.handlers import (
     stores_command,
     subscribe_command,
     summarize_command,
+    transcribe_command,
+    transcriptions_command,
     unsubscribe_command,
     use_command,
 )
@@ -148,6 +151,11 @@ class PantryBot:
         self.application.add_handler(CommandHandler("refresh", refresh_command))
         self.application.add_handler(CommandHandler("articles", articles_command))
 
+        # Transcription handlers
+        self.application.add_handler(CommandHandler("transcribe", transcribe_command))
+        self.application.add_handler(CommandHandler("transcriptions", transcriptions_command))
+        self.application.add_handler(CommandHandler("note", note_command))
+
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self._handle_callback))
 
@@ -202,6 +210,12 @@ class PantryBot:
 • <code>/summarize &lt;URL&gt;</code> - podsumuj stronę
 • <code>/refresh</code> - pobierz nowe artykuły
 • <code>/articles [feed_id]</code> - ostatnie artykuły
+
+<b>🎙️ Transkrypcja:</b>
+• <code>/transcribe &lt;URL&gt;</code> - transkrybuj YouTube
+• Wyślij plik audio + /transcribe
+• <code>/transcriptions</code> - lista transkrypcji
+• <code>/note &lt;ID&gt;</code> - wygeneruj notatkę
 
 <b>❌ Błędy:</b>
 • <code>/errors</code> - lista błędów OCR
