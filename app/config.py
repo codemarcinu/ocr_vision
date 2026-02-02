@@ -61,10 +61,70 @@ class Settings:
     GOOGLE_VISION_ENABLED: bool = os.getenv("GOOGLE_VISION_ENABLED", "false").lower() == "true"
 
     # Web Summarizer configuration
-    SUMMARIZER_MODEL: str = os.getenv("SUMMARIZER_MODEL", "")  # Empty = use CLASSIFIER_MODEL
+    SUMMARIZER_MODEL: str = os.getenv("SUMMARIZER_MODEL", "")  # Empty = use CLASSIFIER_MODEL (for EN)
+    SUMMARIZER_MODEL_PL: str = os.getenv(
+        "SUMMARIZER_MODEL_PL",
+        "SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M"
+    )  # Polish language model for article summarization
     SUMMARIZER_ENABLED: bool = os.getenv("SUMMARIZER_ENABLED", "true").lower() == "true"
     RSS_FETCH_INTERVAL_HOURS: int = int(os.getenv("RSS_FETCH_INTERVAL_HOURS", "4"))
     RSS_MAX_ARTICLES_PER_FEED: int = int(os.getenv("RSS_MAX_ARTICLES_PER_FEED", "10"))
+
+    # Article categories for summarization
+    ARTICLE_CATEGORIES: list = [
+        "Technologia",
+        "Biznes",
+        "Nauka",
+        "Polityka",
+        "Kultura",
+        "Sport",
+        "Zdrowie",
+        "Inne",
+    ]
+
+    # ==========================================================================
+    # Transcription Agent Configuration
+    # ==========================================================================
+    TRANSCRIPTION_ENABLED: bool = os.getenv("TRANSCRIPTION_ENABLED", "true").lower() == "true"
+
+    # Faster-Whisper settings
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "medium")  # tiny, base, small, medium, large-v3
+    WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cuda")  # cuda, cpu, auto
+    WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "float16")  # float16, int8, int8_float16
+    WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "")  # empty = auto-detect
+    WHISPER_UNLOAD_AFTER_USE: bool = os.getenv("WHISPER_UNLOAD_AFTER_USE", "true").lower() == "true"
+
+    # LLM for knowledge extraction from transcriptions
+    # Empty = use CLASSIFIER_MODEL
+    TRANSCRIPTION_NOTE_MODEL: str = os.getenv("TRANSCRIPTION_NOTE_MODEL", "")
+
+    # Auto-generate note after transcription completes
+    TRANSCRIPTION_AUTO_GENERATE_NOTE: bool = os.getenv(
+        "TRANSCRIPTION_AUTO_GENERATE_NOTE", "true"
+    ).lower() == "true"
+
+    # yt-dlp settings
+    YTDLP_FORMAT: str = os.getenv("YTDLP_FORMAT", "bestaudio[ext=m4a]/bestaudio/best")
+    YTDLP_MAX_FILESIZE_MB: int = int(os.getenv("YTDLP_MAX_FILESIZE_MB", "500"))
+
+    # Processing limits
+    TRANSCRIPTION_MAX_DURATION_HOURS: int = int(os.getenv("TRANSCRIPTION_MAX_DURATION_HOURS", "4"))
+    TRANSCRIPTION_MAX_CONCURRENT_JOBS: int = int(os.getenv("TRANSCRIPTION_MAX_CONCURRENT_JOBS", "1"))
+    TRANSCRIPTION_CLEANUP_HOURS: int = int(os.getenv("TRANSCRIPTION_CLEANUP_HOURS", "24"))
+
+    # Transcription categories for note extraction
+    TRANSCRIPTION_CATEGORIES: list = [
+        "Edukacja",
+        "Technologia",
+        "Biznes",
+        "Rozrywka",
+        "Nauka",
+        "Wywiad",
+        "Podcast",
+        "Tutorial",
+        "Prezentacja",
+        "Inne",
+    ]
 
     # Paths
     BASE_DIR: Path = Path("/data")
@@ -73,9 +133,18 @@ class Settings:
     VAULT_DIR: Path = BASE_DIR / "vault"
     RECEIPTS_DIR: Path = VAULT_DIR / "paragony"
     LOGS_DIR: Path = VAULT_DIR / "logs"
-    SUMMARIES_DIR: Path = VAULT_DIR / "summaries"
+    # Summaries can be in a separate location (configurable via env or volume mount)
+    SUMMARIES_DIR: Path = Path(os.getenv("SUMMARIES_DIR", str(BASE_DIR / "summaries")))
     PANTRY_FILE: Path = VAULT_DIR / "spiżarnia.md"
     ERROR_LOG_FILE: Path = LOGS_DIR / "ocr-errors.md"
+
+    # Transcription paths
+    TRANSCRIPTION_OUTPUT_DIR: Path = Path(os.getenv(
+        "TRANSCRIPTION_OUTPUT_DIR", str(BASE_DIR / "transcriptions")
+    ))
+    TRANSCRIPTION_TEMP_DIR: Path = Path(os.getenv(
+        "TRANSCRIPTION_TEMP_DIR", "/tmp/transcriptions"
+    ))
 
     # Validation
     PRICE_WARNING_THRESHOLD: float = 100.0  # Flag prices above this
@@ -110,7 +179,9 @@ class Settings:
             cls.PROCESSED_DIR,
             cls.RECEIPTS_DIR,
             cls.LOGS_DIR,
-            cls.SUMMARIES_DIR
+            cls.SUMMARIES_DIR,
+            cls.TRANSCRIPTION_OUTPUT_DIR,
+            cls.TRANSCRIPTION_TEMP_DIR,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 

@@ -26,8 +26,10 @@ services:
     volumes:
       - ./paragony:/data/paragony
       - ./vault:/data/vault
+      - ./transcriptions:/data/transcriptions
       - paddleocr_cache:/root/.paddleocr
       - ./credentials:/data/credentials:ro
+      - whisper_models:/tmp/transcriptions/models
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # DeepSeek pipeline: fast OCR + LLM structuring (~20s total)
@@ -45,6 +47,14 @@ services:
       # Google Cloud Vision (ultimate fallback - disabled by default)
       - GOOGLE_VISION_ENABLED=true
       - GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json
+      # Transcription Agent
+      - TRANSCRIPTION_ENABLED=true
+      - WHISPER_MODEL=medium
+      - WHISPER_DEVICE=cuda
+      - WHISPER_COMPUTE_TYPE=float16
+      - WHISPER_UNLOAD_AFTER_USE=true
+      - TRANSCRIPTION_AUTO_GENERATE_NOTE=true
+      - TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -112,6 +122,7 @@ services:
 volumes:
   postgres_data:
   paddleocr_cache:
+  whisper_models:
   prometheus_data:
   loki_data:
   grafana_data:
