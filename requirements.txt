@@ -22,3 +22,9 @@ alembic==1.13.1
 greenlet==3.0.3
 # Google Cloud Vision (ultimate OCR fallback)
 google-cloud-vision>=3.4.0
+# RSS/Web Summarizer
+feedparser>=6.0.10
+trafilatura>=1.6.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+validators>=0.22.0

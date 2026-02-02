@@ -60,6 +60,12 @@ class Settings:
     # Requires: GOOGLE_APPLICATION_CREDENTIALS env var pointing to service account JSON
     GOOGLE_VISION_ENABLED: bool = os.getenv("GOOGLE_VISION_ENABLED", "false").lower() == "true"
 
+    # Web Summarizer configuration
+    SUMMARIZER_MODEL: str = os.getenv("SUMMARIZER_MODEL", "")  # Empty = use CLASSIFIER_MODEL
+    SUMMARIZER_ENABLED: bool = os.getenv("SUMMARIZER_ENABLED", "true").lower() == "true"
+    RSS_FETCH_INTERVAL_HOURS: int = int(os.getenv("RSS_FETCH_INTERVAL_HOURS", "4"))
+    RSS_MAX_ARTICLES_PER_FEED: int = int(os.getenv("RSS_MAX_ARTICLES_PER_FEED", "10"))
+
     # Paths
     BASE_DIR: Path = Path("/data")
     INBOX_DIR: Path = BASE_DIR / "paragony" / "inbox"
@@ -67,6 +73,7 @@ class Settings:
     VAULT_DIR: Path = BASE_DIR / "vault"
     RECEIPTS_DIR: Path = VAULT_DIR / "paragony"
     LOGS_DIR: Path = VAULT_DIR / "logs"
+    SUMMARIES_DIR: Path = VAULT_DIR / "summaries"
     PANTRY_FILE: Path = VAULT_DIR / "spiżarnia.md"
     ERROR_LOG_FILE: Path = LOGS_DIR / "ocr-errors.md"
 
@@ -102,7 +109,8 @@ class Settings:
             cls.INBOX_DIR,
             cls.PROCESSED_DIR,
             cls.RECEIPTS_DIR,
-            cls.LOGS_DIR
+            cls.LOGS_DIR,
+            cls.SUMMARIES_DIR
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
