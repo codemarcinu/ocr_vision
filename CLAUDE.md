@@ -301,6 +301,10 @@ class Product(BaseModel):
 | `/summarize <URL>` | Summarize web page on demand |
 | `/refresh` | Manually fetch new articles |
 | `/articles [feed_id]` | List recent articles |
+| `/transcribe <URL>` | Transcribe YouTube video |
+| `/transcribe` + audio | Transcribe uploaded file |
+| `/transcriptions` | List recent transcriptions |
+| `/note <ID>` | Generate note from transcription |
 
 ### JSON Import via Telegram
 
@@ -368,12 +372,25 @@ RSS Feed URL → feedparser → Articles → trafilatura → Content → Ollama 
 | `/rss/refresh` | POST | Trigger manual fetch |
 | `/rss/stats` | GET | RSS statistics |
 
-**Summary format (bullet points):**
+**Structured summary output (`app/summarizer.py`):**
+```python
+@dataclass
+class SummaryResult:
+    summary_text: str           # Bullet points
+    model_used: str             # Model that generated summary
+    processing_time_sec: float
+    tags: List[str]             # Max 5 topic tags
+    category: str               # From ARTICLE_CATEGORIES
+    entities: List[str]         # People, companies, products mentioned
+    language: str               # 'pl' or 'en'
 ```
-- Główny temat/teza
-- Kluczowe fakty i dane
-- Wnioski lub rekomendacje
-```
+
+**Language detection:**
+- Auto-detects Polish vs English based on Polish-specific characters (ą, ć, ę, etc.)
+- Polish articles → uses `SUMMARIZER_MODEL_PL` (Bielik 11B)
+- English articles → uses `SUMMARIZER_MODEL` or `CLASSIFIER_MODEL`
+
+**Article categories:** Technologia, Biznes, Nauka, Polityka, Kultura, Sport, Zdrowie, Inne
 
 **Auto-fetch scheduler:**
 - Runs every `RSS_FETCH_INTERVAL_HOURS` (default: 4h)
@@ -383,7 +400,157 @@ RSS Feed URL → feedparser → Articles → trafilatura → Content → Ollama 
 
 **Output:**
 - Database: `rss_feeds`, `articles`, `article_summaries` tables
-- Obsidian: `vault/summaries/*.md` with YAML frontmatter
+- Obsidian: `SUMMARIES_DIR/*.md` (default: `/data/summaries/`) with rich YAML frontmatter:
+  ```yaml
+  title: Article Title
+  url: https://example.com/article
+  source: feed_name
+  category: Technologia
+  tags: [summary, article, technologia, ai, llm]
+  entities: [OpenAI, GPT-5, Sam Altman]
+  ```
+- Entities are rendered as Obsidian wiki links: `[[OpenAI]]`
+
+### Transcription Agent (`app/transcription/`)
+
+Agent do transkrypcji audio/wideo (YouTube, pliki lokalne) z generowaniem notatek w formacie Obsidian.
+
+**Architecture:**
+```
+YouTube URL / Audio File
+         │
+         ▼
+┌─────────────────────┐
+│  TranscriptionJob   │  (status: pending → downloading → transcribing → extracting → completed)
+└─────────────────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+ yt-dlp    Local File
+    │         │
+    └────┬────┘
+         ▼
+┌─────────────────────┐
+│  Faster-Whisper     │  (GPU/CPU, model: medium/large)
+└─────────────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  Transcription      │  (full_text + segments with timestamps)
+└─────────────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  Ollama LLM         │  (knowledge extraction)
+└─────────────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  TranscriptionNote  │  (summary, topics, entities, action_items)
+└─────────────────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+PostgreSQL  Obsidian MD
+```
+
+**Key files:**
+- `app/transcription/transcriber.py` - Faster-Whisper integration, GPU memory management
+- `app/transcription/downloader.py` - yt-dlp YouTube download, metadata extraction
+- `app/transcription/extractor.py` - LLM knowledge extraction (summary, topics, entities)
+- `app/transcription/note_writer.py` - Obsidian markdown generation with YAML frontmatter
+- `app/transcription_api.py` - REST API endpoints
+- `app/telegram/handlers/transcription.py` - Telegram commands
+- `app/telegram/transcription_scheduler.py` - Background job processing and cleanup
+
+**Database models (`app/db/models.py`):**
+- `TranscriptionJob` - Job tracking (id, source_type, source_url, status, progress_percent, whisper_model)
+- `Transcription` - Text output (full_text, segments as JSONB, detected_language, word_count)
+- `TranscriptionNote` - Extracted knowledge (summary_text, key_topics, entities, action_items, category, tags)
+
+**API endpoints (`/transcription/*`):**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/transcription/jobs` | GET | List recent jobs |
+| `/transcription/jobs` | POST | Create job from URL |
+| `/transcription/jobs/upload` | POST | Create job from file upload |
+| `/transcription/jobs/{id}` | GET | Job details |
+| `/transcription/jobs/{id}/transcription` | GET | Get transcription text |
+| `/transcription/jobs/{id}/note` | GET | Get generated note |
+| `/transcription/jobs/{id}/generate-note` | POST | Generate note from transcription |
+| `/transcription/jobs/{id}/process` | POST | Process pending job immediately |
+| `/transcription/jobs/{id}` | DELETE | Delete job |
+| `/transcription/stats` | GET | Statistics |
+
+**Telegram commands:**
+| Command | Description |
+|---------|-------------|
+| `/transcribe <URL>` | Transcribe YouTube video |
+| `/transcribe` + audio file | Transcribe uploaded file |
+| `/transcriptions` | List recent transcriptions |
+| `/note <ID>` | Generate note from transcription |
+
+**Subtitle optimization:**
+- System automatically downloads subtitles from YouTube (PL/EN priority)
+- If subtitles available, skips Whisper transcription entirely
+- Significantly faster for videos with existing subtitles
+
+**GPU memory management:**
+- `WHISPER_UNLOAD_AFTER_USE=true` - Frees VRAM after each transcription
+- Prevents competition with Ollama models for GPU memory
+- Alternative: `WHISPER_DEVICE=cpu` for systems with limited VRAM
+
+**Output format (Obsidian):**
+```markdown
+---
+title: "Video Title"
+type: transcription
+source_type: youtube
+source_url: "https://youtube.com/..."
+channel: "Channel Name"
+duration: "45:00"
+category: "Technologia"
+tags: [transcription, youtube, technologia, ai]
+entities: [OpenAI, GPT-5]
+---
+
+# Video Title
+
+**Kanał:** Channel Name
+**Czas trwania:** 45:00
+**Kategoria:** Technologia
+
+## Podsumowanie
+
+Brief summary of the content...
+
+## Główne tematy
+
+- Topic 1
+- Topic 2
+
+## Kluczowe punkty
+
+- Key point 1
+- Key point 2
+
+## Zadania do wykonania
+
+- [ ] Action item 1
+- [ ] Action item 2
+
+## Powiązane
+
+- [[OpenAI]]
+- [[GPT-5]]
+
+---
+Źródło: [Video Title](https://youtube.com/...)
+```
+
+**Background scheduler:**
+- Process pending jobs every 2 minutes
+- Cleanup temp files every hour (files older than 24h)
 
 ## Key Configuration
 
@@ -458,10 +625,26 @@ GOOGLE_VISION_ENABLED=false                         # Enable Google Vision as la
 GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json  # Path to service account JSON
 
 # RSS/Web Summarizer
-SUMMARIZER_MODEL=                                   # Empty = use CLASSIFIER_MODEL
+SUMMARIZER_MODEL=                                   # Empty = use CLASSIFIER_MODEL (for English)
+SUMMARIZER_MODEL_PL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish language model
 SUMMARIZER_ENABLED=true                             # Enable/disable RSS summarizer
 RSS_FETCH_INTERVAL_HOURS=4                          # Auto-fetch interval (default: 4h)
 RSS_MAX_ARTICLES_PER_FEED=10                        # Max articles per feed fetch
+SUMMARIES_DIR=/data/summaries                       # Output directory for summaries (configurable)
+
+# Transcription Agent
+TRANSCRIPTION_ENABLED=true                          # Enable/disable transcription agent
+WHISPER_MODEL=medium                                # tiny/base/small/medium/large (medium = default)
+WHISPER_DEVICE=cuda                                 # cuda/cpu/auto
+WHISPER_COMPUTE_TYPE=float16                        # float16/int8
+WHISPER_LANGUAGE=                                   # Empty = auto-detect
+WHISPER_UNLOAD_AFTER_USE=true                       # Free VRAM after transcription
+TRANSCRIPTION_NOTE_MODEL=                           # Empty = use CLASSIFIER_MODEL
+TRANSCRIPTION_AUTO_GENERATE_NOTE=true               # Auto-generate note after transcription
+TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions       # Output directory for notes
+TRANSCRIPTION_MAX_DURATION_HOURS=4                  # Max video duration limit
+TRANSCRIPTION_MAX_CONCURRENT_JOBS=1                 # Concurrent job limit
+TRANSCRIPTION_CLEANUP_HOURS=24                      # Temp file cleanup threshold
 ```
 
 ## Ollama Models Required
@@ -474,6 +657,9 @@ ollama pull qwen2.5vl:7b    # Fallback for when DeepSeek-OCR fails (6GB)
 
 # Alternative (vision backend - slower but single model)
 ollama pull qwen2.5vl:7b    # OCR extraction (6GB, requires num_ctx=4096)
+
+# RSS/Summarizer (Polish content)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM for summaries (7GB)
 ```
 
 Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30m by default). Set `UNLOAD_MODELS_AFTER_USE=true` for low VRAM systems.
@@ -602,6 +788,8 @@ curl http://localhost:8000/reports/classifier-ab
 - `vault/logs/unmatched.json` - Products that failed dictionary matching (for learning)
 - `vault/logs/corrections.json` - Receipt review corrections history
 - `vault/paragony/ERROR_*.md` - Per-receipt error files
+- `SUMMARIES_DIR/*.md` - Article summaries with YAML frontmatter (default: `/data/summaries/`)
+- `SUMMARIES_DIR/index.md` - Auto-generated index of recent summaries
 
 ## Additional API Endpoints
 
@@ -857,5 +1045,4 @@ curl -X POST http://localhost:8000/obsidian/sync/all
 - **Symptom:** "Ollama error: Server error '500 Internal Server Error'" in fallback
 - **Cause:** Fallback model not installed (default: `qwen2.5vl:7b`)
 - **Solution:** Install the fallback model: `ollama pull qwen2.5vl:7b`
-- **Solution:** Install the fallback model: `ollama pull qwen3-vl:8b`
 - **Alternative:** Change fallback to installed model: `OCR_FALLBACK_MODEL=minicpm-v`
