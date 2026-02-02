@@ -1,61 +1,146 @@
-"""Article summarizer using Ollama LLM."""
+"""Article summarizer using Ollama LLM with structured JSON output."""
 
+import json
 import logging
+import re
 import time
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 from app.config import settings
 from app import ollama_client
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_PROMPT_PL = """Przeanalizuj poniższy artykuł i wyodrębnij kluczowe informacje w formie bullet points (po polsku):
+# Polish prompt with JSON output for Bielik model
+SUMMARY_PROMPT_PL = """Przeanalizuj poniższy artykuł i zwróć wynik w formacie JSON.
 
-- Główny temat/teza
-- Kluczowe fakty i dane
-- Wnioski lub rekomendacje
+INSTRUKCJE:
+1. Wyodrębnij kluczowe informacje jako bullet points (po polsku)
+2. Wybierz max 5 tagów tematycznych (pojedyncze słowa, małe litery)
+3. Przypisz kategorię z listy: {categories}
+4. Wylistuj wspomniane osoby, firmy, produkty, technologie
 
-Odpowiedz TYLKO bullet pointami, bez wprowadzenia ani podsumowania.
+WYMAGANY FORMAT JSON:
+{{
+  "summary": "- punkt pierwszy\\n- punkt drugi\\n- punkt trzeci",
+  "tags": ["tag1", "tag2", "tag3"],
+  "category": "Technologia",
+  "entities": ["OpenAI", "GPT-5", "Sam Altman"]
+}}
 
-Artykuł:
+ARTYKUŁ:
 {content}
 
-Bullet points:"""
+JSON:"""
 
-SUMMARY_PROMPT_EN = """Analyze the following article and extract key information as bullet points:
+# English prompt
+SUMMARY_PROMPT_EN = """Analyze the following article and return the result in JSON format.
 
-- Main topic/thesis
-- Key facts and data
-- Conclusions or recommendations
+INSTRUCTIONS:
+1. Extract key information as bullet points
+2. Select max 5 topic tags (single words, lowercase)
+3. Assign category from: {categories}
+4. List mentioned people, companies, products, technologies
 
-Respond ONLY with bullet points, no introduction or summary.
+REQUIRED JSON FORMAT:
+{{
+  "summary": "- first point\\n- second point\\n- third point",
+  "tags": ["tag1", "tag2", "tag3"],
+  "category": "Technology",
+  "entities": ["OpenAI", "GPT-5", "Sam Altman"]
+}}
 
-Article:
+ARTICLE:
 {content}
 
-Bullet points:"""
+JSON:"""
+
+# Category mapping for English
+CATEGORIES_EN = [
+    "Technology",
+    "Business",
+    "Science",
+    "Politics",
+    "Culture",
+    "Sport",
+    "Health",
+    "Other",
+]
 
 
 @dataclass
 class SummaryResult:
-    """Result of summarization."""
+    """Result of summarization with metadata."""
+
     summary_text: str
     model_used: str
     processing_time_sec: float
+    tags: List[str] = field(default_factory=list)
+    category: Optional[str] = None
+    entities: List[str] = field(default_factory=list)
+    language: str = "pl"
+
+
+def _parse_json_response(response: str) -> Optional[dict]:
+    """
+    Parse JSON from LLM response.
+
+    Handles cases where LLM wraps JSON in markdown code blocks.
+    """
+    text = response.strip()
+
+    # Try to extract JSON from markdown code block
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if json_match:
+        text = json_match.group(1)
+
+    # Try to find JSON object in text
+    json_start = text.find("{")
+    json_end = text.rfind("}") + 1
+    if json_start != -1 and json_end > json_start:
+        text = text[json_start:json_end]
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse JSON: {e}")
+        logger.debug(f"Raw response: {response[:500]}")
+        return None
+
+
+def _extract_summary_fallback(response: str) -> str:
+    """
+    Extract summary from non-JSON response as fallback.
+
+    Looks for bullet points in the response.
+    """
+    lines = response.strip().split("\n")
+    bullet_lines = []
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith(("-", "*", "•", "·")):
+            bullet_lines.append(line)
+
+    if bullet_lines:
+        return "\n".join(bullet_lines)
+
+    # Return first 500 chars as last resort
+    return response[:500] if response else ""
 
 
 async def summarize_content(
     content: str,
-    language: str = "pl",
+    language: str = "auto",
     max_content_length: int = 8000,
 ) -> Tuple[Optional[SummaryResult], Optional[str]]:
     """
-    Generate bullet-point summary of content using LLM.
+    Generate structured summary of content using LLM.
 
     Args:
         content: Article text to summarize
-        language: 'pl' or 'en' for prompt language
+        language: 'pl', 'en', or 'auto' for auto-detection
         max_content_length: Truncate content if longer
 
     Returns:
@@ -64,18 +149,27 @@ async def summarize_content(
     if not content:
         return None, "No content to summarize"
 
+    # Auto-detect language
+    if language == "auto":
+        language = detect_language(content)
+
     # Truncate if too long
-    if len(content) > max_content_length:
+    original_length = len(content)
+    if original_length > max_content_length:
         content = content[:max_content_length] + "..."
-        logger.info(f"Truncated content to {max_content_length} chars")
+        logger.info(f"Truncated content from {original_length} to {max_content_length} chars")
 
-    # Select prompt based on language
-    prompt_template = SUMMARY_PROMPT_PL if language == "pl" else SUMMARY_PROMPT_EN
-    prompt = prompt_template.format(content=content)
+    # Select prompt and model based on language
+    if language == "pl":
+        categories = ", ".join(settings.ARTICLE_CATEGORIES)
+        prompt = SUMMARY_PROMPT_PL.format(content=content, categories=categories)
+        model = settings.SUMMARIZER_MODEL_PL
+    else:
+        categories = ", ".join(CATEGORIES_EN)
+        prompt = SUMMARY_PROMPT_EN.format(content=content, categories=categories)
+        model = settings.SUMMARIZER_MODEL or settings.CLASSIFIER_MODEL
 
-    # Determine model to use
-    model = settings.SUMMARIZER_MODEL or settings.CLASSIFIER_MODEL
-
+    logger.info(f"Summarizing with model: {model}, language: {language}")
     start_time = time.time()
 
     try:
@@ -83,14 +177,15 @@ async def summarize_content(
             model=model,
             prompt=prompt,
             options={
-                "temperature": 0.3,  # Slightly higher than categorization for variety
-                "num_predict": 1024,  # Limit output length
+                "temperature": 0.3,
+                "num_predict": 2048,
             },
-            timeout=120.0,
+            timeout=180.0,  # Longer timeout for larger model
             keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
         )
 
         elapsed = time.time() - start_time
+        logger.info(f"Summarization completed in {elapsed:.1f}s")
 
         if error:
             return None, f"LLM error: {error}"
@@ -98,23 +193,48 @@ async def summarize_content(
         if not response or not response.strip():
             return None, "Empty response from LLM"
 
-        # Clean up response
-        summary = response.strip()
+        # Parse JSON response
+        parsed = _parse_json_response(response)
 
-        # Ensure it starts with bullet points
-        if not summary.startswith("-") and not summary.startswith("*") and not summary.startswith("•"):
-            # Try to find first bullet point
-            for char in ["-", "*", "•"]:
-                if char in summary:
-                    idx = summary.index(char)
-                    summary = summary[idx:]
-                    break
+        if parsed:
+            summary_text = parsed.get("summary", "")
+            tags = parsed.get("tags", [])
+            category = parsed.get("category")
+            entities = parsed.get("entities", [])
+
+            # Validate and clean tags
+            tags = [str(t).lower().strip() for t in tags if t][:5]
+
+            # Validate category
+            valid_categories = (
+                settings.ARTICLE_CATEGORIES if language == "pl" else CATEGORIES_EN
+            )
+            if category not in valid_categories:
+                category = "Inne" if language == "pl" else "Other"
+
+            # Clean entities
+            entities = [str(e).strip() for e in entities if e][:10]
+
+        else:
+            # Fallback: extract bullet points from raw response
+            logger.warning("JSON parsing failed, using fallback extraction")
+            summary_text = _extract_summary_fallback(response)
+            tags = []
+            category = "Inne" if language == "pl" else "Other"
+            entities = []
+
+        if not summary_text:
+            return None, "Could not extract summary from response"
 
         return (
             SummaryResult(
-                summary_text=summary,
+                summary_text=summary_text,
                 model_used=model,
                 processing_time_sec=round(elapsed, 2),
+                tags=tags,
+                category=category,
+                entities=entities,
+                language=language,
             ),
             None,
         )
@@ -142,7 +262,7 @@ async def summarize_url(url: str) -> Tuple[Optional[SummaryResult], Optional[str
 
 def detect_language(text: str) -> str:
     """
-    Simple heuristic to detect if text is Polish or English.
+    Detect if text is Polish or English.
 
     Returns 'pl' or 'en'.
     """
@@ -150,7 +270,8 @@ def detect_language(text: str) -> str:
     polish_indicators = [
         "ą", "ć", "ę", "ł", "ń", "ó", "ś", "ź", "ż",
         " i ", " w ", " z ", " na ", " do ", " nie ",
-        " się ", " jest ", " że ", " to ",
+        " się ", " jest ", " że ", " to ", " dla ",
+        " od ", " przy ", " przez ", " po ",
     ]
 
     text_lower = text.lower()

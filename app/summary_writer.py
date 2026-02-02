@@ -1,10 +1,10 @@
-"""Obsidian markdown writer for article summaries."""
+"""Obsidian markdown writer for article summaries with rich metadata."""
 
 import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import yaml
 
@@ -18,14 +18,18 @@ def write_summary_file(
     article: Article,
     summary_text: str,
     model_used: str,
+    tags: Optional[List[str]] = None,
+    category: Optional[str] = None,
+    entities: Optional[List[str]] = None,
 ) -> Path:
     """
-    Write article summary to Obsidian vault.
+    Write article summary to Obsidian vault with rich metadata.
 
     File format:
-    - YAML frontmatter with metadata
+    - YAML frontmatter with metadata (tags, category, entities)
     - Title
     - Summary bullet points
+    - Related entities as Obsidian links
     - Source link
 
     Returns:
@@ -55,11 +59,13 @@ def write_summary_file(
         "published": article.published_date.isoformat() if article.published_date else None,
         "summarized": datetime.now().isoformat(),
         "model": model_used,
-        "tags": ["summary", "article"],
+        "category": category,
+        "tags": _build_tags(tags, category),
+        "entities": entities or [],
     }
 
-    # Remove None values
-    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+    # Remove None/empty values
+    frontmatter = {k: v for k, v in frontmatter.items() if v}
 
     # Build content
     lines = [
@@ -69,13 +75,35 @@ def write_summary_file(
         "",
         f"# {article.title}",
         "",
+    ]
+
+    # Add category badge if present
+    if category:
+        lines.append(f"**Kategoria:** {category}")
+        lines.append("")
+
+    lines.extend([
         "## Podsumowanie",
         "",
         summary_text,
         "",
+    ])
+
+    # Add related entities section if present
+    if entities:
+        lines.extend([
+            "## Powiązane",
+            "",
+        ])
+        for entity in entities:
+            # Create Obsidian wiki links
+            lines.append(f"- [[{entity}]]")
+        lines.append("")
+
+    lines.extend([
         "---",
         f"Źródło: [{article.title}]({article.url})" if article.url else "",
-    ]
+    ])
 
     content = "\n".join(lines)
 
@@ -93,6 +121,9 @@ def write_summary_file_simple(
     model_used: str,
     source_name: Optional[str] = None,
     author: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    category: Optional[str] = None,
+    entities: Optional[List[str]] = None,
 ) -> Path:
     """
     Simplified version for on-demand summaries without database Article.
@@ -120,10 +151,12 @@ def write_summary_file_simple(
         "author": author,
         "summarized": datetime.now().isoformat(),
         "model": model_used,
-        "tags": ["summary", "article"],
+        "category": category,
+        "tags": _build_tags(tags, category),
+        "entities": entities or [],
     }
 
-    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+    frontmatter = {k: v for k, v in frontmatter.items() if v}
 
     lines = [
         "---",
@@ -132,13 +165,32 @@ def write_summary_file_simple(
         "",
         f"# {title}",
         "",
+    ]
+
+    if category:
+        lines.append(f"**Kategoria:** {category}")
+        lines.append("")
+
+    lines.extend([
         "## Podsumowanie",
         "",
         summary_text,
         "",
+    ])
+
+    if entities:
+        lines.extend([
+            "## Powiązane",
+            "",
+        ])
+        for entity in entities:
+            lines.append(f"- [[{entity}]]")
+        lines.append("")
+
+    lines.extend([
         "---",
         f"Źródło: [{title}]({url})" if url else "",
-    ]
+    ])
 
     content = "\n".join(lines)
 
@@ -147,6 +199,21 @@ def write_summary_file_simple(
 
     logger.info(f"Created summary file: {output_path}")
     return output_path
+
+
+def _build_tags(tags: Optional[List[str]], category: Optional[str]) -> List[str]:
+    """Build tag list with standard prefixes."""
+    result = ["summary", "article"]
+
+    if category:
+        # Add category as tag (lowercase, no spaces)
+        cat_tag = category.lower().replace(" ", "-")
+        result.append(cat_tag)
+
+    if tags:
+        result.extend(tags)
+
+    return list(dict.fromkeys(result))  # Remove duplicates while preserving order
 
 
 def _sanitize_filename(title: str) -> str:

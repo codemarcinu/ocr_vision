@@ -201,12 +201,25 @@ async def summarize_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Format response
     summary = result.summary_text
-    if len(summary) > 3500:
-        summary = summary[:3500] + "..."
+    if len(summary) > 3000:
+        summary = summary[:3000] + "..."
+
+    # Build metadata line
+    meta_parts = []
+    if result.category:
+        meta_parts.append(f"📂 {result.category}")
+    if result.tags:
+        tags_str = " ".join(f"#{t}" for t in result.tags[:5])
+        meta_parts.append(tags_str)
+    meta_line = " | ".join(meta_parts) if meta_parts else ""
 
     response = (
         f"📰 <b>{escape_html(scraped.title)}</b>\n\n"
         f"{escape_html(summary)}\n\n"
+    )
+    if meta_line:
+        response += f"{escape_html(meta_line)}\n\n"
+    response += (
         f"---\n"
         f"🔗 <a href=\"{url}\">Źródło</a> | "
         f"⏱️ {result.processing_time_sec}s | "
@@ -240,7 +253,14 @@ async def summarize_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
             # Write Obsidian file
             if settings.GENERATE_OBSIDIAN_FILES:
-                write_summary_file(article, result.summary_text, result.model_used)
+                write_summary_file(
+                    article,
+                    result.summary_text,
+                    result.model_used,
+                    tags=result.tags,
+                    category=result.category,
+                    entities=result.entities,
+                )
     elif settings.GENERATE_OBSIDIAN_FILES:
         # Save only to Obsidian without database
         write_summary_file_simple(
@@ -249,6 +269,9 @@ async def summarize_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             summary_text=result.summary_text,
             model_used=result.model_used,
             author=scraped.author,
+            tags=result.tags,
+            category=result.category,
+            entities=result.entities,
         )
 
 

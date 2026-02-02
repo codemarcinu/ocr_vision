@@ -54,6 +54,9 @@ class SummarizeResponse(BaseModel):
     summary: str
     model_used: str
     processing_time_sec: float
+    tags: List[str] = []
+    category: Optional[str] = None
+    entities: List[str] = []
 
 
 class RefreshResponse(BaseModel):
@@ -258,6 +261,9 @@ async def summarize_single_url(data: SummarizeRequest):
             summary_text=result.summary_text,
             model_used=result.model_used,
             author=scraped.author,
+            tags=result.tags,
+            category=result.category,
+            entities=result.entities,
         )
 
     # Optionally save to database
@@ -281,6 +287,9 @@ async def summarize_single_url(data: SummarizeRequest):
         summary=result.summary_text,
         model_used=result.model_used,
         processing_time_sec=result.processing_time_sec,
+        tags=result.tags,
+        category=result.category,
+        entities=result.entities,
     )
 
 

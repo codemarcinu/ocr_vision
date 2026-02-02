@@ -93,6 +93,9 @@ async def fetch_all_feeds() -> Tuple[int, List[str]]:
                                 article,
                                 summary_result.summary_text,
                                 summary_result.model_used,
+                                tags=summary_result.tags,
+                                category=summary_result.category,
+                                entities=summary_result.entities,
                             )
                     else:
                         # Create article without summary
