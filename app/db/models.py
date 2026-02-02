@@ -349,3 +349,82 @@ class ReviewCorrection(Base):
     # Relationships
     receipt: Mapped[Optional["Receipt"]] = relationship(back_populates="corrections")
     store: Mapped[Optional["Store"]] = relationship(back_populates="review_corrections")
+
+
+# =============================================================================
+# RSS/Web Summarizer Models
+# =============================================================================
+
+
+class RssFeed(Base):
+    """RSS/Atom feed subscription."""
+    __tablename__ = "rss_feeds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    feed_url: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
+    feed_type: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )  # 'rss', 'atom', 'webpage'
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_fetched: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    fetch_interval_hours: Mapped[int] = mapped_column(Integer, default=4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    articles: Mapped[List["Article"]] = relationship(
+        back_populates="feed", cascade="all, delete-orphan"
+    )
+
+
+class Article(Base):
+    """Article fetched from RSS feed or scraped URL."""
+    __tablename__ = "articles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    feed_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("rss_feeds.id", ondelete="CASCADE"), nullable=True
+    )
+    external_id: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
+    )  # guid from feed
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    author: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    published_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fetched_date: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    is_summarized: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Relationships
+    feed: Mapped[Optional["RssFeed"]] = relationship(back_populates="articles")
+    summary: Mapped[Optional["ArticleSummary"]] = relationship(
+        back_populates="article", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class ArticleSummary(Base):
+    """LLM-generated summary of an article."""
+    __tablename__ = "article_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    processing_time_sec: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    article: Mapped["Article"] = relationship(back_populates="summary")
