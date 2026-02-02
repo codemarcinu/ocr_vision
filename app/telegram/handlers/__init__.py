@@ -27,6 +27,14 @@ from app.telegram.handlers.json_import import (
     is_json_receipt,
     process_json_import,
 )
+from app.telegram.handlers.feeds import (
+    feeds_command,
+    subscribe_command,
+    unsubscribe_command,
+    summarize_command,
+    refresh_command,
+    articles_command,
+)
 
 __all__ = [
     "handle_document",
@@ -46,4 +54,10 @@ __all__ = [
     "clearerrors_command",
     "is_json_receipt",
     "process_json_import",
+    "feeds_command",
+    "subscribe_command",
+    "unsubscribe_command",
+    "summarize_command",
+    "refresh_command",
+    "articles_command",
 ]

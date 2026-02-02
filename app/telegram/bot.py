@@ -15,10 +15,12 @@ from telegram.ext import (
 from app.config import settings
 from app.feedback_logger import log_review_correction
 from app.telegram.handlers import (
+    articles_command,
     categories_command,
     clearerrors_command,
     discounts_command,
     errors_command,
+    feeds_command,
     handle_document,
     handle_photo,
     is_json_receipt,
@@ -26,11 +28,15 @@ from app.telegram.handlers import (
     pending_command,
     process_json_import,
     recent_command,
+    refresh_command,
     remove_command,
     reprocess_command,
     search_command,
     stats_command,
     stores_command,
+    subscribe_command,
+    summarize_command,
+    unsubscribe_command,
     use_command,
 )
 from app.telegram.keyboards import get_main_keyboard
@@ -134,6 +140,14 @@ class PantryBot:
         self.application.add_handler(CommandHandler("errors", errors_command))
         self.application.add_handler(CommandHandler("clearerrors", clearerrors_command))
 
+        # RSS/Summarizer handlers
+        self.application.add_handler(CommandHandler("feeds", feeds_command))
+        self.application.add_handler(CommandHandler("subscribe", subscribe_command))
+        self.application.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+        self.application.add_handler(CommandHandler("summarize", summarize_command))
+        self.application.add_handler(CommandHandler("refresh", refresh_command))
+        self.application.add_handler(CommandHandler("articles", articles_command))
+
         # Callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self._handle_callback))
 
@@ -180,6 +194,14 @@ class PantryBot:
 • <code>/stores</code> - wydatki wg sklepów
 • <code>/categories</code> - wydatki wg kategorii
 • <code>/rabaty</code> - raport rabatów i oszczędności
+
+<b>📰 RSS i podsumowania:</b>
+• <code>/feeds</code> - lista subskrybowanych kanałów
+• <code>/subscribe &lt;URL&gt;</code> - dodaj kanał RSS
+• <code>/unsubscribe &lt;ID&gt;</code> - usuń kanał
+• <code>/summarize &lt;URL&gt;</code> - podsumuj stronę
+• <code>/refresh</code> - pobierz nowe artykuły
+• <code>/articles [feed_id]</code> - ostatnie artykuły
 
 <b>❌ Błędy:</b>
 • <code>/errors</code> - lista błędów OCR
