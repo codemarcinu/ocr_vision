@@ -428,3 +428,142 @@ class ArticleSummary(Base):
 
     # Relationships
     article: Mapped["Article"] = relationship(back_populates="summary")
+
+
+# =============================================================================
+# Transcription Agent Models
+# =============================================================================
+
+
+class TranscriptionJob(Base):
+    """Transcription job (audio/video to text)."""
+    __tablename__ = "transcription_jobs"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+
+    # Source information
+    source_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # 'youtube', 'url', 'file'
+    source_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    source_filename: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Job metadata
+    title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    channel_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Processing settings
+    whisper_model: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="medium"
+    )  # 'tiny', 'base', 'small', 'medium', 'large-v3'
+    language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # Status tracking
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="pending"
+    )  # 'pending', 'downloading', 'transcribing', 'extracting', 'completed', 'failed'
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Temporary file paths (for cleanup)
+    temp_audio_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    temp_video_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Relationships
+    transcription: Mapped[Optional["Transcription"]] = relationship(
+        back_populates="job", uselist=False, cascade="all, delete-orphan"
+    )
+    note: Mapped[Optional["TranscriptionNote"]] = relationship(
+        back_populates="job", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class Transcription(Base):
+    """Transcription content with segments."""
+    __tablename__ = "transcriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("transcription_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    # Full transcription text
+    full_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Segments with timestamps (stored as JSONB array)
+    # Each segment: {"start": 0.0, "end": 2.5, "text": "Hello world"}
+    segments: Mapped[Optional[dict]] = mapped_column(JSONB, default=list)
+
+    # Processing metadata
+    detected_language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 3), nullable=True)
+    word_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    processing_time_sec: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(8, 2), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    job: Mapped["TranscriptionJob"] = relationship(back_populates="transcription")
+
+
+class TranscriptionNote(Base):
+    """Extracted knowledge and generated Obsidian note."""
+    __tablename__ = "transcription_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("transcription_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    # Extracted knowledge
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    key_topics: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    key_points: Mapped[Optional[dict]] = mapped_column(
+        JSONB, default=list
+    )  # bullet points
+    entities: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(Text), nullable=True
+    )  # people, companies, etc.
+    action_items: Mapped[Optional[dict]] = mapped_column(
+        JSONB, default=list
+    )  # tasks mentioned
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tags: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+
+    # Generated note path
+    obsidian_file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Processing metadata
+    model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    processing_time_sec: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    job: Mapped["TranscriptionJob"] = relationship(back_populates="note")
