@@ -82,15 +82,27 @@ MieszankaProtBak150   C    1.000 ×    8,99      8,99
   ]
 
 KATEGORIE (przypisz każdemu produktowi):
-- Nabiał: mleko, ser, jogurt, masło, śmietana, twaróg, kefir, skyr
-- Pieczywo: chleb, bułka, bagietka, rogal, bajgle
-- Mięso i wędliny: kurczak, boczek, szynka, kiełbasa, kabanos
-- Warzywa i owoce: banan, mandarynka, papryka, kalafior
-- Napoje: woda, sok, cola, kawa, herbata
-- Słodycze: czekolada, nutella, cukierki, wafelki, sernik
-- Produkty suche: makaron, ryż, kasza, mąka, płatki
-- Mrożonki: mrożone warzywa, pizza mrożona
-- Chemia: proszek, płyn, mydło, szampon
+- Nabiał: mleko, ser, jogurt, masło, śmietana, twaróg, kefir, skyr, jaja
+- Pieczywo: chleb, bułka, bagietka, rogal
+- Mięso: kurczak, schab, mielone, wołowina, indyk
+- Wędliny: szynka, kiełbasa, salami, boczek, kabanos, parówki
+- Ryby: łosoś, dorsz, śledź, tuńczyk
+- Warzywa: pomidory, ziemniaki, ogórki, papryka, cebula, marchew, sałata
+- Owoce: banany, jabłka, pomarańcze, winogrona, mandarynki
+- Napoje: woda, sok, cola, oranżada
+- Alkohol: piwo, wino, wódka
+- Napoje gorące: kawa, herbata, kakao
+- Słodycze: czekolada, ciastka, cukierki, żelki, wafle
+- Przekąski: chipsy, paluszki, orzeszki, nachos
+- Produkty sypkie: makaron, ryż, kasza, mąka, płatki
+- Przyprawy: sól, pieprz, ketchup, musztarda, majonez
+- Konserwy: groszek, kukurydza, fasola
+- Mrożonki: frytki, pizza mrożona, pierogi, warzywa mrożone
+- Dania gotowe: zupa instant, hummus, bigos
+- Chemia: proszek, płyn do naczyń, papier toaletowy
+- Kosmetyki: szampon, mydło, dezodorant, pasta do zębów
+- Dla dzieci: pieluchy, kaszka
+- Dla zwierząt: karma, żwirek
 - Inne: torba, wszystko inne
 
 Zwróć TYLKO JSON:
@@ -129,7 +141,7 @@ Razem                          21,72
 → produkty: [{{"nazwa":"Bułka kajzerka","cena":1.40}},{{"nazwa":"Śmietana 12%","cena":3.59}}]
 → suma: 21.72
 
-KATEGORIE: Nabiał, Pieczywo, Mięso i wędliny, Warzywa i owoce, Napoje, Słodycze, Produkty suche, Mrożonki, Chemia, Inne
+KATEGORIE: Nabiał, Pieczywo, Mięso, Wędliny, Ryby, Warzywa, Owoce, Napoje, Alkohol, Napoje gorące, Słodycze, Przekąski, Produkty sypkie, Przyprawy, Konserwy, Mrożonki, Dania gotowe, Chemia, Kosmetyki, Dla dzieci, Dla zwierząt, Inne
 
 Zwróć TYLKO JSON:
 {{"sklep":"Lidl","data":"RRRR-MM-DD","produkty":[{{"nazwa":"X","cena":0.00,"kategoria":"Y"}}],"suma":0.00}}
@@ -166,12 +178,12 @@ SUMA PLN                        75,82
 ```
 → produkty: [
     {{"nazwa":"JOGURT GRECKI","cena":2.84,"kategoria":"Nabiał"}},
-    {{"nazwa":"POMIDORY","cena":2.99,"cena_przed":3.99,"rabat":1.00,"kategoria":"Warzywa i owoce"}}
+    {{"nazwa":"POMIDORY","cena":2.99,"cena_przed":3.99,"rabat":1.00,"kategoria":"Warzywa"}}
   ]
 
 WAŻNE: Usuń kody EAN z nazw (np. "JOGURT GRE 940801C" → "JOGURT GRECKI")
 
-KATEGORIE: Nabiał, Pieczywo, Mięso i wędliny, Warzywa i owoce, Napoje, Słodycze, Produkty suche, Mrożonki, Chemia, Inne
+KATEGORIE: Nabiał, Pieczywo, Mięso, Wędliny, Ryby, Warzywa, Owoce, Napoje, Alkohol, Napoje gorące, Słodycze, Przekąski, Produkty sypkie, Przyprawy, Konserwy, Mrożonki, Dania gotowe, Chemia, Kosmetyki, Dla dzieci, Dla zwierząt, Inne
 
 Zwróć TYLKO JSON:
 {{"sklep":"Auchan","data":"RRRR-MM-DD","produkty":[{{"nazwa":"X","cena":0.00,"kategoria":"Y"}}],"suma":0.00}}
@@ -216,7 +228,7 @@ ROZDZIELANIE NAZW:
 - "KabanosWołowWieprz" → "Kabanos Wołowo-Wieprzowy"
 - "MlekoZagęszczon530g" → "Mleko Zagęszczone 530g"
 
-KATEGORIE: Nabiał, Pieczywo, Mięso i wędliny, Warzywa i owoce, Napoje, Słodycze, Produkty suche, Mrożonki, Chemia, Inne
+KATEGORIE: Nabiał, Pieczywo, Mięso, Wędliny, Ryby, Warzywa, Owoce, Napoje, Alkohol, Napoje gorące, Słodycze, Przekąski, Produkty sypkie, Przyprawy, Konserwy, Mrożonki, Dania gotowe, Chemia, Kosmetyki, Dla dzieci, Dla zwierząt, Inne
 
 Zwróć TYLKO JSON:
 {{"sklep":"Kaufland","data":"RRRR-MM-DD","produkty":[{{"nazwa":"X","cena":0.00,"kategoria":"Y"}}],"suma":0.00}}
@@ -270,7 +282,7 @@ Suma                     20,29 zł
     {{"nazwa":"Bakoma Maxi Meal Napój mleczny o smaku słonego karmelu 500g","cena":7.50,"cena_przed":9.99,"rabat":2.49,"kategoria":"Napoje"}}
   ]
 
-KATEGORIE: Nabiał, Pieczywo, Mięso i wędliny, Warzywa i owoce, Napoje, Słodycze, Produkty suche, Mrożonki, Chemia, Inne
+KATEGORIE: Nabiał, Pieczywo, Mięso, Wędliny, Ryby, Warzywa, Owoce, Napoje, Alkohol, Napoje gorące, Słodycze, Przekąski, Produkty sypkie, Przyprawy, Konserwy, Mrożonki, Dania gotowe, Chemia, Kosmetyki, Dla dzieci, Dla zwierząt, Inne
 
 Zwróć TYLKO JSON:
 {{"sklep":"Carrefour","data":"RRRR-MM-DD","produkty":[{{"nazwa":"X","cena":0.00,"kategoria":"Y"}}],"suma":0.00}}
@@ -288,15 +300,27 @@ OGÓLNE ZASADY:
 5. "suma" = "DO ZAPŁATY", "SUMA", "RAZEM" lub "Karta płatnicza"
 
 KATEGORIE:
-- Nabiał: mleko, ser, jogurt, masło, śmietana
+- Nabiał: mleko, ser, jogurt, masło, śmietana, jaja
 - Pieczywo: chleb, bułka, bagietka
-- Mięso i wędliny: kurczak, szynka, kiełbasa, boczek
-- Warzywa i owoce: pomidor, ogórek, jabłko, banan
-- Napoje: woda, sok, kawa, herbata
-- Słodycze: czekolada, ciastka, wafelki
-- Produkty suche: makaron, ryż, mąka
-- Mrożonki: mrożone produkty
-- Chemia: proszek, płyn, mydło
+- Mięso: kurczak, schab, mielone, wołowina
+- Wędliny: szynka, kiełbasa, boczek, parówki
+- Ryby: łosoś, dorsz, śledź, tuńczyk
+- Warzywa: pomidor, ogórek, ziemniaki, marchew
+- Owoce: jabłko, banan, pomarańcze, winogrona
+- Napoje: woda, sok, cola, oranżada
+- Alkohol: piwo, wino, wódka
+- Napoje gorące: kawa, herbata, kakao
+- Słodycze: czekolada, ciastka, cukierki, żelki
+- Przekąski: chipsy, paluszki, orzeszki
+- Produkty sypkie: makaron, ryż, kasza, mąka
+- Przyprawy: sól, pieprz, ketchup, musztarda
+- Konserwy: groszek, kukurydza, fasola
+- Mrożonki: frytki, pizza mrożona, pierogi
+- Dania gotowe: zupa instant, hummus, bigos
+- Chemia: proszek, płyn, papier toaletowy
+- Kosmetyki: szampon, mydło, dezodorant
+- Dla dzieci: pieluchy, kaszka
+- Dla zwierząt: karma, żwirek
 - Inne: wszystko inne
 
 Zwróć TYLKO JSON:

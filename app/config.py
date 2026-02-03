@@ -191,19 +191,56 @@ class Settings:
     TELEGRAM_CHAT_ID: int = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
     BOT_ENABLED: bool = os.getenv("BOT_ENABLED", "true").lower() == "true"
 
-    # Categories for products
+    # Categories for products (aligned with dictionary categories)
     CATEGORIES: list = [
         "Nabiał",
         "Pieczywo",
-        "Mięso i wędliny",
-        "Warzywa i owoce",
+        "Mięso",
+        "Wędliny",
+        "Ryby",
+        "Warzywa",
+        "Owoce",
         "Napoje",
+        "Alkohol",
+        "Napoje gorące",
         "Słodycze",
-        "Produkty suche",
+        "Przekąski",
+        "Produkty sypkie",
+        "Przyprawy",
+        "Konserwy",
         "Mrożonki",
+        "Dania gotowe",
         "Chemia",
-        "Inne"
+        "Kosmetyki",
+        "Dla dzieci",
+        "Dla zwierząt",
+        "Inne",
     ]
+
+    # Mapping from dictionary category keys to display names
+    CATEGORY_MAP: dict = {
+        "nabiał": "Nabiał",
+        "piekarnia": "Pieczywo",
+        "mięso": "Mięso",
+        "wędliny": "Wędliny",
+        "ryby": "Ryby",
+        "warzywa": "Warzywa",
+        "owoce": "Owoce",
+        "napoje": "Napoje",
+        "alkohol": "Alkohol",
+        "napoje_gorące": "Napoje gorące",
+        "słodycze": "Słodycze",
+        "przekąski": "Przekąski",
+        "makarony": "Produkty sypkie",
+        "przyprawy": "Przyprawy",
+        "konserwy": "Konserwy",
+        "mrożonki": "Mrożonki",
+        "dania_gotowe": "Dania gotowe",
+        "chemia": "Chemia",
+        "kosmetyki": "Kosmetyki",
+        "dla_dzieci": "Dla dzieci",
+        "dla_zwierząt": "Dla zwierząt",
+    }
 
     @classmethod
     def ensure_directories(cls) -> None:
