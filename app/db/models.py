@@ -20,6 +20,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from pgvector.sqlalchemy import Vector
+
 
 class Base(DeclarativeBase):
     """Base class for all models."""
@@ -632,3 +634,35 @@ class Bookmark(Base):
         DateTime, server_default=func.current_timestamp()
     )
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# =============================================================================
+# RAG Document Embeddings
+# =============================================================================
+
+class DocumentEmbedding(Base):
+    """Document embedding for RAG semantic search."""
+
+    __tablename__ = "document_embeddings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # 'article', 'transcription', 'receipt', 'note', 'bookmark'
+    content_id: Mapped[str] = mapped_column(
+        String(36), nullable=False
+    )  # UUID or int as string
+    chunk_index: Mapped[int] = mapped_column(Integer, default=0)
+    text_chunk: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding = mapped_column(Vector(768), nullable=False)
+    metadata_: Mapped[Optional[dict]] = mapped_column(
+        "metadata", JSONB, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )

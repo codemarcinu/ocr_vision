@@ -180,6 +180,19 @@ class Settings:
         "BOOKMARKS_OUTPUT_DIR", str(BASE_DIR / "bookmarks")
     ))
 
+    # ==========================================================================
+    # RAG (Retrieval-Augmented Generation)
+    # ==========================================================================
+    RAG_ENABLED: bool = os.getenv("RAG_ENABLED", "true").lower() == "true"
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+    EMBEDDING_DIMENSIONS: int = int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
+    ASK_MODEL: str = os.getenv("ASK_MODEL", "")  # Empty = use CLASSIFIER_MODEL
+    RAG_TOP_K: int = int(os.getenv("RAG_TOP_K", "5"))
+    RAG_CHUNK_SIZE: int = int(os.getenv("RAG_CHUNK_SIZE", "1500"))
+    RAG_CHUNK_OVERLAP: int = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
+    RAG_MIN_SCORE: float = float(os.getenv("RAG_MIN_SCORE", "0.3"))
+    RAG_AUTO_INDEX: bool = os.getenv("RAG_AUTO_INDEX", "true").lower() == "true"
+
     # Validation
     PRICE_WARNING_THRESHOLD: float = 100.0  # Flag prices above this
 
