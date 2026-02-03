@@ -1,9 +1,16 @@
 {% for s in sessions %}
-<div class="chat-session-item {% if s.id|string == active_session_id %}active{% endif %}"
+<div class="chat-session-item d-flex align-items-start {% if s.id|string == active_session_id %}active{% endif %}"
      data-session="{{ s.id }}"
      onclick="loadSession('{{ s.id }}')">
-    <div>{{ s.title or "Nowy czat" }}</div>
-    <div class="chat-session-time">{{ s.updated_at.strftime('%d.%m %H:%M') }}</div>
+    <div class="flex-grow-1 overflow-hidden">
+        <div class="text-truncate">{{ s.title or "Nowy czat" }}</div>
+        <div class="chat-session-time">{{ s.updated_at.strftime('%d.%m %H:%M') }}</div>
+    </div>
+    <button class="btn btn-sm p-0 ms-1 chat-session-delete"
+            onclick="event.stopPropagation(); deleteSession('{{ s.id }}')"
+            title="Usun rozmowe">
+        <i class="bi bi-x-lg"></i>
+    </button>
 </div>
 {% endfor %}
 

@@ -1,6 +1,9 @@
 {% for msg in messages %}
-<div class="chat-bubble {% if msg.role == 'user' %}chat-user{% else %}chat-assistant{% endif %}">
+<div class="chat-bubble {% if msg.role == 'user' %}chat-user{% else %}chat-assistant chat-msg-wrapper{% endif %}">
     {% if msg.role == 'assistant' %}
+    <button class="chat-copy-btn" onclick="copyMessage(this)" title="Kopiuj">
+        <i class="bi bi-clipboard"></i>
+    </button>
     <div class="chat-md" data-raw="{{ msg.content|e }}"></div>
     {% else %}
     <div style="white-space: pre-wrap;">{{ msg.content }}</div>
@@ -9,10 +12,18 @@
     {% if msg.role == 'assistant' and msg.sources %}
     <div class="chat-sources">
         {% for s in msg.sources %}
+        {% if s.url %}
+        <a href="{{ s.url }}" target="_blank" rel="noopener" class="badge bg-light text-dark me-1 mb-1 text-decoration-none chat-source-link">
+            {% if s.type == "web" %}<i class="bi bi-globe2"></i>{% else %}<i class="bi bi-archive"></i>{% endif %}
+            {{ s.title[:40] }}{% if s.title|length > 40 %}...{% endif %}
+            <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.65rem;"></i>
+        </a>
+        {% else %}
         <span class="badge bg-light text-dark me-1 mb-1">
             {% if s.type == "web" %}<i class="bi bi-globe2"></i>{% else %}<i class="bi bi-archive"></i>{% endif %}
             {{ s.title[:40] }}{% if s.title|length > 40 %}...{% endif %}
         </span>
+        {% endif %}
         {% endfor %}
     </div>
     {% endif %}

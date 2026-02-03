@@ -938,9 +938,14 @@ async def chat_send(
         })
 
         # If new session, trigger client-side update
+        # Reload session to get the generated title
         if new_session:
+            await session.refresh(chat_session)
             resp.headers["HX-Trigger"] = json.dumps({
-                "newChatSession": {"session_id": str(chat_session.id)}
+                "newChatSession": {
+                    "session_id": str(chat_session.id),
+                    "title": chat_session.title or "",
+                }
             })
 
         return resp
@@ -969,10 +974,14 @@ async def chat_load_session(request: Request, session_id: UUID, chat_repo: ChatR
     if not chat_session:
         return HTMLResponse("<div class='text-danger'>Sesja nie znaleziona</div>", status_code=404)
 
-    return templates.TemplateResponse("chat/partials/messages.html", {
+    resp = templates.TemplateResponse("chat/partials/messages.html", {
         "request": request,
         "messages": chat_session.messages,
     })
+    resp.headers["HX-Trigger"] = json.dumps({
+        "sessionLoaded": {"title": chat_session.title or "Nowy czat"}
+    })
+    return resp
 
 
 @router.delete("/app/czat/sessions/{session_id}", response_class=HTMLResponse)

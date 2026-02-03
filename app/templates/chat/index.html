@@ -22,9 +22,16 @@
     }
     .chat-session-item:hover { background: var(--bs-tertiary-bg); }
     .chat-session-item.active { background: var(--bs-primary-bg-subtle); color: var(--bs-primary); }
+    .chat-session-delete {
+        opacity: 0; color: var(--bs-secondary-color); transition: opacity 0.15s;
+        line-height: 1; font-size: 0.7rem; flex-shrink: 0;
+    }
+    .chat-session-item:hover .chat-session-delete { opacity: 1; }
+    .chat-session-delete:hover { color: var(--bs-danger) !important; }
     .chat-session-time { font-size: 0.7rem; color: var(--bs-secondary-color); }
 
     .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .chat-header { background: var(--bs-body-bg); min-height: 42px; }
     .chat-messages {
         flex: 1; overflow-y: auto; padding: 1.5rem;
         display: flex; flex-direction: column; gap: 1rem;
@@ -33,7 +40,14 @@
         flex: 1; display: flex; align-items: center; justify-content: center;
         color: var(--bs-secondary-color);
     }
-    .chat-bubble { padding: 0.75rem 1rem; border-radius: 0.75rem; max-width: 85%; }
+    .chat-bubble {
+        padding: 0.75rem 1rem; border-radius: 0.75rem; max-width: 85%;
+        animation: chatSlideIn 0.3s ease-out;
+    }
+    @keyframes chatSlideIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
     .chat-user {
         background: var(--bs-primary-bg-subtle);
         align-self: flex-end; margin-left: 15%;
@@ -48,7 +62,20 @@
         background: var(--bs-body-bg);
     }
     .chat-sources { font-size: 0.8rem; margin-top: 0.5rem; }
+    .chat-source-link { cursor: pointer; transition: all 0.15s; }
+    .chat-source-link:hover { background: var(--bs-primary-bg-subtle) !important; color: var(--bs-primary) !important; }
     .chat-meta { font-size: 0.75rem; color: var(--bs-secondary-color); margin-top: 0.25rem; }
+    /* Copy button */
+    .chat-msg-wrapper { position: relative; }
+    .chat-copy-btn {
+        position: absolute; top: 0.4rem; right: 0.4rem;
+        background: none; border: none; padding: 2px 5px;
+        color: var(--bs-secondary-color); cursor: pointer;
+        opacity: 0; transition: opacity 0.15s; font-size: 0.8rem;
+        border-radius: 0.25rem;
+    }
+    .chat-msg-wrapper:hover .chat-copy-btn { opacity: 1; }
+    .chat-copy-btn:hover { color: var(--bs-primary); background: var(--bs-tertiary-bg); }
     .chat-md p { margin-bottom: 0.4rem; }
     .chat-md p:last-child { margin-bottom: 0; }
     .chat-md ul, .chat-md ol { margin-bottom: 0.4rem; padding-left: 1.5rem; }
@@ -57,20 +84,60 @@
     .chat-md pre { background: var(--bs-tertiary-bg); padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; }
     .chat-md pre code { padding: 0; background: none; }
     .chat-md a { color: var(--bs-primary); }
+    /* Typing indicator */
+    .typing-dots { display: flex; gap: 4px; padding: 4px 2px; }
+    .typing-dots span {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--bs-secondary-color);
+        animation: typingBounce 1.4s infinite ease-in-out both;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.16s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.32s; }
+    @keyframes typingBounce {
+        0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+        40% { transform: scale(1); opacity: 1; }
+    }
+
+    .chat-suggestions button { transition: all 0.2s; }
+    .chat-suggestions button:hover { background: var(--bs-primary); color: #fff; border-color: var(--bs-primary); }
+
+    /* Disable input during request */
+    .chat-input-area.is-sending #chat-input,
+    .chat-input-area.is-sending #send-btn {
+        pointer-events: none; opacity: 0.5;
+    }
+    .chat-input-area.is-sending #send-btn { cursor: not-allowed; }
+
+    /* Mobile sidebar overlay */
+    .chat-sidebar-toggle { display: none; }
+    .chat-sidebar-overlay { display: none; }
 
     @media (max-width: 768px) {
-        .chat-sidebar-panel { display: none; }
+        .chat-sidebar-toggle { display: inline-flex; }
+        .chat-sidebar-panel {
+            position: fixed; left: -280px; top: 0; bottom: 0; z-index: 1050;
+            width: 280px; min-width: 280px;
+            transition: left 0.3s ease;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+        }
+        .chat-sidebar-panel.open { left: 0; }
+        .chat-sidebar-overlay {
+            display: none; position: fixed; inset: 0; z-index: 1040;
+            background: rgba(0,0,0,0.4);
+        }
+        .chat-sidebar-overlay.open { display: block; }
         .chat-bubble { max-width: 95%; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="chat-sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 <div class="chat-page">
     <!-- Sessions sidebar -->
-    <div class="chat-sidebar-panel">
+    <div class="chat-sidebar-panel" id="chat-sidebar">
         <div class="chat-sidebar-header">
-            <button class="btn btn-primary btn-sm w-100" id="new-chat-btn" onclick="startNewChat()">
+            <button class="btn btn-primary btn-sm w-100" id="new-chat-btn" onclick="startNewChat(); closeSidebar();">
                 <i class="bi bi-plus-lg me-1"></i> Nowy czat
             </button>
         </div>
@@ -81,11 +148,25 @@
 
     <!-- Chat area -->
     <div class="chat-main">
+        <!-- Chat header with title and mobile hamburger -->
+        <div class="chat-header d-flex align-items-center px-3 py-2 border-bottom">
+            <button class="btn btn-sm btn-outline-secondary me-2 chat-sidebar-toggle" onclick="toggleSidebar()">
+                <i class="bi bi-list"></i>
+            </button>
+            <span class="fw-semibold text-truncate" id="chat-title-text"></span>
+        </div>
+
         <div class="chat-messages" id="chat-messages">
             <div class="chat-empty" id="chat-empty">
                 <div class="text-center">
                     <i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>
-                    <p class="mt-2">Rozpocznij rozmowe - mam dostep do Twojej bazy wiedzy i internetu.</p>
+                    <p class="mt-2 mb-3">Rozpocznij rozmowe - mam dostep do Twojej bazy wiedzy i internetu.</p>
+                    <div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions">
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydalem w tym miesiacu?</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuly</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuje najczesciej?</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Co nowego w technologii?</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -95,17 +176,23 @@
                   hx-swap="beforeend" hx-indicator="#chat-loading"
                   hx-on::after-request="afterChatSend(event)">
                 <input type="hidden" name="session_id" id="session-id" value="">
-                <div class="input-group">
-                    <input type="text" name="message" class="form-control"
-                           placeholder="Napisz wiadomosc..." required autofocus
-                           id="chat-input" autocomplete="off">
+                <div class="input-group align-items-end">
+                    <textarea name="message" class="form-control"
+                              placeholder="Napisz wiadomosc... (Enter = wyslij, Shift+Enter = nowa linia)"
+                              required autofocus rows="1"
+                              id="chat-input" autocomplete="off"
+                              style="resize: none; max-height: 150px; overflow-y: auto;"></textarea>
                     <button class="btn btn-primary" type="submit" id="send-btn">
                         <i class="bi bi-send"></i>
                     </button>
                 </div>
             </form>
-            <div id="chat-loading" class="htmx-indicator text-center mt-2">
-                <span class="spinner-border spinner-border-sm"></span> Mysle...
+            <div id="chat-loading" class="htmx-indicator mt-2">
+                <div class="chat-bubble chat-assistant d-inline-flex align-items-center" style="max-width: fit-content;">
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -118,6 +205,36 @@
 <script>
 marked.setOptions({ breaks: true, gfm: true });
 
+// Auto-resize textarea
+var chatInput = document.getElementById('chat-input');
+chatInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+});
+
+// Enter = send, Shift+Enter = new line
+chatInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (this.value.trim()) {
+            document.getElementById('chat-form').requestSubmit();
+        }
+    }
+});
+
+// Disable input area during request
+document.body.addEventListener('htmx:beforeRequest', function(evt) {
+    if (evt.detail.elt.id === 'chat-form') {
+        document.querySelector('.chat-input-area').classList.add('is-sending');
+    }
+});
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.elt.id === 'chat-form') {
+        document.querySelector('.chat-input-area').classList.remove('is-sending');
+        document.getElementById('chat-input').focus();
+    }
+});
+
 function renderMarkdown() {
     document.querySelectorAll('.chat-md[data-raw]').forEach(function(el) {
         if (el.dataset.rendered) return;
@@ -127,13 +244,59 @@ function renderMarkdown() {
     });
 }
 
+function copyMessage(btn) {
+    var bubble = btn.closest('.chat-bubble');
+    var md = bubble.querySelector('.chat-md');
+    var text = md ? (md.dataset.raw || md.textContent) : bubble.textContent;
+    navigator.clipboard.writeText(text).then(function() {
+        var icon = btn.querySelector('i');
+        icon.className = 'bi bi-check-lg';
+        btn.style.opacity = '1';
+        setTimeout(function() {
+            icon.className = 'bi bi-clipboard';
+            btn.style.opacity = '';
+        }, 1500);
+    });
+}
+
+function deleteSession(sessionId) {
+    if (!confirm('Usunac te rozmowe?')) return;
+    htmx.ajax('DELETE', '/app/czat/sessions/' + sessionId, {target: '#session-list', swap: 'innerHTML'});
+    // If deleting the active session, reset to new chat
+    if (document.getElementById('session-id').value === sessionId) {
+        startNewChat();
+    }
+}
+
+function toggleSidebar() {
+    document.getElementById('chat-sidebar').classList.toggle('open');
+    document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+    document.getElementById('chat-sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+function sendSuggestion(btn) {
+    var input = document.getElementById('chat-input');
+    input.value = btn.textContent.trim();
+    document.getElementById('chat-form').requestSubmit();
+}
+
 function startNewChat() {
     document.getElementById('session-id').value = '';
     document.getElementById('chat-messages').innerHTML =
-        '<div class="chat-empty" id="chat-empty">' +
-        '<div class="text-center"><i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>' +
-        '<p class="mt-2">Rozpocznij rozmowe - mam dostep do Twojej bazy wiedzy i internetu.</p></div></div>';
+        '<div class="chat-empty" id="chat-empty"><div class="text-center">' +
+        '<i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>' +
+        '<p class="mt-2 mb-3">Rozpocznij rozmowe - mam dostep do Twojej bazy wiedzy i internetu.</p>' +
+        '<div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions">' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydalem w tym miesiacu?</button>' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuly</button>' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuje najczesciej?</button>' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Co nowego w technologii?</button>' +
+        '</div></div></div>';
     document.getElementById('chat-input').focus();
+    document.getElementById('chat-title-text').textContent = '';
     // Remove active class from all sessions
     document.querySelectorAll('.chat-session-item.active').forEach(el => el.classList.remove('active'));
 }
@@ -143,17 +306,25 @@ function loadSession(sessionId) {
     // Remove empty state
     var empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
-    // Mark active
+    // Mark active and set title
     document.querySelectorAll('.chat-session-item.active').forEach(el => el.classList.remove('active'));
     var item = document.querySelector('[data-session="' + sessionId + '"]');
-    if (item) item.classList.add('active');
+    if (item) {
+        item.classList.add('active');
+        var titleEl = item.querySelector('.text-truncate');
+        if (titleEl) document.getElementById('chat-title-text').textContent = titleEl.textContent;
+    }
+    // Close sidebar on mobile
+    closeSidebar();
     // Load messages via HTMX
     htmx.ajax('GET', '/app/czat/sessions/' + sessionId, {target: '#chat-messages', swap: 'innerHTML'});
 }
 
 function afterChatSend(event) {
-    // Clear input
-    document.getElementById('chat-input').value = '';
+    // Clear input and reset height
+    var input = document.getElementById('chat-input');
+    input.value = '';
+    input.style.height = 'auto';
     // Remove empty state
     var empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
@@ -167,8 +338,16 @@ function afterChatSend(event) {
 // Listen for new session ID from server
 document.body.addEventListener('newChatSession', function(evt) {
     document.getElementById('session-id').value = evt.detail.session_id;
+    if (evt.detail.title) {
+        document.getElementById('chat-title-text').textContent = evt.detail.title;
+    }
     // Refresh session list
     htmx.ajax('GET', '/app/czat/sessions', {target: '#session-list', swap: 'innerHTML'});
+});
+
+// Update title when loading a session
+document.body.addEventListener('sessionLoaded', function(evt) {
+    document.getElementById('chat-title-text').textContent = evt.detail.title || '';
 });
 
 // Auto-scroll and render markdown after HTMX swap on chat messages
