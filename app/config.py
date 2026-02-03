@@ -206,6 +206,11 @@ class Settings:
     SEARXNG_URL: str = os.getenv("SEARXNG_URL", "http://searxng:8080")
     SEARXNG_TIMEOUT: int = int(os.getenv("SEARXNG_TIMEOUT", "15"))
 
+    # OpenWeatherMap API
+    OPENWEATHER_API_KEY: str = os.getenv("OPENWEATHER_API_KEY", "")
+    WEATHER_CITY: str = os.getenv("WEATHER_CITY", "Kraków")
+    WEATHER_UNITS: str = os.getenv("WEATHER_UNITS", "metric")
+
     # Validation
     PRICE_WARNING_THRESHOLD: float = 100.0  # Flag prices above this
 

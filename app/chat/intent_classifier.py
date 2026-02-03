@@ -13,7 +13,8 @@ CLASSIFY_PROMPT = """Classify the user's question intent. Respond with ONLY one 
 
 Categories:
 - "rag" - question about personal data: receipts, spending, shopping, articles read, saved notes, bookmarks, transcriptions, pantry
-- "web" - question requiring current internet information: news, current prices, weather, recent events, facts to look up
+- "weather" - question about current weather, temperature, forecast, rain, wind
+- "web" - question requiring current internet information: news, current prices, recent events, facts to look up
 - "both" - question needing both personal data and internet context
 - "direct" - general knowledge, greeting, math, continuation of conversation, opinion request
 
@@ -36,7 +37,7 @@ async def classify_intent(
         history: Recent conversation messages [{role, content}, ...]
 
     Returns:
-        One of: "rag", "web", "both", "direct"
+        One of: "rag", "web", "both", "direct", "weather"
     """
     model = settings.CHAT_MODEL or settings.CLASSIFIER_MODEL
 
@@ -78,7 +79,7 @@ async def classify_intent(
     # Remove quotes/punctuation
     intent = intent.strip('"\'.,;:')
 
-    valid_intents = {"rag", "web", "both", "direct"}
+    valid_intents = {"rag", "web", "both", "direct", "weather"}
     if intent not in valid_intents:
         logger.warning(f"Unknown intent '{intent}', defaulting to 'direct'")
         return "direct"

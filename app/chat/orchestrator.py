@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import ollama_client
-from app.chat import intent_classifier, searxng_client
+from app.chat import intent_classifier, searxng_client, weather_client
 from app.config import settings
 from app.db.repositories.chat import ChatRepository
 from app.rag import retriever
@@ -105,6 +105,40 @@ def _format_rag_context(results: list[retriever.SearchResult]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _format_weather_context(
+    current: Optional[dict],
+    forecast: Optional[list[dict]],
+) -> str:
+    """Format current weather + forecast into context text."""
+    unit = "°C" if settings.WEATHER_UNITS == "metric" else "°F"
+    speed_unit = "m/s" if settings.WEATHER_UNITS == "metric" else "mph"
+    parts = []
+
+    if current:
+        parts.append(
+            f"=== AKTUALNA POGODA: {current['city_name']} ===\n"
+            f"Opis: {current['description']}\n"
+            f"Temperatura: {current['temp']}{unit} (odczuwalna: {current['feels_like']}{unit})\n"
+            f"Wilgotność: {current['humidity']}%\n"
+            f"Ciśnienie: {current['pressure']} hPa\n"
+            f"Wiatr: {current['wind_speed']} {speed_unit}\n"
+            f"Zachmurzenie: {current['clouds']}%"
+        )
+
+    if forecast:
+        city = forecast[0].get("city_name", "")
+        lines = [f"=== PROGNOZA (co 3h, 5 dni): {city} ==="]
+        for e in forecast:
+            rain = f", deszcz: {e['rain_mm']}mm" if e.get("rain_mm") else ""
+            lines.append(
+                f"{e['datetime']} | {e['temp']}{unit} "
+                f"({e['description']}, wiatr {e['wind_speed']}{speed_unit}{rain})"
+            )
+        parts.append("\n".join(lines))
+
+    return "\n\n".join(parts)
+
+
 def _format_web_context(results: list[searxng_client.SearchResult]) -> str:
     """Format web search results into context text."""
     parts = []
@@ -185,6 +219,8 @@ async def process_message(
     # 3. Execute search based on intent
     rag_results: list[retriever.SearchResult] = []
     web_results: list[searxng_client.SearchResult] = []
+    weather_data: Optional[dict] = None
+    forecast_data: Optional[list[dict]] = None
 
     # Minimum relevance score for RAG results to be included in context.
     # nomic-embed-text returns ~0.7 for unrelated content, so 0.75 filters noise.
@@ -194,6 +230,15 @@ async def process_message(
         rag_results = await retriever.search(
             query=message, session=db_session, top_k=settings.RAG_TOP_K,
         )
+    elif intent == "weather":
+        (weather_data, weather_err), (forecast_data, forecast_err) = await asyncio.gather(
+            weather_client.get_weather(),
+            weather_client.get_forecast(),
+        )
+        if weather_err:
+            logger.warning(f"Weather API error: {weather_err}")
+        if forecast_err:
+            logger.warning(f"Forecast API error: {forecast_err}")
     elif intent == "web":
         web_results, web_err = await searxng_client.search(message)
         if web_err:
@@ -220,6 +265,8 @@ async def process_message(
 
     # 4. Build context from search results
     context_parts = []
+    if weather_data or forecast_data:
+        context_parts.append(_format_weather_context(weather_data, forecast_data))
     if rag_results:
         context_parts.append(
             "=== OSOBISTA BAZA WIEDZY ===\n" + _format_rag_context(rag_results)
@@ -232,7 +279,9 @@ async def process_message(
     context = "\n\n".join(context_parts)
 
     # If search was performed but returned no results, inform the LLM
-    if intent in ("rag", "both") and not rag_results and not web_results:
+    if intent == "weather" and not weather_data and not forecast_data:
+        context = "BRAK DANYCH POGODOWYCH - nie udało się pobrać pogody z OpenWeatherMap."
+    elif intent in ("rag", "both") and not rag_results and not web_results:
         context = "BRAK WYNIKÓW WYSZUKIWANIA - nie znaleziono pasujących danych w bazie wiedzy ani w internecie."
     elif intent == "rag" and not rag_results:
         context = "BRAK WYNIKÓW - nie znaleziono pasujących danych w osobistej bazie wiedzy."
