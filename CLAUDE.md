@@ -910,6 +910,12 @@ In Telegram, after `/chat` is started, all text messages are routed to the chat 
 
 **SearXNG:** Self-hosted metasearch engine in docker-compose (`searxng` service, port 8080). Configuration in `searxng/settings.yml`.
 
+**Language detection (`_detect_language()`):** Auto-detects Polish vs English based on:
+- Polish-specific characters (ą, ć, ę, ł, ń, ó, ś, ź, ż)
+- Polish keyword matching with word boundary detection (padded spaces): common words (`i`, `w`, `się`, `na`, `do`, `czy`, `jest`, `nie`, `tak`), question words (`jaki`, `gdzie`, `kiedy`, `dlaczego`), and domain verbs (`wydal`, `kupil`, `opowiedz`, `powiedz`)
+- Threshold: >= 2 indicators → Polish, otherwise English
+- Selects appropriate system prompt (`CHAT_SYSTEM_PROMPT_PL` or `CHAT_SYSTEM_PROMPT_EN`)
+
 **Intent classification:** The classifier analyzes the question and conversation history to decide:
 - `"rag"` - personal data queries (spending, articles, notes, etc.)
 - `"web"` - current events, facts to look up online
@@ -991,7 +997,7 @@ RAG_AUTO_INDEX=true                                 # Auto-index new content
 
 # Chat AI (multi-turn with RAG + web search)
 CHAT_ENABLED=true                                   # Enable/disable chat feature
-CHAT_MODEL=                                         # Empty = use CLASSIFIER_MODEL
+CHAT_MODEL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM (Bielik 11B), empty = CLASSIFIER_MODEL
 CHAT_MAX_HISTORY=10                                 # Max messages in conversation context
 SEARXNG_URL=http://searxng:8080                     # SearXNG instance URL
 SEARXNG_TIMEOUT=15                                  # Web search timeout (seconds)
@@ -1016,8 +1022,8 @@ ollama pull qwen2.5vl:7b    # Fallback for when DeepSeek-OCR fails (6GB)
 # Alternative (vision backend - slower but single model)
 ollama pull qwen2.5vl:7b    # OCR extraction (6GB, requires num_ctx=4096)
 
-# RSS/Summarizer (Polish content)
-ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM for summaries (7GB)
+# RSS/Summarizer + Chat AI (Polish content)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM for summaries and chat (7GB)
 
 # RAG embeddings
 ollama pull nomic-embed-text  # Embedding model for RAG (274MB)
