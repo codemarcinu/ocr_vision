@@ -12,6 +12,8 @@ from app.db.repositories.pantry import PantryRepository
 from app.db.repositories.products import ProductRepository
 from app.db.repositories.receipts import ReceiptRepository
 from app.db.repositories.rss import ArticleRepository, RssFeedRepository
+from app.db.repositories.bookmarks import BookmarkRepository
+from app.db.repositories.notes import NoteRepository
 from app.db.repositories.stores import StoreRepository
 
 
@@ -67,6 +69,16 @@ async def get_article_repo(session: DbSession) -> ArticleRepository:
     return ArticleRepository(session)
 
 
+async def get_note_repo(session: DbSession) -> NoteRepository:
+    """Get note repository."""
+    return NoteRepository(session)
+
+
+async def get_bookmark_repo(session: DbSession) -> BookmarkRepository:
+    """Get bookmark repository."""
+    return BookmarkRepository(session)
+
+
 # Type aliases for repository dependencies
 ProductRepoDep = Annotated[ProductRepository, Depends(get_product_repo)]
 StoreRepoDep = Annotated[StoreRepository, Depends(get_store_repo)]
@@ -76,3 +88,5 @@ FeedbackRepoDep = Annotated[FeedbackRepository, Depends(get_feedback_repo)]
 AnalyticsRepoDep = Annotated[AnalyticsRepository, Depends(get_analytics_repo)]
 FeedRepoDep = Annotated[RssFeedRepository, Depends(get_feed_repo)]
 ArticleRepoDep = Annotated[ArticleRepository, Depends(get_article_repo)]
+NoteRepoDep = Annotated[NoteRepository, Depends(get_note_repo)]
+BookmarkRepoDep = Annotated[BookmarkRepository, Depends(get_bookmark_repo)]

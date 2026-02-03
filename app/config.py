@@ -1,4 +1,4 @@
-"""Configuration settings for Smart Pantry Tracker."""
+"""Configuration settings for Second Brain."""
 
 from pathlib import Path
 from typing import Optional
@@ -126,6 +126,24 @@ class Settings:
         "Inne",
     ]
 
+    # ==========================================================================
+    # Map-Reduce Chunking for Long Transcriptions
+    # ==========================================================================
+    # Enable map-reduce processing for transcriptions longer than threshold
+    MAPREDUCE_ENABLED: bool = os.getenv("MAPREDUCE_ENABLED", "true").lower() == "true"
+
+    # Chunk size in characters (~2500 tokens for Polish text)
+    MAPREDUCE_CHUNK_SIZE: int = int(os.getenv("MAPREDUCE_CHUNK_SIZE", "10000"))
+
+    # Overlap between chunks in characters (for context continuity)
+    MAPREDUCE_OVERLAP: int = int(os.getenv("MAPREDUCE_OVERLAP", "1000"))
+
+    # Threshold in characters - use map-reduce above this length
+    MAPREDUCE_THRESHOLD: int = int(os.getenv("MAPREDUCE_THRESHOLD", "15000"))
+
+    # Maximum number of chunks (safety limit for very long content)
+    MAPREDUCE_MAX_CHUNKS: int = int(os.getenv("MAPREDUCE_MAX_CHUNKS", "30"))
+
     # Paths
     BASE_DIR: Path = Path("/data")
     INBOX_DIR: Path = BASE_DIR / "paragony" / "inbox"
@@ -144,6 +162,22 @@ class Settings:
     ))
     TRANSCRIPTION_TEMP_DIR: Path = Path(os.getenv(
         "TRANSCRIPTION_TEMP_DIR", "/tmp/transcriptions"
+    ))
+
+    # ==========================================================================
+    # Personal Notes
+    # ==========================================================================
+    NOTES_ENABLED: bool = os.getenv("NOTES_ENABLED", "true").lower() == "true"
+    NOTES_OUTPUT_DIR: Path = Path(os.getenv(
+        "NOTES_OUTPUT_DIR", str(BASE_DIR / "notes")
+    ))
+
+    # ==========================================================================
+    # Bookmarks / Read Later
+    # ==========================================================================
+    BOOKMARKS_ENABLED: bool = os.getenv("BOOKMARKS_ENABLED", "true").lower() == "true"
+    BOOKMARKS_OUTPUT_DIR: Path = Path(os.getenv(
+        "BOOKMARKS_OUTPUT_DIR", str(BASE_DIR / "bookmarks")
     ))
 
     # Validation
@@ -182,6 +216,8 @@ class Settings:
             cls.SUMMARIES_DIR,
             cls.TRANSCRIPTION_OUTPUT_DIR,
             cls.TRANSCRIPTION_TEMP_DIR,
+            cls.NOTES_OUTPUT_DIR,
+            cls.BOOKMARKS_OUTPUT_DIR,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Smart Pantry Tracker - OCR receipt processing system using Ollama LLMs for product extraction and categorization, with **PostgreSQL database** for data persistence and analytics. Outputs to Obsidian markdown files. Includes a Telegram bot for mobile interaction with **human-in-the-loop validation**.
+Second Brain - personal knowledge management system with multiple modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, and bookmarks. Uses Ollama LLMs for extraction and categorization, **PostgreSQL database** for persistence, and outputs to Obsidian markdown files. Includes a Telegram bot with inline menu navigation and **human-in-the-loop validation**.
 
 ## Build & Run Commands
 
@@ -495,6 +495,64 @@ PostgreSQL  Obsidian MD
 - If subtitles available, skips Whisper transcription entirely
 - Significantly faster for videos with existing subtitles
 
+**Map-Reduce for long transcriptions:**
+
+For transcriptions longer than `MAPREDUCE_THRESHOLD` (default: 15000 chars), the system automatically uses map-reduce processing:
+
+```
+Long Transcription (200k chars)
+         │
+         ▼
+┌─────────────────┐
+│  Split into     │  (10k char chunks with 1k overlap)
+│  chunks         │
+└─────────────────┘
+         │
+    ┌────┼────┬────┐
+    ▼    ▼    ▼    ▼
+ Chunk1 Chunk2 ... ChunkN
+    │    │    │    │
+    ▼    ▼    ▼    ▼
+┌─────────────────────┐
+│  MAP Phase          │  (Bielik: extract from each chunk)
+│  (sequential)       │
+└─────────────────────┘
+    │    │    │    │
+    └────┴────┴────┘
+         │
+         ▼
+┌─────────────────┐
+│  REDUCE Phase   │  (dedupe + final synthesis)
+└─────────────────┘
+         │
+         ▼
+   ExtractionResult
+```
+
+**Key features:**
+- Smart chunking at sentence boundaries (not hard character cut)
+- Overlap between chunks for context continuity
+- Entity/topic deduplication using fuzzy matching
+- Partial results if some chunks fail
+- Automatic selection: short texts use single-pass, long use map-reduce
+
+**Performance for 3h recording (~180k chars, ~18 chunks):**
+| Stage | Time |
+|-------|------|
+| Chunking | < 1s |
+| MAP (18 chunks × 15s) | ~4.5 min |
+| REDUCE | ~30s |
+| **Total** | **~5 min** |
+
+**Configuration:**
+```bash
+MAPREDUCE_ENABLED=true           # Enable/disable map-reduce
+MAPREDUCE_CHUNK_SIZE=10000       # Target chunk size (chars)
+MAPREDUCE_OVERLAP=1000           # Overlap between chunks (chars)
+MAPREDUCE_THRESHOLD=15000        # Use map-reduce above this length
+MAPREDUCE_MAX_CHUNKS=30          # Safety limit for very long content
+```
+
 **GPU memory management:**
 - `WHISPER_UNLOAD_AFTER_USE=true` - Frees VRAM after each transcription
 - Prevents competition with Ollama models for GPU memory
@@ -645,6 +703,13 @@ TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions       # Output directory for notes
 TRANSCRIPTION_MAX_DURATION_HOURS=4                  # Max video duration limit
 TRANSCRIPTION_MAX_CONCURRENT_JOBS=1                 # Concurrent job limit
 TRANSCRIPTION_CLEANUP_HOURS=24                      # Temp file cleanup threshold
+
+# Map-Reduce for Long Transcriptions
+MAPREDUCE_ENABLED=true                              # Enable map-reduce for long texts
+MAPREDUCE_CHUNK_SIZE=10000                          # Chunk size in characters
+MAPREDUCE_OVERLAP=1000                              # Overlap between chunks
+MAPREDUCE_THRESHOLD=15000                           # Use map-reduce above this length
+MAPREDUCE_MAX_CHUNKS=30                             # Safety limit (prevents OOM)
 ```
 
 ## Ollama Models Required

@@ -1,4 +1,4 @@
-"""Database module for Smart Pantry Tracker."""
+"""Database module for Second Brain."""
 
 from .connection import get_session, engine, async_session_factory
 from .models import (

@@ -27,6 +27,8 @@ services:
       - ./paragony:/data/paragony
       - ./vault:/data/vault
       - ./transcriptions:/data/transcriptions
+      - ./notes:/data/notes
+      - ./bookmarks:/data/bookmarks
       - paddleocr_cache:/root/.paddleocr
       - ./credentials:/data/credentials:ro
       - whisper_models:/tmp/transcriptions/models
@@ -50,11 +52,16 @@ services:
       # Transcription Agent
       - TRANSCRIPTION_ENABLED=true
       - WHISPER_MODEL=medium
-      - WHISPER_DEVICE=cuda
-      - WHISPER_COMPUTE_TYPE=float16
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
       - WHISPER_UNLOAD_AFTER_USE=true
       - TRANSCRIPTION_AUTO_GENERATE_NOTE=true
       - TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions
+      # Notes & Bookmarks
+      - NOTES_ENABLED=true
+      - NOTES_OUTPUT_DIR=/data/notes
+      - BOOKMARKS_ENABLED=true
+      - BOOKMARKS_OUTPUT_DIR=/data/bookmarks
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

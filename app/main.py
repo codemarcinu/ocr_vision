@@ -1,4 +1,4 @@
-"""FastAPI application for Smart Pantry Tracker."""
+"""FastAPI application for Second Brain."""
 
 import asyncio
 import logging
@@ -22,6 +22,8 @@ from app.models import HealthStatus, ProcessingResult, Receipt
 from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
 from app.rss_api import router as rss_router
 from app.transcription_api import router as transcription_router
+from app.notes_api import router as notes_router
+from app.bookmarks_api import router as bookmarks_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
@@ -45,8 +47,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Smart Pantry Tracker",
-    description="OCR-based receipt processing for pantry management",
+    title="Second Brain",
+    description="Personal knowledge management system",
     version="1.0.0"
 )
 
@@ -55,6 +57,8 @@ app.include_router(dictionary_router)
 app.include_router(reports_router)
 app.include_router(rss_router)
 app.include_router(transcription_router)
+app.include_router(notes_router)
+app.include_router(bookmarks_router)
 
 
 # Web UI for dictionary management
@@ -84,7 +88,7 @@ async def startup_event():
             logger.warning(f"Database initialization failed: {e}")
             logger.info("Continuing without database - using file-based storage")
 
-    logger.info("Smart Pantry Tracker started")
+    logger.info("Second Brain started")
     logger.info(f"Inbox: {settings.INBOX_DIR}")
     logger.info(f"Vault: {settings.VAULT_DIR}")
     logger.info(f"Database enabled: {settings.USE_DB_RECEIPTS}")
@@ -554,7 +558,7 @@ async def _process_file(file_path: Path) -> ProcessingResult:
 async def root():
     """Root endpoint."""
     return {
-        "name": "Smart Pantry Tracker",
+        "name": "Second Brain",
         "version": "1.0.0",
         "database_enabled": settings.USE_DB_RECEIPTS,
         "endpoints": {
