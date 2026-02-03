@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     ARRAY,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -656,7 +657,7 @@ class ChatSession(Base):
     source: Mapped[str] = mapped_column(
         String(20), nullable=False, default="web"
     )  # 'web' or 'telegram'
-    telegram_chat_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()

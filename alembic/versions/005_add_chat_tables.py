@@ -25,7 +25,7 @@ def upgrade() -> None:
                   server_default=sa.text("uuid_generate_v4()")),
         sa.Column('title', sa.String(500), nullable=True),
         sa.Column('source', sa.String(20), nullable=False, server_default='web'),
-        sa.Column('telegram_chat_id', sa.Integer(), nullable=True),
+        sa.Column('telegram_chat_id', sa.BigInteger(), nullable=True),
         sa.Column('is_active', sa.Boolean(), server_default=sa.text('true')),
         sa.Column('created_at', sa.DateTime(), server_default=sa.func.current_timestamp()),
         sa.Column('updated_at', sa.DateTime(), server_default=sa.func.current_timestamp()),

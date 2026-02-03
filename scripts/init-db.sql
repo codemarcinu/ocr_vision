@@ -185,7 +185,7 @@ CREATE TABLE chat_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(500),
     source VARCHAR(20) NOT NULL DEFAULT 'web',  -- 'web' or 'telegram'
-    telegram_chat_id INTEGER,
+    telegram_chat_id BIGINT,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
