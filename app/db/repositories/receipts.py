@@ -297,7 +297,7 @@ class ReceiptRepository(BaseRepository[Receipt]):
         # Data query
         stmt = (
             select(Receipt)
-            .options(selectinload(Receipt.store))
+            .options(selectinload(Receipt.store), selectinload(Receipt.items))
             .order_by(Receipt.receipt_date.desc(), Receipt.processed_at.desc())
         )
         if store_id:
