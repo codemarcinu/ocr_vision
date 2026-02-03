@@ -62,6 +62,8 @@ services:
       - NOTES_OUTPUT_DIR=/data/notes
       - BOOKMARKS_ENABLED=true
       - BOOKMARKS_OUTPUT_DIR=/data/bookmarks
+      # Web UI - disable Obsidian for receipts/pantry (data in PostgreSQL)
+      - GENERATE_OBSIDIAN_FILES=false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
