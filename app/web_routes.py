@@ -117,17 +117,18 @@ async def receipt_list(
     request: Request,
     repo: ReceiptRepoDep,
     store_repo: StoreRepoDep,
-    store_id: Optional[int] = None,
+    store_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     offset: int = 0,
     limit: int = 20,
 ):
-    d_from = date.fromisoformat(date_from) if date_from else None
-    d_to = date.fromisoformat(date_to) if date_to else None
+    sid = int(store_id) if store_id and store_id.strip() else None
+    d_from = date.fromisoformat(date_from) if date_from and date_from.strip() else None
+    d_to = date.fromisoformat(date_to) if date_to and date_to.strip() else None
 
     receipts, total = await repo.get_recent_paginated(
-        limit=limit, offset=offset, store_id=store_id,
+        limit=limit, offset=offset, store_id=sid,
         date_from=d_from, date_to=d_to,
     )
     stores = await store_repo.get_all_with_aliases()
@@ -137,7 +138,7 @@ async def receipt_list(
         "receipts": receipts,
         "total": total,
         "stores": stores,
-        "filters": {"store_id": store_id or "", "date_from": date_from or "", "date_to": date_to or ""},
+        "filters": {"store_id": sid or "", "date_from": date_from or "", "date_to": date_to or ""},
         "offset": offset,
         "limit": limit,
     }
