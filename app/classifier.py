@@ -117,10 +117,30 @@ async def _call_classifier_model(
         return None, elapsed, f"JSON parse error: {e}"
 
 
-CATEGORIZATION_PROMPT = """Skategoryzuj poniższe produkty spożywcze.
+CATEGORIZATION_PROMPT = """Skategoryzuj poniższe produkty spożywcze/domowe.
 
-Dostępne kategorie:
-{categories}
+Dostępne kategorie z przykładami:
+- Nabiał: mleko, jogurt, ser żółty, twaróg, masło, śmietana, skyr, jaja
+- Pieczywo: chleb, bułki, rogale, bagietka, tortilla
+- Mięso: kurczak, schab, mielone, wołowina, indyk, żeberka
+- Wędliny: szynka, kiełbasa, salami, boczek, pasztet, parówki, kabanosy
+- Ryby: łosoś, dorsz, śledź, tuńczyk, makrela, krewetki
+- Warzywa: pomidory, ziemniaki, ogórki, kapusta, papryka, cebula, marchew, sałata
+- Owoce: banany, jabłka, pomarańcze, winogrona, cytryny, truskawki
+- Napoje: sok, woda, cola, oranżada, napój energetyczny, woda gazowana
+- Alkohol: piwo, wino, wódka, whisky, gin
+- Napoje gorące: kawa, herbata, kakao, cappuccino
+- Słodycze: czekolada, ciastka, cukierki, żelki, wafle, lody
+- Przekąski: chipsy, paluszki, orzeszki, nachos, popcorn, krakersy
+- Produkty sypkie: makaron, ryż, kasza, mąka, płatki owsiane, musli
+- Przyprawy: sól, pieprz, oregano, bazylia, ketchup, musztarda, majonez, sos
+- Konserwy: groszek, kukurydza, fasola, pomidory krojone
+- Mrożonki: frytki, pizza, pierogi, nuggetsy, warzywa mrożone, lody
+- Dania gotowe: zupa instant, hummus, bigos, sałatka gotowa
+- Chemia: proszek do prania, płyn do naczyń, papier toaletowy, ręczniki, worki na śmieci
+- Kosmetyki: szampon, mydło, dezodorant, pasta do zębów, krem, żel pod prysznic
+- Dla dzieci: pieluchy, chusteczki nawilżane, kaszka, słoiczek
+- Dla zwierząt: karma, żwirek, przysmak dla psa/kota
 
 Produkty do kategoryzacji:
 {products}
@@ -136,7 +156,8 @@ Zwróć odpowiedź TYLKO jako poprawny JSON w formacie:
 Zasady:
 - Użyj TYLKO kategorii z podanej listy
 - confidence to pewność przypisania (0.0-1.0)
-- Jeśli produkt nie pasuje do żadnej kategorii, użyj "Inne"
+- NIGDY nie przypisuj "Inne" jeśli produkt pasuje do którejkolwiek innej kategorii
+- "Inne" to OSTATECZNOŚĆ - tylko dla produktów których absolutnie nie da się przypisać (np. gazeta, bateria)
 - Zachowaj oryginalne nazwy i ceny produktów
 - Zwróć TYLKO JSON, bez dodatkowego tekstu"""
 
@@ -164,10 +185,12 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
     for p in products:
         if p.kategoria and p.confidence and p.confidence >= 0.6:
             # Already has good category from dictionary - skip LLM
+            # Map dictionary category key to display name
+            mapped_category = settings.CATEGORY_MAP.get(p.kategoria, p.kategoria)
             already_categorized.append(CategorizedProduct(
                 nazwa=p.nazwa,
                 cena=p.cena,
-                kategoria=p.kategoria,
+                kategoria=mapped_category,
                 confidence=p.confidence,
                 warning=p.warning,
                 nazwa_oryginalna=p.nazwa_oryginalna,
@@ -190,10 +213,7 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
         for p in needs_llm
     ])
 
-    categories_text = "\n".join([f"- {c}" for c in settings.CATEGORIES])
-
     prompt = CATEGORIZATION_PROMPT.format(
-        categories=categories_text,
         products=products_text
     )
 
@@ -293,7 +313,8 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
     for product in needs_llm:
         if product.nazwa not in categorized_names:
             # Use dictionary category if available, otherwise "Inne"
-            category = product.kategoria if product.kategoria else "Inne"
+            raw_category = product.kategoria if product.kategoria else "Inne"
+            category = settings.CATEGORY_MAP.get(raw_category, raw_category)
             confidence = product.confidence if product.confidence else 0.0
             llm_categorized.append(CategorizedProduct(
                 nazwa=product.nazwa,
@@ -308,7 +329,26 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
             ))
 
     # Combine already_categorized (from dictionary) + llm_categorized
-    return already_categorized + llm_categorized, None
+    all_categorized = already_categorized + llm_categorized
+
+    # Log products categorized as "Inne" for daily review
+    _log_inne_products(all_categorized)
+
+    return all_categorized, None
+
+
+def _log_inne_products(products: list[CategorizedProduct]) -> None:
+    """Log products categorized as 'Inne' for daily review."""
+    try:
+        from app.feedback_logger import log_inne_product
+        for p in products:
+            if p.kategoria == "Inne":
+                log_inne_product(
+                    raw_name=p.nazwa,
+                    price=p.cena,
+                )
+    except Exception as e:
+        logger.warning(f"Failed to log 'Inne' products: {e}")
 
 
 def _fallback_categorization(products: list[Product]) -> list[CategorizedProduct]:
@@ -317,7 +357,7 @@ def _fallback_categorization(products: list[Product]) -> list[CategorizedProduct
         CategorizedProduct(
             nazwa=p.nazwa,
             cena=p.cena,
-            kategoria=p.kategoria if p.kategoria else "Inne",
+            kategoria=settings.CATEGORY_MAP.get(p.kategoria, p.kategoria) if p.kategoria else "Inne",
             confidence=p.confidence if p.confidence else 0.0,
             warning=p.warning,
             nazwa_oryginalna=p.nazwa_oryginalna,

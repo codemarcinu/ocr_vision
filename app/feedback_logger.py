@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 LOGS_DIR = settings.VAULT_DIR / "logs"
 UNMATCHED_FILE = LOGS_DIR / "unmatched.json"
 CORRECTIONS_FILE = LOGS_DIR / "corrections.json"
+INNE_PRODUCTS_FILE = LOGS_DIR / "inne_products.json"
 
 
 def _ensure_logs_dir():
@@ -158,6 +159,84 @@ def remove_from_unmatched(raw_name: str) -> bool:
     if len(unmatched) < original_len:
         _save_json_file(UNMATCHED_FILE, unmatched)
         logger.info(f"Removed '{raw_name}' from unmatched list")
+        return True
+    return False
+
+
+def log_inne_product(
+    raw_name: str,
+    price: float,
+    store: Optional[str] = None,
+):
+    """
+    Log a product categorized as 'Inne' for daily review.
+
+    Increments count if already logged, otherwise adds new entry.
+    """
+    if not raw_name or len(raw_name) < 2:
+        return
+
+    raw_name_lower = raw_name.lower().strip()
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    inne = _load_json_file(INNE_PRODUCTS_FILE)
+
+    # Check if product already exists
+    found = False
+    for entry in inne:
+        if entry.get("raw_name", "").lower() == raw_name_lower:
+            entry["count"] = entry.get("count", 1) + 1
+            entry["last_seen"] = today
+            entry["last_price"] = price
+            if store:
+                entry["store"] = store
+            found = True
+            break
+
+    if not found:
+        inne.append({
+            "raw_name": raw_name,
+            "price": price,
+            "store": store,
+            "count": 1,
+            "first_seen": today,
+            "last_seen": today,
+            "last_price": price,
+        })
+
+    _save_json_file(INNE_PRODUCTS_FILE, inne)
+    logger.debug(f"Logged 'Inne' product: {raw_name}")
+
+
+def get_inne_products() -> list:
+    """Get all products categorized as 'Inne'."""
+    return _load_json_file(INNE_PRODUCTS_FILE)
+
+
+def get_recent_inne_products(days: int = 7) -> list:
+    """Get products categorized as 'Inne' in the last N days."""
+    inne = _load_json_file(INNE_PRODUCTS_FILE)
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    return [
+        entry for entry in inne
+        if entry.get("last_seen", "") >= cutoff
+    ]
+
+
+def remove_from_inne(raw_name: str) -> bool:
+    """Remove a product from the 'Inne' list (after recategorization)."""
+    raw_name_lower = raw_name.lower().strip()
+    inne = _load_json_file(INNE_PRODUCTS_FILE)
+
+    original_len = len(inne)
+    inne = [
+        entry for entry in inne
+        if entry.get("raw_name", "").lower() != raw_name_lower
+    ]
+
+    if len(inne) < original_len:
+        _save_json_file(INNE_PRODUCTS_FILE, inne)
+        logger.info(f"Removed '{raw_name}' from 'Inne' list")
         return True
     return False
 
