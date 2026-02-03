@@ -3,27 +3,151 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+# ============================================================
+# Main menu
+# ============================================================
+
 def get_main_keyboard() -> InlineKeyboardMarkup:
-    """Get main menu keyboard."""
+    """Get main menu keyboard with all modules."""
     keyboard = [
         [
-            InlineKeyboardButton("🏠 Spiżarnia", callback_data="pantry"),
-            InlineKeyboardButton("📊 Statystyki", callback_data="stats"),
+            InlineKeyboardButton("📝 Notatki", callback_data="notes:menu"),
+            InlineKeyboardButton("🧾 Paragony", callback_data="receipts:menu"),
         ],
         [
-            InlineKeyboardButton("🧾 Ostatnie paragony", callback_data="recent"),
-            InlineKeyboardButton("❌ Błędy", callback_data="errors"),
+            InlineKeyboardButton("📰 Artykuły", callback_data="articles:menu"),
+            InlineKeyboardButton("🎙️ Transkrypcje", callback_data="transcriptions:menu"),
+        ],
+        [
+            InlineKeyboardButton("🔖 Zakładki", callback_data="bookmarks:menu"),
+            InlineKeyboardButton("📊 Statystyki", callback_data="stats:menu"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
+def get_back_button() -> list[InlineKeyboardButton]:
+    """Get back-to-menu button row."""
+    return [InlineKeyboardButton("◀️ Menu", callback_data="main_menu")]
+
+
+# ============================================================
+# Module sub-menus
+# ============================================================
+
+def get_receipts_menu() -> InlineKeyboardMarkup:
+    """Receipt management sub-menu."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🧾 Ostatnie", callback_data="receipts:recent"),
+            InlineKeyboardButton("⏳ Oczekujące", callback_data="receipts:pending"),
+        ],
+        [
+            InlineKeyboardButton("🏠 Spiżarnia", callback_data="receipts:pantry"),
+            InlineKeyboardButton("❌ Błędy", callback_data="receipts:errors"),
+        ],
+        get_back_button(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_articles_menu() -> InlineKeyboardMarkup:
+    """Articles/RSS sub-menu."""
+    keyboard = [
+        [
+            InlineKeyboardButton("📡 Feedy", callback_data="articles:feeds"),
+            InlineKeyboardButton("📋 Ostatnie", callback_data="articles:recent"),
+        ],
+        [
+            InlineKeyboardButton("🔄 Odśwież", callback_data="articles:refresh"),
+        ],
+        get_back_button(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_transcriptions_menu() -> InlineKeyboardMarkup:
+    """Transcription sub-menu."""
+    keyboard = [
+        [
+            InlineKeyboardButton("📋 Lista", callback_data="transcriptions:list"),
+        ],
+        get_back_button(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_stats_menu() -> InlineKeyboardMarkup:
+    """Statistics sub-menu."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Tydzień", callback_data="stats:week"),
+            InlineKeyboardButton("Miesiąc", callback_data="stats:month"),
+        ],
+        [
+            InlineKeyboardButton("Sklepy", callback_data="stats:stores"),
+            InlineKeyboardButton("Kategorie", callback_data="stats:categories"),
+        ],
+        [
+            InlineKeyboardButton("🏷️ Rabaty", callback_data="stats:discounts"),
+        ],
+        get_back_button(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_notes_menu() -> InlineKeyboardMarkup:
+    """Personal notes sub-menu."""
+    keyboard = [
+        [
+            InlineKeyboardButton("✏️ Nowa notatka", callback_data="notes:new"),
+            InlineKeyboardButton("📋 Lista", callback_data="notes:list"),
+        ],
+        get_back_button(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_bookmarks_menu() -> InlineKeyboardMarkup:
+    """Bookmarks sub-menu."""
+    keyboard = [
+        [
+            InlineKeyboardButton("📋 Wszystkie", callback_data="bookmarks:list"),
+            InlineKeyboardButton("⏳ Oczekujące", callback_data="bookmarks:pending"),
+        ],
+        get_back_button(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_url_action_keyboard(url_key: str) -> InlineKeyboardMarkup:
+    """Get action picker for a received URL.
+
+    Args:
+        url_key: Short key to reference stored URL in user_data.
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton("🔖 Zapisz", callback_data=f"url:bookmark:{url_key}"),
+            InlineKeyboardButton("📝 Podsumuj", callback_data=f"url:summarize:{url_key}"),
+        ],
+        [
+            InlineKeyboardButton("🎙️ Transkrybuj", callback_data=f"url:transcribe:{url_key}"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+# ============================================================
+# Existing keyboards (unchanged)
+# ============================================================
+
 def get_receipt_actions_keyboard(receipt_id: str, has_discounts: bool = False) -> InlineKeyboardMarkup:
     """Get contextual actions for processed receipt."""
     keyboard = [
         [
-            InlineKeyboardButton("📊 Statystyki", callback_data="stats"),
-            InlineKeyboardButton("🏠 Spiżarnia", callback_data="pantry"),
+            InlineKeyboardButton("📊 Statystyki", callback_data="stats:menu"),
+            InlineKeyboardButton("🏠 Spiżarnia", callback_data="receipts:pantry"),
         ],
     ]
 
@@ -32,9 +156,7 @@ def get_receipt_actions_keyboard(receipt_id: str, has_discounts: bool = False) -
             InlineKeyboardButton("🏷️ Zobacz rabaty", callback_data=f"receipt_discounts_{receipt_id}"),
         ])
 
-    keyboard.append([
-        InlineKeyboardButton("📋 Menu główne", callback_data="main_menu"),
-    ])
+    keyboard.append(get_back_button())
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -44,10 +166,10 @@ def get_pantry_quick_actions() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton("🔍 Szukaj", callback_data="pantry_search"),
-            InlineKeyboardButton("📊 Statystyki", callback_data="stats"),
+            InlineKeyboardButton("📊 Statystyki", callback_data="stats:menu"),
         ],
         [
-            InlineKeyboardButton("🧾 Paragony", callback_data="recent"),
+            InlineKeyboardButton("🧾 Paragony", callback_data="receipts:recent"),
             InlineKeyboardButton("📋 Menu", callback_data="main_menu"),
         ],
     ]
@@ -55,18 +177,8 @@ def get_pantry_quick_actions() -> InlineKeyboardMarkup:
 
 
 def get_stats_keyboard() -> InlineKeyboardMarkup:
-    """Get stats options keyboard."""
-    keyboard = [
-        [
-            InlineKeyboardButton("Tydzień", callback_data="stats_week"),
-            InlineKeyboardButton("Miesiąc", callback_data="stats_month"),
-        ],
-        [
-            InlineKeyboardButton("Sklepy", callback_data="stores"),
-            InlineKeyboardButton("Kategorie", callback_data="categories"),
-        ],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    """Get stats options keyboard (legacy, used by /stats command)."""
+    return get_stats_menu()
 
 
 def get_pantry_category_keyboard(categories: list[str]) -> InlineKeyboardMarkup:

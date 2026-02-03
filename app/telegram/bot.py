@@ -1,6 +1,8 @@
-"""Main Telegram bot for Smart Pantry Tracker."""
+"""Main Telegram bot for Second Brain."""
 
+import hashlib
 import logging
+import re
 
 from telegram import Update
 from telegram.ext import (
@@ -14,6 +16,7 @@ from telegram.ext import (
 
 from app.config import settings
 from app.feedback_logger import log_review_correction
+from app.telegram.callback_router import CallbackRouter
 from app.telegram.handlers import (
     articles_command,
     categories_command,
@@ -42,19 +45,39 @@ from app.telegram.handlers import (
     unsubscribe_command,
     use_command,
 )
-from app.telegram.keyboards import get_main_keyboard
+from app.telegram.handlers.menu_articles import handle_articles_callback
+from app.telegram.handlers.menu_bookmarks import handle_bookmarks_callback
+from app.telegram.handlers.menu_notes import handle_note_text_input, handle_notes_callback
+from app.telegram.handlers.menu_receipts import handle_receipts_callback
+from app.telegram.handlers.menu_stats import handle_stats_callback
+from app.telegram.handlers.menu_transcriptions import handle_transcriptions_callback
+from app.telegram.keyboards import get_main_keyboard, get_url_action_keyboard
 from app.telegram.middleware import authorized_only
 from app.telegram.notifications import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 
+# URL detection pattern
+_URL_PATTERN = re.compile(r"^https?://\S+$", re.IGNORECASE)
+
 
 class PantryBot:
-    """Telegram bot for Smart Pantry Tracker."""
+    """Telegram bot for Second Brain."""
 
     def __init__(self):
         self.application: Application | None = None
         self._running = False
+        self._callback_router = CallbackRouter()
+        self._setup_callback_router()
+
+    def _setup_callback_router(self) -> None:
+        """Register module callback handlers."""
+        self._callback_router.register("receipts:", handle_receipts_callback)
+        self._callback_router.register("articles:", handle_articles_callback)
+        self._callback_router.register("transcriptions:", handle_transcriptions_callback)
+        self._callback_router.register("stats:", handle_stats_callback)
+        self._callback_router.register("notes:", handle_notes_callback)
+        self._callback_router.register("bookmarks:", handle_bookmarks_callback)
 
     async def start(self) -> None:
         """Start the bot in polling mode."""
@@ -110,53 +133,58 @@ class PantryBot:
         if not self.application:
             return
 
-        # Help commands
+        # Primary commands (shown in /help)
         self.application.add_handler(CommandHandler("start", self._start_command))
         self.application.add_handler(CommandHandler("help", self._help_command))
+        self.application.add_handler(CommandHandler("q", self._quick_search_command))
+        self.application.add_handler(CommandHandler("n", self._quick_note_command))
 
-        # Receipt handlers
+        # Media handlers
         self.application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
         self.application.add_handler(MessageHandler(filters.Document.PDF, handle_document))
+        self.application.add_handler(MessageHandler(
+            filters.Document.MimeType("audio/mpeg")
+            | filters.Document.MimeType("audio/mp4")
+            | filters.Document.MimeType("audio/ogg")
+            | filters.Document.MimeType("audio/wav")
+            | filters.Document.MimeType("audio/webm")
+            | filters.Document.MimeType("video/mp4")
+            | filters.AUDIO
+            | filters.VOICE,
+            self._handle_audio_input,
+        ))
 
-        # Manual total input handler (for review flow)
+        # Text input handler (JSON import, manual total, URL detection)
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text_input)
         )
+
+        # Legacy commands (still work, not shown in /help)
         self.application.add_handler(CommandHandler("recent", recent_command))
         self.application.add_handler(CommandHandler("reprocess", reprocess_command))
         self.application.add_handler(CommandHandler("pending", pending_command))
-
-        # Pantry handlers
         self.application.add_handler(CommandHandler("pantry", pantry_command))
         self.application.add_handler(CommandHandler("use", use_command))
         self.application.add_handler(CommandHandler("remove", remove_command))
         self.application.add_handler(CommandHandler("search", search_command))
-
-        # Stats handlers
         self.application.add_handler(CommandHandler("stats", stats_command))
         self.application.add_handler(CommandHandler("stores", stores_command))
         self.application.add_handler(CommandHandler("categories", categories_command))
         self.application.add_handler(CommandHandler("rabaty", discounts_command))
         self.application.add_handler(CommandHandler("discounts", discounts_command))
-
-        # Error handlers
         self.application.add_handler(CommandHandler("errors", errors_command))
         self.application.add_handler(CommandHandler("clearerrors", clearerrors_command))
-
-        # RSS/Summarizer handlers
         self.application.add_handler(CommandHandler("feeds", feeds_command))
         self.application.add_handler(CommandHandler("subscribe", subscribe_command))
         self.application.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
         self.application.add_handler(CommandHandler("summarize", summarize_command))
         self.application.add_handler(CommandHandler("refresh", refresh_command))
         self.application.add_handler(CommandHandler("articles", articles_command))
-
-        # Transcription handlers
         self.application.add_handler(CommandHandler("transcribe", transcribe_command))
         self.application.add_handler(CommandHandler("transcriptions", transcriptions_command))
         self.application.add_handler(CommandHandler("note", note_command))
 
-        # Callback query handler for inline keyboards
+        # Callback query handler (routes via CallbackRouter)
         self.application.add_handler(CallbackQueryHandler(self._handle_callback))
 
         # Error handler
@@ -164,74 +192,174 @@ class PantryBot:
 
     @authorized_only
     async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start command."""
+        """Handle /start command - show main menu."""
         if not update.message:
             return
 
         await update.message.reply_text(
-            "<b>🏪 Smart Pantry Tracker</b>\n\n"
-            "Witaj! Wyślij mi zdjęcie paragonu, a przetworzę je automatycznie.\n\n"
-            "Użyj /help aby zobaczyć dostępne komendy.",
+            "<b>🧠 Second Brain</b>\n\n"
+            "Wybierz moduł lub wyślij:\n"
+            "• 📸 zdjęcie paragonu\n"
+            "• 🔗 link do artykułu/wideo\n"
+            "• 🎵 plik audio\n",
             parse_mode="HTML",
             reply_markup=get_main_keyboard()
         )
 
     @authorized_only
     async def _help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /help command."""
+        """Handle /help command - show available commands."""
         if not update.message:
             return
 
-        help_text = """<b>📋 Dostępne komendy:</b>
+        help_text = (
+            "<b>🧠 Second Brain</b>\n\n"
+            "<b>Komendy:</b>\n"
+            "• <code>/start</code> — menu główne\n"
+            "• <code>/n &lt;tekst&gt;</code> — szybka notatka\n"
+            "• <code>/q &lt;fraza&gt;</code> — szukaj wszędzie\n"
+            "• <code>/help</code> — ta pomoc\n\n"
+            "<b>Wyślij wiadomość:</b>\n"
+            "• 📸 Zdjęcie → przetwarzanie paragonu\n"
+            "• 📄 PDF → przetwarzanie paragonu\n"
+            "• 🎵 Audio → transkrypcja\n"
+            "• 🔗 Link → wybór akcji (zapisz / podsumuj / transkrybuj)\n"
+            "• 📋 JSON → import paragonu\n\n"
+            "<b>Nawigacja:</b>\n"
+            "Użyj przycisków w menu do nawigacji między modułami."
+        )
 
-<b>🧾 Paragony:</b>
-• Wyślij zdjęcie - przetwórz paragon
-• Wklej JSON - import z Gemini/innego źródła
-• <code>/recent [N]</code> - ostatnie N paragonów
-• <code>/reprocess &lt;plik&gt;</code> - ponowne przetwarzanie
-• <code>/pending</code> - pliki w kolejce
+        await update.message.reply_text(
+            help_text,
+            parse_mode="HTML",
+            reply_markup=get_main_keyboard(),
+        )
 
-<b>🏠 Spiżarnia:</b>
-• <code>/pantry [kategoria]</code> - zawartość spiżarni
-• <code>/use &lt;produkt&gt;</code> - oznacz jako zużyty
-• <code>/remove &lt;produkt&gt;</code> - usuń ze spiżarni
-• <code>/search &lt;fraza&gt;</code> - szukaj produktu
+    @authorized_only
+    async def _quick_search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /q command - quick cross-module search."""
+        if not update.message:
+            return
 
-<b>📊 Statystyki:</b>
-• <code>/stats [week/month]</code> - podsumowanie wydatków
-• <code>/stores</code> - wydatki wg sklepów
-• <code>/categories</code> - wydatki wg kategorii
-• <code>/rabaty</code> - raport rabatów i oszczędności
+        if not context.args:
+            await update.message.reply_text(
+                "Użycie: <code>/q &lt;fraza&gt;</code>\n\n"
+                "Przykład: <code>/q mleko</code>",
+                parse_mode="HTML",
+            )
+            return
 
-<b>📰 RSS i podsumowania:</b>
-• <code>/feeds</code> - lista subskrybowanych kanałów
-• <code>/subscribe &lt;URL&gt;</code> - dodaj kanał RSS
-• <code>/unsubscribe &lt;ID&gt;</code> - usuń kanał
-• <code>/summarize &lt;URL&gt;</code> - podsumuj stronę
-• <code>/refresh</code> - pobierz nowe artykuły
-• <code>/articles [feed_id]</code> - ostatnie artykuły
+        query = " ".join(context.args)
 
-<b>🎙️ Transkrypcja:</b>
-• <code>/transcribe &lt;URL&gt;</code> - transkrybuj YouTube
-• Wyślij plik audio + /transcribe
-• <code>/transcriptions</code> - lista transkrypcji
-• <code>/note &lt;ID&gt;</code> - wygeneruj notatkę
+        # Simple search across modules - search pantry products
+        from app.telegram.formatters import escape_html, format_search_results
+        from app.obsidian_writer import get_pantry_contents
 
-<b>❌ Błędy:</b>
-• <code>/errors</code> - lista błędów OCR
-• <code>/clearerrors</code> - wyczyść logi błędów"""
+        results = []
 
-        await update.message.reply_text(help_text, parse_mode="HTML")
+        # Search pantry
+        contents = get_pantry_contents()
+        for category, items in (contents or {}).items():
+            for item in items:
+                name = item.get("name", "")
+                if query.lower() in name.lower():
+                    results.append({
+                        "name": name,
+                        "price": item.get("price", "?"),
+                        "category": category,
+                        "date": item.get("date", ""),
+                        "checked": item.get("checked", False),
+                    })
+
+        text = format_search_results(results, query)
+
+        # Search articles if DB is available
+        if settings.USE_DB_RECEIPTS:
+            try:
+                from app.db.connection import get_session
+                from app.db.repositories.rss import ArticleRepository
+
+                async for session in get_session():
+                    repo = ArticleRepository(session)
+                    articles = await repo.get_recent(limit=50)
+                    matching = [
+                        a for a in articles
+                        if query.lower() in (a.title or "").lower()
+                    ]
+                    if matching:
+                        text += f"\n\n📰 <b>Artykuły ({len(matching)}):</b>\n"
+                        for a in matching[:5]:
+                            title_short = a.title[:50] + "..." if len(a.title) > 50 else a.title
+                            text += f"  • {escape_html(title_short)}\n"
+            except Exception:
+                pass
+
+        await update.message.reply_text(text, parse_mode="HTML")
+
+    @authorized_only
+    async def _quick_note_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /n command - quick note capture."""
+        if not update.message:
+            return
+
+        if not context.args:
+            await update.message.reply_text(
+                "Użycie: <code>/n &lt;tekst notatki&gt;</code>\n\n"
+                "Przykład: <code>/n kupić mleko</code>",
+                parse_mode="HTML",
+            )
+            return
+
+        note_text = " ".join(context.args)
+
+        from app.db.connection import get_session
+        from app.db.repositories.notes import NoteRepository
+        from app.telegram.formatters import escape_html
+
+        try:
+            async for session in get_session():
+                repo = NoteRepository(session)
+                note = await repo.create_quick(title=note_text)
+                await session.commit()
+
+                # Write to Obsidian
+                if settings.GENERATE_OBSIDIAN_FILES:
+                    from app.notes_writer import write_note_file
+                    write_note_file(note)
+
+                await update.message.reply_text(
+                    f"✅ <b>Notatka zapisana!</b>\n\n"
+                    f"📌 {escape_html(note_text)}\n"
+                    f"<code>ID: {str(note.id)[:8]}</code>",
+                    parse_mode="HTML",
+                )
+        except Exception as e:
+            logger.error(f"Error saving quick note: {e}")
+            await update.message.reply_text(f"❌ Błąd zapisu notatki: {e}")
+
+    @authorized_only
+    async def _handle_audio_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle audio file uploads - route to transcription."""
+        if not update.message:
+            return
+
+        if not settings.TRANSCRIPTION_ENABLED:
+            await update.message.reply_text("❌ Transkrypcja jest wyłączona")
+            return
+
+        # Delegate to transcribe handler
+        from app.telegram.handlers.transcription import _transcribe_file
+        await _transcribe_file(update)
 
     @authorized_only
     async def _handle_text_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle text input for manual total entry or JSON import."""
+        """Handle text input: JSON import, manual total, URL detection."""
         if not update.message or not update.message.text:
             return
 
-        text = update.message.text
+        text = update.message.text.strip()
 
-        # Check if this is a JSON receipt import
+        # 1. Check for JSON receipt import
         if is_json_receipt(text):
             status_msg = await update.message.reply_text(
                 "Wykryto JSON paragonu. Przetwarzam..."
@@ -248,10 +376,45 @@ class PantryBot:
                 await status_msg.edit_text(f"Błąd importu: {message}")
             return
 
-        # Check if we're awaiting manual total input
-        if not context.user_data or "awaiting_manual_total" not in context.user_data:
-            return  # Not in manual input mode, ignore
+        # 2. Check if we're awaiting manual total input
+        if context.user_data and "awaiting_manual_total" in context.user_data:
+            await self._handle_manual_total(update, context)
+            return
 
+        # 3. Check for URL - show action picker
+        if _URL_PATTERN.match(text):
+            url = text
+            url_key = hashlib.md5(url.encode()).hexdigest()[:8]
+
+            # Store URL in user_data for later retrieval
+            if context.user_data is None:
+                context.user_data = {}
+            context.user_data[f"url_{url_key}"] = url
+
+            await update.message.reply_text(
+                f"🔗 <b>Co zrobić z linkiem?</b>\n\n"
+                f"<code>{url[:80]}{'...' if len(url) > 80 else ''}</code>",
+                parse_mode="HTML",
+                reply_markup=get_url_action_keyboard(url_key),
+            )
+            return
+
+        # 4. Check for note creation flow (title or content)
+        if context.user_data and (
+            context.user_data.get("awaiting_note_title")
+            or context.user_data.get("awaiting_note_content")
+        ):
+            response = await handle_note_text_input(text, context)
+            if response:
+                await update.message.reply_text(
+                    response,
+                    parse_mode="HTML",
+                    reply_markup=get_main_keyboard() if "zapisana" in response else None,
+                )
+                return
+
+    async def _handle_manual_total(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle manual total entry for receipt review."""
         receipt_id = context.user_data.get("awaiting_manual_total")
         if not receipt_id:
             return
@@ -298,7 +461,6 @@ class PantryBot:
         # Save the receipt
         from app.obsidian_writer import update_pantry_file, write_receipt_file
         import shutil
-        from app.config import settings
         from pathlib import Path
 
         categorized = review_data["categorized"]
@@ -341,115 +503,281 @@ class PantryBot:
         if not query:
             return
 
-        await query.answer()
-
         data = query.data or ""
 
+        # Main menu
         if data == "main_menu":
+            await query.answer()
             await query.edit_message_text(
-                "<b>🏪 Smart Pantry Tracker</b>\n\n"
-                "Wybierz opcję poniżej lub wyślij zdjęcie paragonu:",
+                "<b>🧠 Second Brain</b>\n\n"
+                "Wybierz moduł:",
                 parse_mode="HTML",
                 reply_markup=get_main_keyboard()
             )
+            return
 
-        elif data == "pantry":
+        # URL action callbacks
+        if data.startswith("url:"):
+            await query.answer()
+            await self._handle_url_action(query, data, context)
+            return
+
+        # Review flow callbacks (kept in bot.py due to state complexity)
+        if data.startswith("review_"):
+            await query.answer()
+            await self._handle_review_callback(query, data, context)
+            return
+
+        # Legacy pantry callbacks
+        if data == "pantry" or data.startswith("pantry_"):
+            await query.answer()
             from app.obsidian_writer import get_pantry_contents
             from app.telegram.formatters import format_pantry_contents
             from app.telegram.keyboards import get_pantry_quick_actions
-            contents = get_pantry_contents()
-            await query.edit_message_text(
-                format_pantry_contents(contents),
-                parse_mode="HTML",
-                reply_markup=get_pantry_quick_actions()
-            )
 
-        elif data.startswith("pantry_"):
-            category = data.replace("pantry_", "")
-            from app.obsidian_writer import get_pantry_contents
-            from app.telegram.formatters import format_pantry_contents
-            from app.telegram.keyboards import get_pantry_quick_actions
             contents = get_pantry_contents()
-            cat = None if category == "all" else category
+            if data == "pantry":
+                cat = None
+            else:
+                category = data.replace("pantry_", "")
+                cat = None if category == "all" else category
+
             await query.edit_message_text(
                 format_pantry_contents(contents, cat),
                 parse_mode="HTML",
                 reply_markup=get_pantry_quick_actions()
             )
+            return
 
-        elif data == "stats":
-            from app.telegram.keyboards import get_stats_keyboard
-            await query.edit_message_text(
-                "Wybierz okres:",
-                reply_markup=get_stats_keyboard()
-            )
-
-        elif data == "stats_week":
-            from app.telegram.handlers.stats import _calculate_stats
-            from app.telegram.formatters import format_stats
-            stats = _calculate_stats("week")
-            await query.edit_message_text(
-                format_stats(stats, "week"),
-                parse_mode="HTML",
-                reply_markup=get_main_keyboard()
-            )
-
-        elif data == "stats_month":
-            from app.telegram.handlers.stats import _calculate_stats
-            from app.telegram.formatters import format_stats
-            stats = _calculate_stats("month")
-            await query.edit_message_text(
-                format_stats(stats, "month"),
-                parse_mode="HTML",
-                reply_markup=get_main_keyboard()
-            )
-
-        elif data == "stores":
-            from app.telegram.handlers.stats import _calculate_stores_stats
-            from app.telegram.formatters import format_stores_stats
-            stores = _calculate_stores_stats()
-            await query.edit_message_text(
-                format_stores_stats(stores),
-                parse_mode="HTML",
-                reply_markup=get_main_keyboard()
-            )
-
-        elif data == "categories":
-            from app.telegram.handlers.stats import _calculate_categories_stats
-            from app.telegram.formatters import format_categories_stats
-            categories = _calculate_categories_stats()
-            await query.edit_message_text(
-                format_categories_stats(categories),
-                parse_mode="HTML",
-                reply_markup=get_main_keyboard()
-            )
-
-        elif data == "recent":
-            from app.telegram.handlers.receipts import _get_recent_receipts
-            from app.telegram.formatters import format_receipt_list
-            receipts = _get_recent_receipts(5)
-            await query.edit_message_text(
-                format_receipt_list(receipts),
-                parse_mode="HTML",
-                reply_markup=get_main_keyboard()
-            )
-
-        elif data == "errors":
-            from app.obsidian_writer import get_errors
-            from app.telegram.formatters import format_errors
-            errors = get_errors()
-            await query.edit_message_text(
-                format_errors(errors),
-                parse_mode="HTML",
-                reply_markup=get_main_keyboard()
-            )
-
-        elif data == "cancel":
+        # Cancel
+        if data == "cancel":
+            await query.answer()
             await query.edit_message_text("Anulowano.")
+            return
 
-        # Review flow callbacks
-        elif data.startswith("review_"):
-            await self._handle_review_callback(query, data, context)
+        # Try callback router (module handlers)
+        handled = await self._callback_router.route(query, context)
+        if not handled:
+            await query.answer()
+            logger.warning(f"Unhandled callback: {data}")
+
+    async def _handle_url_action(
+        self,
+        query,
+        data: str,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """Handle url:action:key callbacks."""
+        parts = data.split(":", 2)
+        if len(parts) < 3:
+            return
+
+        action = parts[1]
+        url_key = parts[2]
+
+        # Retrieve stored URL
+        url = context.user_data.get(f"url_{url_key}") if context.user_data else None
+        if not url:
+            await query.edit_message_text("Link wygasł. Wyślij ponownie.")
+            return
+
+        if action == "bookmark":
+            from app.db.connection import get_session
+            from app.db.repositories.bookmarks import BookmarkRepository
+            from app.telegram.formatters import escape_html
+
+            try:
+                # Try to fetch title from URL
+                title = None
+                try:
+                    from app.web_scraper import scrape_url
+                    scraped, _ = await scrape_url(url)
+                    if scraped:
+                        title = scraped.title
+                except Exception:
+                    pass
+
+                async for session in get_session():
+                    repo = BookmarkRepository(session)
+
+                    # Check duplicate
+                    existing = await repo.get_by_url(url)
+                    if existing:
+                        await query.edit_message_text(
+                            f"⚠️ <b>Zakładka już istnieje</b>\n\n"
+                            f"📌 {escape_html(existing.title or url[:60])}\n"
+                            f"Status: {existing.status}",
+                            parse_mode="HTML",
+                            reply_markup=get_main_keyboard(),
+                        )
+                        return
+
+                    bookmark = await repo.create_from_url(
+                        url=url,
+                        title=title,
+                        source="telegram",
+                    )
+                    await session.commit()
+
+                    display_title = title or url[:60]
+                    await query.edit_message_text(
+                        f"🔖 <b>Zakładka zapisana!</b>\n\n"
+                        f"📌 {escape_html(display_title)}\n"
+                        f"<code>ID: {str(bookmark.id)[:8]}</code>",
+                        parse_mode="HTML",
+                        reply_markup=get_main_keyboard(),
+                    )
+            except Exception as e:
+                logger.error(f"Error saving bookmark: {e}")
+                await query.edit_message_text(f"❌ Błąd: {e}")
+
+        elif action == "summarize":
+            await query.edit_message_text("📖 Pobieram artykuł...")
+
+            from app.web_scraper import scrape_url
+            from app.summarizer import summarize_content
+            from app.telegram.formatters import escape_html
+
+            scraped, error = await scrape_url(url)
+            if error or not scraped:
+                await query.edit_message_text(f"❌ Błąd pobierania: {error}")
+                return
+
+            await query.edit_message_text("🤖 Generuję podsumowanie...")
+
+            result, error = await summarize_content(scraped.content)
+            if error or not result:
+                await query.edit_message_text(f"❌ Błąd podsumowania: {error}")
+                return
+
+            summary = result.summary_text
+            if len(summary) > 3000:
+                summary = summary[:3000] + "..."
+
+            meta_parts = []
+            if result.category:
+                meta_parts.append(f"📂 {result.category}")
+            if result.tags:
+                tags_str = " ".join(f"#{t}" for t in result.tags[:5])
+                meta_parts.append(tags_str)
+            meta_line = " | ".join(meta_parts) if meta_parts else ""
+
+            response = (
+                f"📰 <b>{escape_html(scraped.title)}</b>\n\n"
+                f"{escape_html(summary)}\n\n"
+            )
+            if meta_line:
+                response += f"{escape_html(meta_line)}\n\n"
+            response += (
+                f"---\n"
+                f"🔗 <a href=\"{url}\">Źródło</a> | "
+                f"⏱️ {result.processing_time_sec}s | "
+                f"🤖 {result.model_used}"
+            )
+
+            try:
+                await query.edit_message_text(
+                    response, parse_mode="HTML", disable_web_page_preview=True
+                )
+            except Exception:
+                await query.edit_message_text(
+                    response.replace("<b>", "").replace("</b>", "")
+                    .replace("<a href=\"", "").replace("\">", " ").replace("</a>", "")
+                )
+
+            # Save to DB and Obsidian
+            if settings.USE_DB_RECEIPTS:
+                from app.db.connection import get_session
+                from app.db.repositories.rss import ArticleRepository
+                from app.summary_writer import write_summary_file
+
+                async for session in get_session():
+                    article_repo = ArticleRepository(session)
+                    article = await article_repo.create_with_summary(
+                        title=scraped.title,
+                        url=url,
+                        content=scraped.content,
+                        summary_text=result.summary_text,
+                        model_used=result.model_used,
+                        processing_time=result.processing_time_sec,
+                        author=scraped.author,
+                    )
+                    await session.commit()
+
+                    if settings.GENERATE_OBSIDIAN_FILES:
+                        write_summary_file(
+                            article,
+                            result.summary_text,
+                            result.model_used,
+                            tags=result.tags,
+                            category=result.category,
+                            entities=result.entities,
+                        )
+            elif settings.GENERATE_OBSIDIAN_FILES:
+                from app.summary_writer import write_summary_file_simple
+
+                write_summary_file_simple(
+                    title=scraped.title,
+                    url=url,
+                    summary_text=result.summary_text,
+                    model_used=result.model_used,
+                    author=scraped.author,
+                    tags=result.tags,
+                    category=result.category,
+                    entities=result.entities,
+                )
+
+        elif action == "transcribe":
+            if not settings.TRANSCRIPTION_ENABLED:
+                await query.edit_message_text("❌ Transkrypcja jest wyłączona")
+                return
+
+            await query.edit_message_text("🎙️ Rozpoczynam transkrypcję...")
+
+            from app.telegram.handlers.transcription import _transcribe_url
+
+            # Create a fake update with a message to pass to _transcribe_url
+            # We need to use the original message context
+            class _FakeUpdate:
+                def __init__(self, message):
+                    self.message = message
+
+            # Send a new message since we can't use edit for long processes
+            msg = await query.message.reply_text("🔍 Analizuję URL...")
+            fake_update = _FakeUpdate(query.message)
+            fake_update.message = type("obj", (object,), {"reply_text": msg.edit_text})()
+
+            # Simplified: just create the job directly
+            from app.transcription.downloader import is_youtube_url
+            from app.db.connection import get_session
+            from app.db.repositories.transcription import TranscriptionJobRepository
+
+            source_type = "youtube" if is_youtube_url(url) else "url"
+
+            async for session in get_session():
+                repo = TranscriptionJobRepository(session)
+                existing = await repo.get_by_url(url)
+                if existing and existing.status == "completed":
+                    await msg.edit_text(
+                        f"✅ <b>Transkrypcja już istnieje!</b>\n\n"
+                        f"📄 {url[:60]}",
+                        parse_mode="HTML",
+                    )
+                    return
+
+                job = await repo.create_job(
+                    source_type=source_type,
+                    source_url=url,
+                )
+                await session.commit()
+
+                await msg.edit_text(
+                    f"✅ <b>Zadanie transkrypcji utworzone</b>\n\n"
+                    f"ID: <code>{str(job.id)[:8]}</code>\n"
+                    f"Zostanie przetworzone w tle.",
+                    parse_mode="HTML",
+                    reply_markup=get_main_keyboard(),
+                )
 
     async def _handle_review_callback(
         self,
@@ -502,7 +830,6 @@ class PantryBot:
 
                 # Move file to processed
                 import shutil
-                from app.config import settings
                 inbox_path = settings.INBOX_DIR / filename
                 if inbox_path.exists():
                     processed_path = settings.PROCESSED_DIR / filename
