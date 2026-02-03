@@ -341,6 +341,15 @@ async def generate_note(job_id: UUID, data: GenerateNoteRequest = None):
 
         await session.commit()
 
+        # RAG indexing
+        if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+            try:
+                from app.rag.hooks import index_transcription_hook
+                await index_transcription_hook(job, session)
+                await session.commit()
+            except Exception:
+                pass
+
         return NoteResponse(
             job_id=str(job_id),
             summary_text=result.summary_text,
@@ -477,6 +486,15 @@ async def process_job(job_id: UUID):
                         note.obsidian_file_path = str(file_path)
 
                     await session.commit()
+
+                    # RAG indexing
+                    if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+                        try:
+                            from app.rag.hooks import index_transcription_hook
+                            await index_transcription_hook(job, session)
+                            await session.commit()
+                        except Exception:
+                            pass
 
             # Mark completed
             await repo.update_status(job_id, "completed", progress=100)

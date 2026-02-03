@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.config import settings
 from app.dependencies import BookmarkRepoDep
 
 router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
@@ -76,6 +77,16 @@ async def create_bookmark(bookmark: BookmarkCreate, repo: BookmarkRepoDep):
     from app.db.connection import get_session
     async for session in get_session():
         await session.commit()
+
+    # RAG indexing
+    if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+        try:
+            from app.rag.hooks import index_bookmark_hook
+            async for session in get_session():
+                await index_bookmark_hook(b, session)
+                await session.commit()
+        except Exception:
+            pass
 
     return {"id": str(b.id), "url": b.url}
 

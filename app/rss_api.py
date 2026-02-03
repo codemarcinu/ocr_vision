@@ -267,10 +267,11 @@ async def summarize_single_url(data: SummarizeRequest):
         )
 
     # Optionally save to database
+    article = None
     if settings.USE_DB_RECEIPTS:
         async for session in get_session():
             article_repo = ArticleRepository(session)
-            await article_repo.create_with_summary(
+            article = await article_repo.create_with_summary(
                 title=scraped.title,
                 url=url,
                 content=scraped.content,
@@ -280,6 +281,16 @@ async def summarize_single_url(data: SummarizeRequest):
                 author=scraped.author,
             )
             await session.commit()
+
+    # RAG indexing
+    if article and settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+        try:
+            from app.rag.hooks import index_article_hook
+            async for session in get_session():
+                await index_article_hook(article, session)
+                await session.commit()
+        except Exception:
+            pass
 
     return SummarizeResponse(
         title=scraped.title,

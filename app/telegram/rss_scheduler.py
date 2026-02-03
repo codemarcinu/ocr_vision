@@ -109,6 +109,14 @@ async def fetch_all_feeds() -> Tuple[int, List[str]]:
                             published_date=entry.published_date,
                         )
 
+                    # RAG indexing
+                    if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+                        try:
+                            from app.rag.hooks import index_article_hook
+                            await index_article_hook(article, session)
+                        except Exception as e:
+                            logger.warning(f"RAG indexing failed for article: {e}")
+
                     new_articles += 1
                     logger.info(f"Added article: {entry.title[:50]}")
 

@@ -89,6 +89,16 @@ async def create_note(note: NoteCreate, repo: NoteRepoDep):
         from app.notes_writer import write_note_file
         write_note_file(n)
 
+    # RAG indexing
+    if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+        try:
+            from app.rag.hooks import index_note_hook
+            async for session in get_session():
+                await index_note_hook(n, session)
+                await session.commit()
+        except Exception:
+            pass
+
     return {"id": str(n.id), "title": n.title}
 
 

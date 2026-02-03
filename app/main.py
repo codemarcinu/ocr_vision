@@ -23,6 +23,7 @@ from app.obsidian_writer import log_error, update_pantry_file, write_error_file,
 from app.rss_api import router as rss_router
 from app.transcription_api import router as transcription_router
 from app.notes_api import router as notes_router
+from app.ask_api import router as ask_router
 from app.bookmarks_api import router as bookmarks_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
@@ -59,6 +60,7 @@ app.include_router(rss_router)
 app.include_router(transcription_router)
 app.include_router(notes_router)
 app.include_router(bookmarks_router)
+app.include_router(ask_router)
 
 
 # Web UI for dictionary management
@@ -92,6 +94,24 @@ async def startup_event():
     logger.info(f"Inbox: {settings.INBOX_DIR}")
     logger.info(f"Vault: {settings.VAULT_DIR}")
     logger.info(f"Database enabled: {settings.USE_DB_RECEIPTS}")
+
+    # RAG: check if embeddings table is empty and trigger background reindex
+    if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+        try:
+            from app.db.connection import get_session
+            from app.db.repositories.embeddings import EmbeddingRepository
+            from app.rag.indexer import reindex_all
+            async for session in get_session():
+                repo = EmbeddingRepository(session)
+                stats = await repo.get_stats()
+                total = sum(stats.values()) if stats else 0
+                if total == 0:
+                    logger.info("RAG: embeddings table empty, starting background reindex")
+                    asyncio.create_task(reindex_all(progress_callback=lambda msg: logger.info(f"RAG reindex: {msg}")))
+                else:
+                    logger.info(f"RAG: {total} embeddings found, skipping reindex")
+        except Exception as e:
+            logger.warning(f"RAG startup check failed: {e}")
 
     # Start Telegram bot
     await bot.start()
@@ -567,6 +587,7 @@ async def root():
             "reprocess": "/reprocess/{filename}",
             "obsidian_sync": "/obsidian/sync/*",
             "analytics": "/analytics/*",
+            "ask": "/ask",
             "web_dictionary": "/web/dictionary"
         }
     }
