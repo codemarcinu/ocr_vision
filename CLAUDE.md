@@ -4,1477 +4,197 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Second Brain - personal knowledge management system with multiple modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, **RAG knowledge base** (ask questions about all your data), and **Chat AI** (multi-turn conversations with RAG + internet search via SearXNG). Uses Ollama LLMs for extraction and categorization, **PostgreSQL + pgvector** for persistence and semantic search, and outputs to Obsidian markdown files. Includes a Telegram bot with inline menu navigation and **human-in-the-loop validation**.
+Second Brain - personal knowledge management system with modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, RAG knowledge base, and Chat AI (multi-turn with RAG + SearXNG web search). Uses Ollama LLMs, PostgreSQL + pgvector, and outputs to Obsidian markdown. Telegram bot with inline menus and human-in-the-loop validation.
+
+Polish grocery receipts are the primary OCR target. Field names and UI text are in Polish (nazwa=name, cena=price, sklep=store, suma=total, rabat=discount, paragony=receipts, spiżarnia=pantry).
 
 ## Build & Run Commands
 
 ```bash
-# Start the service (FastAPI + Telegram bot)
+# Start all services (postgres, fastapi, searxng, monitoring)
 docker-compose up -d
 
 # Rebuild after code changes
 docker-compose up -d --build
 
-# View logs (live)
+# View logs
 docker logs -f pantry-api
 
-# Test API health
-curl http://localhost:8000/health
+# Database migrations
+docker exec -it pantry-api alembic revision --autogenerate -m "description"
+docker exec -it pantry-api alembic upgrade head
+docker exec -it pantry-api alembic downgrade -1
 
-# Process a receipt via API (supports PNG, JPG, JPEG, WEBP, PDF)
+# First-time data migration from JSON to PostgreSQL
+docker exec -it pantry-api python scripts/migrate_data.py
+
+# Test API
+curl http://localhost:8000/health
 curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.png"
 
-# Reprocess failed receipt
-curl -X POST http://localhost:8000/reprocess/filename.png
+# Database shell
+docker exec -it pantry-db psql -U pantry -d pantry
 ```
 
 ### Local Development (without Docker)
 
 ```bash
-# Ollama must be running locally on port 11434
 pip install -r requirements.txt
 OLLAMA_BASE_URL=http://localhost:11434 uvicorn app.main:app --reload
 ```
 
+No automated tests exist. Testing is manual via API calls and Telegram bot.
+
 ## Architecture
 
-### Processing Pipeline
+### High-Level Data Flow
 
 ```
-Receipt (photo/PDF) → OCR → Validation → [Review?] → Categorization → Save
-                              ↓
-                    Total mismatch > 5zł or > 10%?
-                           /              \
-                         YES              NO
-                          ↓                ↓
-                   Telegram Review    Auto-save
+Inputs (Telegram/API/Web UI)
+    ↓
+FastAPI (app/main.py) ──→ Ollama LLMs (host:11434)
+    ↓
+PostgreSQL + pgvector ──→ Obsidian vault/ markdown
 ```
 
-1. **`app/main.py`** - FastAPI endpoints receive image/PDF uploads, parallel PDF processing
-2. **`app/pdf_converter.py`** - Converts PDF to PNG images (one per page) using pdf2image
-3. **`app/ocr.py`** / **`app/paddle_ocr.py`** / **`app/deepseek_ocr.py`** / **`app/google_vision_ocr.py`** - OCR extraction backends
-4. **`app/ollama_client.py`** - Shared HTTP client with connection pooling for all Ollama API calls
-5. **`app/store_prompts.py`** - Store-specific LLM prompts for accurate extraction
-6. **`app/price_fixer.py`** - Post-processor: detects suspicious prices (unit price vs final)
-7. **`app/confidence_scoring.py`** - Multi-factor confidence scoring for extraction quality
-8. **`app/image_preprocessing.py`** - Optional image quality analysis and preprocessing
-9. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
-10. **`app/db/`** - PostgreSQL database layer with SQLAlchemy async ORM
-11. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
-12. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
-13. **`app/services/obsidian_sync.py`** - Regenerates vault from database
-14. **`app/web_routes.py`** - Full web UI with Jinja2 + HTMX (dashboard, receipts, pantry, analytics, etc.)
-15. **`app/notes_api.py`** / **`app/bookmarks_api.py`** / **`app/search_api.py`** - Notes, bookmarks, unified search modules
+Docker services: `postgres` (pgvector/pgvector:pg16), `fastapi` (pantry-api, CUDA GPU), `searxng` (metasearch for Chat AI), optional monitoring (prometheus/grafana/loki).
 
-Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → **Price Fixer** → validation → normalization → categorization → **PostgreSQL** + `vault/`
+Ollama runs on the host machine, accessed from Docker via `host.docker.internal:11434`.
 
-### Vision OCR Pipeline (`app/ocr.py`)
-
-The vision backend uses `qwen2.5vl:7b` with multi-stage processing:
+### Receipt OCR Pipeline
 
 ```
-Image → Primary Extraction → Build Receipt → Check Totals
-                                                  ↓
-                                    Mismatch > 5 PLN AND > 10%?
-                                         /              \
-                                       YES              NO
-                                        ↓                ↓
-                               Self-Verification    Return Receipt
-                                        ↓
-                          Model re-analyzes with context
-                                        ↓
-                              Return corrected data
+Receipt (photo/PDF) → OCR Backend → Store Detection → Store-Specific Prompt
+    → LLM Structuring → Price Fixer → Normalization → Categorization
+    → Confidence Scoring → [Human Review if needed] → PostgreSQL + Obsidian
 ```
 
-**Key features:**
+**OCR backends** (set via `OCR_BACKEND` env var):
 
-1. **Primary Extraction** - Single-pass with enhanced prompt:
-   - Explicit FINAL price instructions (after discounts)
-   - Biedronka format: "LAST number in block = price"
-   - Weighted products: "IGNORE unit price per kg"
+| Backend | Speed | How it works |
+|---------|-------|-------------|
+| `google` | ~5s | Google Cloud Vision API → raw text → qwen2.5:7b structuring. Requires API key, ~$1.50/1000 images |
+| `deepseek` | ~15s | DeepSeek-OCR model → raw text → qwen2.5:7b structuring. Has fallback to qwen2.5vl:7b |
+| `paddle` | ~11s | PaddleOCR → raw text → qwen2.5:7b structuring. Less accurate on complex receipts |
+| `vision` | ~4min | qwen2.5vl:7b single model for everything. Slowest but no dependencies |
 
-2. **Two-Stage Fallback** - If primary finds < 2 products:
-   - Stage 1: Extract raw text (`OCR_RAW_TEXT_PROMPT`)
-   - Stage 2: Parse text to JSON using `qwen2.5:7b` text model
-   - Skip if < 150 chars (summary page detection)
+**Human-in-the-loop review** triggers when extracted total vs product sum differs by >5 PLN AND >10%. User approves, corrects total, or rejects via Telegram inline keyboard.
 
-3. **Text-Only Verification** - If totals don't match:
-   - Uses `qwen2.5:7b` text model (not vision) to avoid VRAM issues
-   - Shows model the raw OCR text + its extraction + discrepancy
-   - Asks to verify and correct mistakes
-   - Uses result only if it improves the match
+**Multi-page PDF**: Pages processed in parallel (`PDF_MAX_PARALLEL_PAGES`), products combined, per-page verification skipped (would corrupt partial totals).
 
-4. **Price Fixer Post-Processing** (`app/price_fixer.py`):
-   - Detects weighted products (kg) with suspiciously high prices
-   - Flags potential unit prices (per kg) instead of final prices
-   - Adds warnings to products, doesn't modify prices
-   - Thresholds: 40 PLN (general), 60 PLN (meat), 80 PLN (premium)
+### Module Architecture
 
-5. **Product Filtering**:
-   - Skip generic names: `product1`, `item2`
-   - Skip short names: < 4 characters
-   - Skip summary lines: `GOTÓWKA`, `RESZTA`, `PTU`, etc.
-   - Skip suspicious prices: > 40 PLN with unusual cents
+Each module follows a consistent pattern:
+- **API router** (`app/*_api.py`) - FastAPI endpoints
+- **Database models** (`app/db/models.py`) - SQLAlchemy ORM
+- **Repository** (`app/db/repositories/*.py`) - Data access layer
+- **Writer** (`app/*_writer.py`) - Obsidian markdown generation
+- **Telegram handler** (`app/telegram/handlers/*.py`) - Bot commands
+- **Telegram menu** (`app/telegram/handlers/menu_*.py`) - Inline keyboard navigation
 
-**Ollama options for vision:**
+Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, analytics, dictionary, search.
+
+### Key Design Patterns
+
+**Repository pattern** with FastAPI dependency injection:
 ```python
-options = {
-    "temperature": 0.1,
-    "top_p": 0.8,
-    "top_k": 20,
-    "num_predict": 4096,
-    "num_ctx": 4096,  # REQUIRED for images
-}
-```
-
-### Store-Specific Prompts (`app/store_prompts.py`)
-
-Different stores have different receipt formats. The system detects the store from OCR text and uses a tailored prompt:
-
-| Store | Format characteristics |
-|-------|----------------------|
-| **Biedronka** | `Product PTU Qty×Price Value` then `Rabat -X.XX` then `FinalPrice` |
-| **Lidl** | Product name in separate line, then `Qty × Price = Value` |
-| **Kaufland** | `PRODUCT NAME` (uppercase), price on right, rabat below |
-| **Żabka** | Simple format: `Product Price` in one line |
-| **Auchan** | Product name separate, details below with VAT% |
-| **Carrefour** | Product + price in one line, rabat as separate line |
-| **Netto** | Simple format similar to Żabka |
-| **Dino** | Uppercase names, standard Polish format |
-
-**Adding new store:**
-1. Add detection patterns to `STORE_PATTERNS` dict
-2. Create `PROMPT_STORENAME` with format-specific instructions
-3. Add to `STORE_PROMPTS` mapping
-
-**Key prompt elements:**
-- Exact format description with examples
-- How to identify final price (after discounts)
-- What to ignore (VAT, PTU, deposits)
-- Expected JSON output format
-
-### Multi-page PDF Processing
-
-For PDFs with multiple pages (e.g., long receipts):
-1. Pages are converted to PNG images
-2. **Parallel processing**: Pages are OCR'd concurrently (controlled by `PDF_MAX_PARALLEL_PAGES`)
-3. **Per-page verification is SKIPPED** (to prevent corrupting totals with partial page sums)
-4. Products from all pages are **combined** into a single Receipt
-5. **Total extraction priority**:
-   - Try regex extraction from combined raw text (for paddle backend)
-   - Fall back to suma from last page (for vision backend)
-   - Fall back to calculated sum of all products
-6. Total is validated against sum of all products
-7. Temp images are cleaned up after processing
-
-**Performance**: With `PDF_MAX_PARALLEL_PAGES=2`, a 3-page PDF processes in ~2.5 min instead of ~4.5 min.
-
-**Important**: Per-page verification is disabled for multi-page PDFs because each page only contains partial products. Verification would "fix" the total to the partial sum, which is incorrect.
-
-### Human-in-the-Loop Validation
-
-The system automatically flags receipts for human review when:
-
-| Condition | Threshold | Example |
-|-----------|-----------|---------|
-| Absolute difference | > 5 PLN | OCR: 84.50, Products: 144.48 → Review |
-| Percentage difference | > 10% | OCR: 100.00, Products: 88.00 → Review |
-
-**Review flow (Telegram):**
-- User receives message with extracted data and inline keyboard
-- Options: **Zatwierdź** (approve as-is), **Popraw sumę** (correct total), **Odrzuć** (reject)
-- "Popraw sumę" offers: use calculated total from products, or enter manually
-- Only after approval is the receipt saved to vault
-
-**Relevant files:**
-- `app/models.py` - `Receipt.needs_review`, `Receipt.review_reasons`, `Receipt.calculated_total`
-- `app/telegram/keyboards.py` - `get_review_keyboard()`, `get_total_correction_keyboard()`
-- `app/telegram/formatters.py` - `format_review_receipt()`
-- `app/telegram/bot.py` - `_handle_review_callback()`, `_handle_text_input()`
-
-### Product Normalization (`app/dictionaries/`)
-
-Dictionary-based matching with fallback chain:
-1. **Exact match** - Product name in `products.json` raw_names (confidence: 0.99)
-2. **Partial match** - 70%+ word overlap (confidence: 0.7-0.9)
-3. **Shortcut match** - Store-specific abbreviations from `product_shortcuts.json` (confidence: 0.88-0.95)
-4. **Fuzzy match** - Levenshtein distance < 0.75 threshold (confidence: 0.68-0.81)
-5. **Keyword match** - Category keywords like "mleko", "chleb" (confidence: 0.6)
-
-Files: `app/dictionaries/products.json`, `app/dictionaries/stores.json`, `app/dictionaries/product_shortcuts.json`
-
-### Product Shortcuts (`app/dictionaries/product_shortcuts.json`)
-
-Store-specific abbreviation mappings for thermal printer shortcuts (e.g., Biedronka):
-- `"mroznkr"` → `"mrożonka krakowska"`
-- `"kalafks"` → `"kalafior"`
-- `"serekasztlan"` → `"ser kasztelan"`
-
-Shortcuts are checked after partial match but before fuzzy match. Store name must be passed to `normalize_product()`.
-
-**Adding new shortcuts:**
-```bash
-curl -X POST http://localhost:8000/dictionary/shortcuts/add \
-  -H "Content-Type: application/json" \
-  -d '{"shortcut": "MroznKr", "full_name": "mrożonka krakowska", "store": "biedronka"}'
-```
-
-### Feedback Loop (`app/feedback_logger.py`)
-
-System learns from OCR corrections and unmatched products:
-
-**Unmatched products** (`vault/logs/unmatched.json`):
-- Products that failed to match any dictionary entry are logged
-- Tracks count, first_seen, last_seen, store, price
-- Products with count >= 3 are suggested for learning
-
-**Review corrections** (`vault/logs/corrections.json`):
-- Logs all receipt review actions (approved, calculated, manual)
-- Tracks original vs corrected totals, store, product count
-- Used for analyzing OCR accuracy patterns
-
-**Relevant endpoints:**
-- `GET /dictionary/unmatched` - All unmatched products (sorted by count)
-- `GET /dictionary/unmatched/suggestions` - Products with count >= 3
-- `GET /dictionary/corrections/stats` - Correction statistics
-- `POST /dictionary/learn/{raw_name}` - Learn product and remove from unmatched
-
-### Discount Extraction (`app/receipt_parser.py`)
-
-Enhanced discount handling:
-
-| Pattern | Example | Type |
-|---------|---------|------|
-| Keyword + amount | `Rabat -3.29` | kwotowy |
-| Plain negative | `-3.29` | kwotowy |
-| Percentage | `Promocja -30%` | procentowy |
-| Just percentage | `-30%` | procentowy |
-
-**Supported keywords:** Rabat, Promocja, Zniżka, Upust
-
-**Multiple discounts:** Products can have multiple discounts (e.g., Rabat + Promocja), stored in `rabaty_szczegoly` field.
-
-```python
-class Product(BaseModel):
-    rabat: Optional[float]  # Total discount amount
-    rabaty_szczegoly: Optional[list[DiscountDetail]]  # Detailed breakdown
-    # DiscountDetail: {typ: "kwotowy"|"procentowy", wartosc: float, opis: str}
-```
-
-### Telegram Bot (`app/telegram/`)
-
-- **`bot.py`** - Main bot orchestrator with `PantryBot` class, starts/stops with FastAPI lifespan
-  - `_handle_review_callback()` - Human-in-the-loop review actions
-  - `_handle_text_input()` - Manual total entry handler
-- **`callback_router.py`** - Prefix-based callback query router (replaces monolithic if/elif chain)
-  - Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`)
-  - Modular design for easy addition of new callback handlers
-- **`middleware.py`** - Authorization decorator (`@authorized_only`) checks `TELEGRAM_CHAT_ID`
-- **`keyboards.py`** - Inline keyboard builders for UI
-  - `get_review_keyboard()` - Approve/Edit/Reject buttons
-  - `get_total_correction_keyboard()` - Total correction options
-- **`formatters.py`** - Message formatting utilities
-  - `format_review_receipt()` - Format receipt for human review with warnings
-- **`notifications.py`** - Scheduled notifications with APScheduler
-  - Daily digest at 9:00 AM with pending files, unmatched products, weekly stats
-  - `start_scheduler(bot)` / `stop_scheduler()` for lifecycle management
-- **`handlers/`** - Command handlers:
-  - `receipts.py` - Photo/PDF processing with review flow, `/recent`, `/reprocess`, `/pending`
-  - `pantry.py` - `/pantry`, `/use`, `/remove`, `/search`
-  - `stats.py` - `/stats`, `/stores`, `/categories`, `/rabaty` (alias: `/discounts`)
-  - `errors.py` - `/errors`, `/clearerrors`
-  - `json_import.py` - Import receipts from JSON text (paste structured JSON into chat)
-  - `settings.py` - `/settings` - Notification preferences (digest time, anomaly detection, weekly comparison)
-  - `menu_receipts.py` - Inline menu for receipt operations
-  - `menu_articles.py` - Article management menu
-  - `menu_notes.py` - Notes menu
-  - `menu_bookmarks.py` - Bookmarks menu
-  - `menu_transcriptions.py` - Transcription job tracking menu
-  - `menu_stats.py` - Statistics submenu
-
-**All Telegram commands:**
-| Command | Description |
-|---------|-------------|
-| `/start`, `/help` | Show help message |
-| `/recent [N]` | Last N receipts (default: 5) |
-| `/reprocess <file>` | Reprocess failed receipt |
-| `/pending` | Files waiting in inbox |
-| `/pantry [category]` | View pantry contents |
-| `/use <product>` | Mark product as consumed |
-| `/remove <product>` | Remove from pantry |
-| `/search <query>` | Search products |
-| `/stats [week/month]` | Spending statistics |
-| `/stores` | Spending by store |
-| `/categories` | Spending by category |
-| `/rabaty`, `/discounts` | Discount report |
-| `/errors` | OCR error log |
-| `/clearerrors` | Clear error log |
-| `/feeds` | List subscribed RSS feeds |
-| `/subscribe <URL>` | Add RSS/Atom feed |
-| `/unsubscribe <ID>` | Remove feed |
-| `/summarize <URL>` | Summarize web page on demand |
-| `/refresh` | Manually fetch new articles |
-| `/articles [feed_id]` | List recent articles |
-| `/transcribe <URL>` | Transcribe YouTube video |
-| `/transcribe` + audio | Transcribe uploaded file |
-| `/transcriptions` | List recent transcriptions |
-| `/note <ID>` | Generate note from transcription |
-| `/ask <question>` | Query RAG knowledge base |
-| `/chat [question]` | Start multi-turn chat session (RAG + web search) |
-| `/endchat` | End active chat session |
-| `/settings` | Notification preferences (digest time, toggles) |
-
-### JSON Import via Telegram
-
-Send JSON directly to the bot to import pre-structured receipts:
-
-```json
-{
-  "transakcja": {
-    "sklep": "Biedronka, ul. Przykładowa 1",
-    "data_godzina": "2026-01-31 14:30",
-    "suma_calkowita": 45.99
-  },
-  "produkty": [
-    {
-      "nazwa_oryginalna": "MLEKO 3.2%",
-      "nazwa_znormalizowana": "mleko",
-      "kategoria": "Nabiał",
-      "cena_koncowa": 4.99,
-      "rabat": -0.50
-    }
-  ]
-}
-```
-
-### Web UI (`app/web_routes.py`, `app/templates/`)
-
-Modern interactive web application built with **Jinja2 templates + HTMX** for seamless AJAX updates without page reloads.
-
-**Access:** `http://localhost:8000/app/`
-
-**Routes:**
-| Route | Description |
-|-------|-------------|
-| `/app/` | Dashboard with real-time stats |
-| `/app/paragony/` | Receipts list with store/date filtering |
-| `/app/paragony/upload` | Receipt file upload |
-| `/app/paragony/{id}` | Receipt detail with inline editing |
-| `/app/spizarnia/` | Pantry management with search/consume |
-| `/app/analityka/` | Analytics dashboard (spending, trends, top products) |
-| `/app/artykuly/` | Articles management with feed controls |
-| `/app/transkrypcje/` | Transcription job tracking |
-| `/app/notatki/` | Personal notes with search |
-| `/app/zakladki/` | Bookmarks manager with status tracking |
-| `/app/slownik/` | Dictionary and unmatched products learning |
-| `/app/szukaj/` | Unified search across all content types |
-| `/app/czat/` | Multi-turn Chat AI (RAG + web search) |
-| `/app/zapytaj/` | RAG query interface (single-turn) |
-
-**Template structure:** (`app/templates/`)
-- `components/` - Reusable UI components (navbar, metric cards, pagination)
-- Feature directories (`dashboard/`, `receipts/`, `pantry/`, etc.) with `partials/` subdirectories for HTMX-compatible partial templates
-
-**Key features:**
-- HTMX integration for live updates without page reloads
-- Responsive design with emoji-based store and category icons
-- Toast notifications via HX-Trigger headers
-- Pagination and infinite scroll patterns
-- Real-time search and filtering
-- Inline form editing (HTMX POST)
-
-**Legacy redirects (301):**
-- `/web/dictionary` → `/app/slownik/`
-- `/web/pantry` → `/app/spizarnia/`
-- `/web/receipts` → `/app/paragony/`
-- `/web/search` → `/app/szukaj/`
-
-### Personal Notes (`app/notes_api.py`, `app/notes_writer.py`)
-
-CRUD module for personal notes with categories, tags, and full-text search.
-
-**API endpoints (`/notes/*`):**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/notes/` | GET | List notes (search, tag filtering) |
-| `/notes/` | POST | Create note |
-| `/notes/{id}` | GET | Get note details |
-| `/notes/{id}` | PUT | Update note |
-| `/notes/{id}` | DELETE | Delete note |
-
-**Features:**
-- Full-text search across title and content
-- Category and tag filtering
-- Obsidian markdown export (`NOTES_OUTPUT_DIR`)
-- Auto-indexed for RAG on creation
-
-**Configuration:**
-```bash
-NOTES_ENABLED=true                          # Enable/disable notes
-NOTES_OUTPUT_DIR=/data/notes                # Output directory
-```
-
-### Bookmarks / Read Later (`app/bookmarks_api.py`, `app/bookmarks_writer.py`)
-
-URL bookmarking with status tracking and priority levels.
-
-**API endpoints (`/bookmarks/*`):**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/bookmarks/` | GET | List bookmarks (status filtering) |
-| `/bookmarks/` | POST | Create bookmark |
-| `/bookmarks/stats` | GET | Bookmark statistics |
-| `/bookmarks/{id}` | GET | Get bookmark |
-| `/bookmarks/{id}` | PUT | Update bookmark |
-| `/bookmarks/{id}` | DELETE | Delete bookmark |
-
-**Features:**
-- Status tracking: `pending`, `read`, `archived`
-- Duplicate URL detection
-- Links to articles/transcriptions
-- Auto-indexed for RAG on creation
-
-**Configuration:**
-```bash
-BOOKMARKS_ENABLED=true                      # Enable/disable bookmarks
-BOOKMARKS_OUTPUT_DIR=/data/bookmarks        # Output directory
-```
-
-### Unified Search (`app/search_api.py`)
-
-Cross-content-type search across all modules.
-
-**API endpoint:**
-```
-GET /search?q=<query>&types=receipt,article,note,bookmark,transcription&limit=5
-```
-
-Returns results grouped by type with relevant metadata. Minimum query length: 2 characters. Max limit: 20 per type.
-
-### Confidence Scoring (`app/confidence_scoring.py`)
-
-Multi-factor confidence scoring system for receipt extraction quality assessment.
-
-**Score components (weighted):**
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| Total match | 40% | Agreement of product sum vs declared total |
-| Product quality | 30% | Name/price validation, suspicious pattern detection |
-| Completeness | 20% | Metadata present (store, date, total) |
-| Discount consistency | 10% | Rabat logic checks |
-
-**Thresholds:**
-- `>= 0.8`: Auto-save without review
-- `0.5 - 0.8`: Review recommended
-- `< 0.5`: Review required
-
-**Usage:**
-```python
-from app.confidence_scoring import calculate_confidence, should_auto_save
-report = calculate_confidence(receipt)
-if should_auto_save(receipt):
-    # Auto-save without review
-```
-
-### Image Preprocessing (`app/image_preprocessing.py`)
-
-Optional image preprocessing for poor-quality receipt images. Requires OpenCV.
-
-**Features:**
-- Image quality analysis (brightness, contrast, sharpness)
-- Bilateral denoising, CLAHE adaptive contrast, adaptive thresholding
-- Auto-rotation detection (landscape → portrait)
-- PaddleOCR-specific preprocessing
-
-**When to use:** Only for dark/blurry images or PaddleOCR backend. Vision models (DeepSeek-OCR, qwen2.5vl) work better on raw images.
-
-### RSS/Web Summarizer (`app/rss_*.py`, `app/summarizer.py`)
-
-Agent do subskrypcji kanałów RSS/Atom i podsumowywania stron internetowych na żądanie.
-
-**Architecture:**
-```
-RSS Feed URL → feedparser → Articles → trafilatura → Content → Ollama → Summary
-                                                                            ↓
-                                                              PostgreSQL + Obsidian
-```
-
-**Key files:**
-- `app/rss_fetcher.py` - RSS/Atom feed parsing using feedparser
-- `app/web_scraper.py` - Web content extraction using trafilatura
-- `app/summarizer.py` - LLM summarization using Ollama
-- `app/summary_writer.py` - Obsidian markdown output
-- `app/rss_api.py` - REST API endpoints
-- `app/telegram/handlers/feeds.py` - Telegram commands
-- `app/telegram/rss_scheduler.py` - APScheduler job for auto-fetch
-
-**Database models (`app/db/models.py`):**
-- `RssFeed` - Feed subscriptions (id, name, feed_url, feed_type, is_active, last_fetched)
-- `Article` - Fetched articles (id, feed_id, title, url, content, published_date)
-- `ArticleSummary` - LLM summaries (id, article_id, summary_text, model_used)
-
-**API endpoints (`/rss/*`):**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/rss/feeds` | GET | List all feeds |
-| `/rss/feeds` | POST | Add new feed |
-| `/rss/feeds/{id}` | DELETE | Remove feed |
-| `/rss/articles` | GET | List recent articles |
-| `/rss/summarize` | POST | Summarize URL on demand |
-| `/rss/refresh` | POST | Trigger manual fetch |
-| `/rss/stats` | GET | RSS statistics |
-
-**Structured summary output (`app/summarizer.py`):**
-```python
-@dataclass
-class SummaryResult:
-    summary_text: str           # Bullet points
-    model_used: str             # Model that generated summary
-    processing_time_sec: float
-    tags: List[str]             # Max 5 topic tags
-    category: str               # From ARTICLE_CATEGORIES
-    entities: List[str]         # People, companies, products mentioned
-    language: str               # 'pl' or 'en'
-```
-
-**Language detection:**
-- Auto-detects Polish vs English based on Polish-specific characters (ą, ć, ę, etc.)
-- Polish articles → uses `SUMMARIZER_MODEL_PL` (Bielik 11B)
-- English articles → uses `SUMMARIZER_MODEL` or `CLASSIFIER_MODEL`
-
-**Article categories:** Technologia, Biznes, Nauka, Polityka, Kultura, Sport, Zdrowie, Inne
-
-**Auto-fetch scheduler:**
-- Runs every `RSS_FETCH_INTERVAL_HOURS` (default: 4h)
-- Fetches all active feeds
-- Summarizes new articles
-- Sends Telegram notification
-
-**Output:**
-- Database: `rss_feeds`, `articles`, `article_summaries` tables
-- Obsidian: `SUMMARIES_DIR/*.md` (default: `/data/summaries/`) with rich YAML frontmatter:
-  ```yaml
-  title: Article Title
-  url: https://example.com/article
-  source: feed_name
-  category: Technologia
-  tags: [summary, article, technologia, ai, llm]
-  entities: [OpenAI, GPT-5, Sam Altman]
-  ```
-- Entities are rendered as Obsidian wiki links: `[[OpenAI]]`
-
-### Transcription Agent (`app/transcription/`)
-
-Agent do transkrypcji audio/wideo (YouTube, pliki lokalne) z generowaniem notatek w formacie Obsidian.
-
-**Architecture:**
-```
-YouTube URL / Audio File
-         │
-         ▼
-┌─────────────────────┐
-│  TranscriptionJob   │  (status: pending → downloading → transcribing → extracting → completed)
-└─────────────────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
- yt-dlp    Local File
-    │         │
-    └────┬────┘
-         ▼
-┌─────────────────────┐
-│  Faster-Whisper     │  (GPU/CPU, model: medium/large)
-└─────────────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  Transcription      │  (full_text + segments with timestamps)
-└─────────────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  Ollama LLM         │  (knowledge extraction)
-└─────────────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  TranscriptionNote  │  (summary, topics, entities, action_items)
-└─────────────────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
-PostgreSQL  Obsidian MD
-```
-
-**Key files:**
-- `app/transcription/transcriber.py` - Faster-Whisper integration, GPU memory management
-- `app/transcription/downloader.py` - yt-dlp YouTube download, metadata extraction
-- `app/transcription/extractor.py` - LLM knowledge extraction (summary, topics, entities)
-- `app/transcription/note_writer.py` - Obsidian markdown generation with YAML frontmatter
-- `app/transcription_api.py` - REST API endpoints
-- `app/telegram/handlers/transcription.py` - Telegram commands
-- `app/telegram/transcription_scheduler.py` - Background job processing and cleanup
-
-**Database models (`app/db/models.py`):**
-- `TranscriptionJob` - Job tracking (id, source_type, source_url, status, progress_percent, whisper_model)
-- `Transcription` - Text output (full_text, segments as JSONB, detected_language, word_count)
-- `TranscriptionNote` - Extracted knowledge (summary_text, key_topics, entities, action_items, category, tags)
-
-**API endpoints (`/transcription/*`):**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/transcription/jobs` | GET | List recent jobs |
-| `/transcription/jobs` | POST | Create job from URL |
-| `/transcription/jobs/upload` | POST | Create job from file upload |
-| `/transcription/jobs/{id}` | GET | Job details |
-| `/transcription/jobs/{id}/transcription` | GET | Get transcription text |
-| `/transcription/jobs/{id}/note` | GET | Get generated note |
-| `/transcription/jobs/{id}/generate-note` | POST | Generate note from transcription |
-| `/transcription/jobs/{id}/process` | POST | Process pending job immediately |
-| `/transcription/jobs/{id}` | DELETE | Delete job |
-| `/transcription/stats` | GET | Statistics |
-
-**Telegram commands:**
-| Command | Description |
-|---------|-------------|
-| `/transcribe <URL>` | Transcribe YouTube video |
-| `/transcribe` + audio file | Transcribe uploaded file |
-| `/transcriptions` | List recent transcriptions |
-| `/note <ID>` | Generate note from transcription |
-
-**Subtitle optimization:**
-- System automatically downloads subtitles from YouTube (PL/EN priority)
-- If subtitles available, skips Whisper transcription entirely
-- Significantly faster for videos with existing subtitles
-
-**Map-Reduce for long transcriptions:**
-
-For transcriptions longer than `MAPREDUCE_THRESHOLD` (default: 15000 chars), the system automatically uses map-reduce processing:
-
-```
-Long Transcription (200k chars)
-         │
-         ▼
-┌─────────────────┐
-│  Split into     │  (10k char chunks with 1k overlap)
-│  chunks         │
-└─────────────────┘
-         │
-    ┌────┼────┬────┐
-    ▼    ▼    ▼    ▼
- Chunk1 Chunk2 ... ChunkN
-    │    │    │    │
-    ▼    ▼    ▼    ▼
-┌─────────────────────┐
-│  MAP Phase          │  (Bielik: extract from each chunk)
-│  (sequential)       │
-└─────────────────────┘
-    │    │    │    │
-    └────┴────┴────┘
-         │
-         ▼
-┌─────────────────┐
-│  REDUCE Phase   │  (dedupe + final synthesis)
-└─────────────────┘
-         │
-         ▼
-   ExtractionResult
-```
-
-**Key features:**
-- Smart chunking at sentence boundaries (not hard character cut)
-- Overlap between chunks for context continuity
-- Entity/topic deduplication using fuzzy matching
-- Partial results if some chunks fail
-- Automatic selection: short texts use single-pass, long use map-reduce
-
-**Performance for 3h recording (~180k chars, ~18 chunks):**
-| Stage | Time |
-|-------|------|
-| Chunking | < 1s |
-| MAP (18 chunks × 15s) | ~4.5 min |
-| REDUCE | ~30s |
-| **Total** | **~5 min** |
-
-**Configuration:**
-```bash
-MAPREDUCE_ENABLED=true           # Enable/disable map-reduce
-MAPREDUCE_CHUNK_SIZE=10000       # Target chunk size (chars)
-MAPREDUCE_OVERLAP=1000           # Overlap between chunks (chars)
-MAPREDUCE_THRESHOLD=15000        # Use map-reduce above this length
-MAPREDUCE_MAX_CHUNKS=30          # Safety limit for very long content
-```
-
-**GPU memory management:**
-- `WHISPER_UNLOAD_AFTER_USE=true` - Frees VRAM after each transcription
-- Prevents competition with Ollama models for GPU memory
-- Alternative: `WHISPER_DEVICE=cpu` for systems with limited VRAM
-
-**Output format (Obsidian):**
-```markdown
----
-title: "Video Title"
-type: transcription
-source_type: youtube
-source_url: "https://youtube.com/..."
-channel: "Channel Name"
-duration: "45:00"
-category: "Technologia"
-tags: [transcription, youtube, technologia, ai]
-entities: [OpenAI, GPT-5]
----
-
-# Video Title
-
-**Kanał:** Channel Name
-**Czas trwania:** 45:00
-**Kategoria:** Technologia
-
-## Podsumowanie
-
-Brief summary of the content...
-
-## Główne tematy
-
-- Topic 1
-- Topic 2
-
-## Kluczowe punkty
-
-- Key point 1
-- Key point 2
-
-## Zadania do wykonania
-
-- [ ] Action item 1
-- [ ] Action item 2
-
-## Powiązane
-
-- [[OpenAI]]
-- [[GPT-5]]
-
----
-Źródło: [Video Title](https://youtube.com/...)
-```
-
-**Background scheduler:**
-- Process pending jobs every 2 minutes
-- Cleanup temp files every hour (files older than 24h)
-
-## Key Configuration
-
-- `app/config.py` - All settings with env var overrides via `Settings` class
-- `app/models.py` - Pydantic models: `Receipt`, `Product`, `ProcessingResult`, `HealthStatus`
-- Container paths: `/data/paragony/` and `/data/vault/` (mounted from `./paragony` and `./vault`)
-- Ollama runs on host machine, accessed via `host.docker.internal:11434`
-
-### Data Models (`app/models.py`)
-
-```python
-class Receipt(BaseModel):
-    products: list[Product]
-    sklep: Optional[str]           # Store name
-    data: Optional[str]            # Date (YYYY-MM-DD)
-    suma: Optional[float]          # Total from OCR
-    raw_text: Optional[str]        # Raw OCR text for debugging
-    # Validation fields
-    needs_review: bool = False     # Flag for human review
-    review_reasons: list[str]      # Why review is needed
-    calculated_total: Optional[float]  # Sum of product prices
-
-class Product(BaseModel):
-    nazwa: str                     # Product name
-    cena: float                    # Final price (after discount)
-    kategoria: Optional[str]       # Category
-    confidence: Optional[float]    # OCR confidence
-    warning: Optional[str]         # Price warning
-    nazwa_oryginalna: Optional[str]      # Original OCR name
-    nazwa_znormalizowana: Optional[str]  # Normalized name
-    cena_oryginalna: Optional[float]     # Price before discount
-    rabat: Optional[float]               # Total discount amount
-    rabaty_szczegoly: Optional[list[DiscountDetail]]  # Detailed discounts
-
-class DiscountDetail(BaseModel):
-    typ: str        # "kwotowy" or "procentowy"
-    wartosc: float  # Amount in PLN or percentage
-    opis: str       # "Rabat", "Promocja", "Zniżka", "Upust"
-```
-
-### RAG Knowledge Base (`app/rag/`)
-
-Retrieval-Augmented Generation system for querying the knowledge base (articles, transcriptions, receipts, notes, bookmarks) via natural language.
-
-**Architecture:**
-```
-Question (/ask or POST /ask)
-  → Embed query via Ollama /api/embed (nomic-embed-text, 768 dim)
-  → pgvector cosine similarity search (top-K)
-  → Build context from best chunks
-  → LLM generates answer with source citations
-  → Return answer + sources list
-```
-
-**Key files:**
-- `app/rag/embedder.py` - Embedding generation via Ollama `/api/embed`
-- `app/rag/indexer.py` - Content chunking, embedding, and storage pipeline
-- `app/rag/retriever.py` - Vector search with pg_trgm keyword fallback
-- `app/rag/answerer.py` - RAG answer generation with bilingual prompts (PL/EN)
-- `app/rag/hooks.py` - Fire-and-forget indexing hooks for content creation flows
-- `app/db/repositories/embeddings.py` - pgvector repository (cosine search, keyword fallback, stats)
-- `app/ask_api.py` - REST API (`POST /ask`, `GET /ask/stats`, `POST /ask/reindex`)
-- `app/telegram/handlers/ask.py` - Telegram `/ask` command handler
-
-**Database model (`app/db/models.py`):**
-- `DocumentEmbedding` - Chunked embeddings (content_type, content_id, chunk_index, text_chunk, embedding Vector(768), metadata_ JSONB)
-
-**API endpoints (`/ask/*`):**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/ask` | POST | Query knowledge base with natural language |
-| `/ask/stats` | GET | Embedding index statistics per content type |
-| `/ask/reindex` | POST | Full background reindexation of all content |
-
-**Auto-indexing:** New content is automatically indexed via hooks in:
-- `app/notes_api.py` - after note creation
-- `app/bookmarks_api.py` - after bookmark creation
-- `app/rss_api.py` - after on-demand summarization
-- `app/telegram/rss_scheduler.py` - after auto-fetch articles
-- `app/transcription_api.py` - after note generation (both endpoints)
-
-**Startup behavior:** If embeddings table is empty on startup, triggers background `reindex_all()`.
-
-**Content types indexed:** article, transcription, receipt, note, bookmark
-
-**Chunking:** Sentence-boundary splitting with configurable size (RAG_CHUNK_SIZE=1500) and overlap (RAG_CHUNK_OVERLAP=200). Each chunk gets a contextual header (store/date/title).
-
-**Search strategy:** Vector search (pgvector cosine `<=>`) with automatic keyword fallback (pg_trgm ILIKE) when too few high-score results.
-
-### Chat AI (`app/chat/`)
-
-Multi-turn conversational AI with access to both the personal knowledge base (RAG) and the internet (SearXNG).
-
-**Architecture:**
-```
-User Message + Conversation History
-         │
-         ▼
-┌─────────────────────┐
-│  Intent Classifier   │  (LLM: "rag" | "web" | "both" | "direct")
-└─────────────────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
- RAG Search  SearXNG Search  (parallel if "both")
-    │         │
-    └────┬────┘
-         ▼
-┌─────────────────────┐
-│  LLM /api/chat      │  (with history + search context)
-└─────────────────────┘
-         │
-         ▼
-  Answer + Sources → PostgreSQL
-```
-
-**Key files:**
-- `app/chat/orchestrator.py` - Main chat processing pipeline (intent → search → LLM)
-- `app/chat/intent_classifier.py` - LLM-based query intent classification
-- `app/chat/searxng_client.py` - SearXNG web search JSON API client
-- `app/chat_api.py` - REST API endpoints
-- `app/db/repositories/chat.py` - Chat session/message repository
-- `app/telegram/handlers/chat.py` - Telegram `/chat` and `/endchat` handlers
-
-**Database models (`app/db/models.py`):**
-- `ChatSession` - Conversation sessions (id UUID, title, source web/telegram, telegram_chat_id, is_active)
-- `ChatMessage` - Messages (id, session_id, role user/assistant/system, content, sources JSONB, search_type, model_used)
-
-**API endpoints (`/chat/*`):**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/chat/message` | POST | Send message (auto-creates session) |
-| `/chat/sessions` | GET | List recent sessions |
-| `/chat/sessions/{id}` | GET | Get session with messages |
-| `/chat/sessions/{id}` | DELETE | Delete session |
-| `/chat/sessions/{id}/end` | POST | End active session |
-
-**Telegram commands:**
-| Command | Description |
-|---------|-------------|
-| `/chat [question]` | Start/continue chat session |
-| `/endchat` | End active chat session |
-
-In Telegram, after `/chat` is started, all text messages are routed to the chat handler until `/endchat` is called.
-
-**Web UI:** `/app/czat/` - Chat interface with session sidebar, message bubbles, HTMX real-time updates.
-
-**SearXNG:** Self-hosted metasearch engine in docker-compose (`searxng` service, port 8080). Configuration in `searxng/settings.yml`.
-
-**Language detection (`_detect_language()`):** Auto-detects Polish vs English based on:
-- Polish-specific characters (ą, ć, ę, ł, ń, ó, ś, ź, ż)
-- Polish keyword matching with word boundary detection (padded spaces): common words (`i`, `w`, `się`, `na`, `do`, `czy`, `jest`, `nie`, `tak`), question words (`jaki`, `gdzie`, `kiedy`, `dlaczego`), and domain verbs (`wydal`, `kupil`, `opowiedz`, `powiedz`)
-- Threshold: >= 2 indicators → Polish, otherwise English
-- Selects appropriate system prompt (`CHAT_SYSTEM_PROMPT_PL` or `CHAT_SYSTEM_PROMPT_EN`)
-
-**Intent classification:** The classifier analyzes the question and conversation history to decide:
-- `"rag"` - personal data queries (spending, articles, notes, etc.)
-- `"web"` - current events, facts to look up online
-- `"both"` - needs both personal data and internet context
-- `"direct"` - greetings, general knowledge, conversation continuation
-
-### Environment Variables
-
-```bash
-OLLAMA_BASE_URL=http://host.docker.internal:11434  # Ollama API
-OCR_MODEL=deepseek-ocr                              # Vision model for OCR (deepseek-ocr recommended)
-OCR_BACKEND=deepseek                                # "deepseek" (recommended), "vision", "paddle", or "google"
-OCR_FALLBACK_MODEL=qwen2.5vl:7b                     # Fallback vision model when DeepSeek-OCR fails
-STRUCTURING_MODEL=qwen2.5:7b                        # LLM for JSON structuring (deepseek backend)
-CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model (primary)
-CLASSIFIER_MODEL_B=gpt-oss:20b                      # A/B test model (optional)
-CLASSIFIER_AB_MODE=primary                          # "primary", "secondary", or "both"
-TELEGRAM_BOT_TOKEN=xxx                              # From .env file
-TELEGRAM_CHAT_ID=123456                             # Authorized user ID (0 = allow all)
-BOT_ENABLED=true                                    # Enable/disable Telegram bot
-
-# PostgreSQL Database
-DATABASE_URL=postgresql+asyncpg://pantry:pantry123@postgres:5432/pantry
-DATABASE_POOL_SIZE=5                                # Connection pool size
-DATABASE_MAX_OVERFLOW=10                            # Max overflow connections
-USE_DB_DICTIONARIES=true                            # Use DB for product/store dictionaries
-USE_DB_RECEIPTS=true                                # Store receipts in DB
-GENERATE_OBSIDIAN_FILES=true                        # Generate markdown files alongside DB
-
-# Performance tuning
-VISION_MODEL_KEEP_ALIVE=10m                         # How long vision model stays in VRAM (default: 10m)
-TEXT_MODEL_KEEP_ALIVE=30m                           # How long text model stays in VRAM (default: 30m)
-UNLOAD_MODELS_AFTER_USE=false                       # Force unload after each use (for low VRAM)
-PDF_MAX_PARALLEL_PAGES=2                            # Concurrent pages for multi-page PDF
-
-# Google Cloud Vision (ultimate fallback - disabled by default)
-GOOGLE_VISION_ENABLED=false                         # Enable Google Vision as last-resort OCR fallback
-GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json  # Path to service account JSON
-
-# RSS/Web Summarizer
-SUMMARIZER_MODEL=                                   # Empty = use CLASSIFIER_MODEL (for English)
-SUMMARIZER_MODEL_PL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish language model
-SUMMARIZER_ENABLED=true                             # Enable/disable RSS summarizer
-RSS_FETCH_INTERVAL_HOURS=4                          # Auto-fetch interval (default: 4h)
-RSS_MAX_ARTICLES_PER_FEED=10                        # Max articles per feed fetch
-SUMMARIES_DIR=/data/summaries                       # Output directory for summaries (configurable)
-
-# Transcription Agent
-TRANSCRIPTION_ENABLED=true                          # Enable/disable transcription agent
-WHISPER_MODEL=medium                                # tiny/base/small/medium/large (medium = default)
-WHISPER_DEVICE=cuda                                 # cuda/cpu/auto
-WHISPER_COMPUTE_TYPE=float16                        # float16/int8
-WHISPER_LANGUAGE=                                   # Empty = auto-detect
-WHISPER_UNLOAD_AFTER_USE=true                       # Free VRAM after transcription
-TRANSCRIPTION_NOTE_MODEL=                           # Empty = use CLASSIFIER_MODEL
-TRANSCRIPTION_AUTO_GENERATE_NOTE=true               # Auto-generate note after transcription
-TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions       # Output directory for notes
-TRANSCRIPTION_MAX_DURATION_HOURS=4                  # Max video duration limit
-TRANSCRIPTION_MAX_CONCURRENT_JOBS=1                 # Concurrent job limit
-TRANSCRIPTION_CLEANUP_HOURS=24                      # Temp file cleanup threshold
-
-# Map-Reduce for Long Transcriptions
-MAPREDUCE_ENABLED=true                              # Enable map-reduce for long texts
-MAPREDUCE_CHUNK_SIZE=10000                          # Chunk size in characters
-MAPREDUCE_OVERLAP=1000                              # Overlap between chunks
-MAPREDUCE_THRESHOLD=15000                           # Use map-reduce above this length
-MAPREDUCE_MAX_CHUNKS=30                             # Safety limit (prevents OOM)
-
-# RAG (Retrieval-Augmented Generation)
-RAG_ENABLED=true                                    # Enable/disable RAG system
-EMBEDDING_MODEL=nomic-embed-text                    # Ollama embedding model
-EMBEDDING_DIMENSIONS=768                            # Embedding vector dimensions
-ASK_MODEL=                                          # Empty = use CLASSIFIER_MODEL
-RAG_TOP_K=5                                         # Number of chunks to retrieve
-RAG_CHUNK_SIZE=1500                                 # Chunk size for indexing (chars)
-RAG_CHUNK_OVERLAP=200                               # Overlap between chunks (chars)
-RAG_MIN_SCORE=0.3                                   # Min cosine similarity threshold
-RAG_AUTO_INDEX=true                                 # Auto-index new content
-
-# Chat AI (multi-turn with RAG + web search)
-CHAT_ENABLED=true                                   # Enable/disable chat feature
-CHAT_MODEL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM (Bielik 11B), empty = CLASSIFIER_MODEL
-CHAT_MAX_HISTORY=10                                 # Max messages in conversation context
-SEARXNG_URL=http://searxng:8080                     # SearXNG instance URL
-SEARXNG_TIMEOUT=15                                  # Web search timeout (seconds)
-
-# Personal Notes
-NOTES_ENABLED=true                                  # Enable/disable notes module
-NOTES_OUTPUT_DIR=/data/notes                        # Output directory for Obsidian notes
-
-# Bookmarks / Read Later
-BOOKMARKS_ENABLED=true                              # Enable/disable bookmarks module
-BOOKMARKS_OUTPUT_DIR=/data/bookmarks                # Output directory for bookmark exports
-```
-
-## Ollama Models Required
-
-```bash
-# Recommended (deepseek pipeline - fastest + accurate)
-ollama pull deepseek-ocr    # Fast OCR extraction (6.7GB)
-ollama pull qwen2.5:7b      # Structuring + categorization (4.7GB)
-ollama pull qwen2.5vl:7b    # Fallback for when DeepSeek-OCR fails (6GB)
-
-# Alternative (vision backend - slower but single model)
-ollama pull qwen2.5vl:7b    # OCR extraction (6GB, requires num_ctx=4096)
-
-# RSS/Summarizer + Chat AI (Polish content)
-ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM for summaries and chat (7GB)
-
-# RAG embeddings
-ollama pull nomic-embed-text  # Embedding model for RAG (274MB)
-```
-
-Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30m by default). Set `UNLOAD_MODELS_AFTER_USE=true` for low VRAM systems.
-
-### OCR Backend Comparison
-
-| Backend | Speed | Accuracy | Notes |
-|---------|-------|----------|-------|
-| **`deepseek`** (DeepSeek-OCR + LLM) | **~15s** | **Best** | **Recommended.** Fast + accurate. Combined structuring + categorization. Has fallback if loops |
-| `vision` (qwen2.5vl:7b) | ~4 min | Best | Single model, slower but accurate |
-| `paddle` (PaddleOCR + LLM) | ~11s | Good | Fastest but less accurate for complex receipts |
-| `google` (Google Cloud Vision + LLM) | ~5s | Best | Cloud-based OCR, requires API key. Cost: ~$1.50/1000 images |
-
-Set via `OCR_BACKEND=deepseek` (recommended), `OCR_BACKEND=vision`, `OCR_BACKEND=paddle`, or `OCR_BACKEND=google` in docker-compose.yml.
-
-### Google Cloud Vision (`OCR_BACKEND=google` or fallback)
-
-Google Cloud Vision API can be used as a **primary OCR backend** (`OCR_BACKEND=google`) or as an **ultimate fallback** when all local Ollama models fail.
-
-**As primary backend:**
-```
-Receipt → Google Vision API → Raw Text → qwen2.5:7b → JSON + Categories
-```
-
-**As fallback chain:**
-```
-Receipt → DeepSeek-OCR → [fail] → qwen2.5vl:7b → [fail] → Google Vision → LLM structuring
-```
-
-**Setup:**
-1. Create a Google Cloud project and enable Vision API
-2. Create a Service Account with "Cloud Vision API User" role
-3. Download the JSON key file
-4. Place it at `./credentials/gcp-service-account.json`
-5. Set `GOOGLE_VISION_ENABLED=true` in `.env` or docker-compose.yml
-6. Optionally set `OCR_BACKEND=google` to use as primary
-
-**Cost:** ~$1.50 per 1000 images (Document Text Detection)
-
-**Configuration:**
-```bash
-GOOGLE_VISION_ENABLED=true                          # Enable Google Vision
-GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json
-OCR_BACKEND=google                                  # Optional: use as primary backend
-```
-
-**Key files:**
-- `app/google_vision_ocr.py` - Google Vision API wrapper (DOCUMENT_TEXT_DETECTION)
-- `app/google_ocr_backend.py` - Integration with main OCR pipeline
-
-**Note:** Google Vision only extracts text - structuring is still done by local LLM (qwen2.5:7b). This keeps costs down while ensuring reliable OCR.
-
-### DeepSeek Pipeline (OCR_BACKEND=deepseek)
-
-The `deepseek` backend uses a two-model pipeline for optimal speed and accuracy:
-
-```
-Image → DeepSeek-OCR (~6-10s) → Raw Text → qwen2.5:7b (~7s) → JSON + Categories
-                                    ↓
-                         Preserve layout prompt
-                         (keeps prices with products)
-```
-
-**Configuration:**
-```bash
-OCR_MODEL=deepseek-ocr          # Fast vision model for text extraction
-OCR_BACKEND=deepseek            # Enable deepseek pipeline
-STRUCTURING_MODEL=qwen2.5:7b    # LLM for JSON structuring (optional, defaults to CLASSIFIER_MODEL)
-OCR_FALLBACK_MODEL=qwen2.5vl:7b # Fallback when DeepSeek-OCR fails (default: qwen2.5vl:7b)
-```
-
-**Key features:**
-- Uses `/api/chat` endpoint for DeepSeek-OCR (not `/api/generate`)
-- "Preserve layout" prompt keeps product names and prices together
-- **Combined structuring + categorization** in single LLM call (saves ~7s)
-- **Connection pooling** via `ollama_client.py` (saves ~100ms per request)
-- Output limited with `num_predict=2048` to prevent infinite loops
-- Automatic **fallback to vision backend** when DeepSeek-OCR fails (loops, timeout)
-
-**Performance comparison:**
-| Pipeline | Time | Notes |
-|----------|------|-------|
-| DeepSeek-OCR + qwen2.5:7b | **13-17s** | Recommended (optimized with combined structuring + categorization) |
-| DeepSeek-OCR + gpt-oss | 95s | More accurate but much slower |
-| qwen3-vl:8b (single model) | 80s | Slower, thinking mode issues |
-
-### Vision Model Notes (OCR_BACKEND=vision)
-
-| Model | Size | Status | Notes |
-|-------|------|--------|-------|
-| **`qwen2.5vl:7b`** | 6.0GB | **Best** | Default. 3/3 success, requires num_ctx=4096. 76% GPU + 24% CPU offload on 12GB |
-| `qwen2.5vl:3b` | 3.2GB | Partial | Niestabilny, błędy GGML na niektórych obrazach |
-| `llama3.2-vision` | 7.8GB | Partial | 2/3 success, może odmówić przetwarzania |
-| `qwen3-vl:8b` | 6.1GB | Avoid | Thinking mode - odpowiedź w polu `thinking` zamiast `content` (obsługa dodana w app/ocr.py) |
-| `minicpm-v` | 5.5GB | Fallback | Działa, ale mniej dokładny niż qwen2.5vl |
-| `deepseek-ocr` | 6.7GB | Issues | Ollama 0.15+: czasami zwraca puste odpowiedzi dla obrazów, fallback do qwen2.5vl:7b |
-
-### Classifier A/B Testing
-
-Compare classifier models (e.g., `qwen2.5:7b` vs `gpt-oss:20b`) to evaluate accuracy and performance.
-
-**Configuration:**
-```bash
-CLASSIFIER_MODEL=qwen2.5:7b      # Primary model (always available)
-CLASSIFIER_MODEL_B=gpt-oss:20b   # Secondary model for A/B testing
-CLASSIFIER_AB_MODE=primary       # Testing mode (see below)
-```
-
-**Modes:**
-| Mode | Behavior | Use case |
-|------|----------|----------|
-| `primary` | Use model A, also run B in background and log comparison | Production with logging |
-| `secondary` | Use model B as primary | Switch to new model |
-| `both` | Run both, use A, log comparison | Full comparison testing |
-
-**Results:**
-- Logged to `vault/logs/classifier_ab_test.jsonl`
-- View via API: `GET /reports/classifier-ab`
-- Metrics: agreement rate, timing, error rates
-
-**Example test:**
-```bash
-# Enable A/B testing
-export CLASSIFIER_MODEL_B=gpt-oss:20b
-export CLASSIFIER_AB_MODE=both
-
-# Process some receipts, then check results
-curl http://localhost:8000/reports/classifier-ab
-```
-
-**Note:** `gpt-oss:20b` (13 GB) won't fit alongside vision model on 12 GB GPU. Models will swap, increasing latency. Consider using `CLASSIFIER_AB_MODE=primary` for production.
-
-## Output Files
-
-- `vault/paragony/*.md` - Individual receipt history with YAML frontmatter
-- `vault/spiżarnia.md` - Aggregated pantry view with checkboxes by category
-- `vault/logs/ocr-errors.md` - Error log
-- `vault/logs/unmatched.json` - Products that failed dictionary matching (for learning)
-- `vault/logs/corrections.json` - Receipt review corrections history
-- `vault/paragony/ERROR_*.md` - Per-receipt error files
-- `SUMMARIES_DIR/*.md` - Article summaries with YAML frontmatter (default: `/data/summaries/`)
-- `SUMMARIES_DIR/index.md` - Auto-generated index of recent summaries
-- `TRANSCRIPTION_OUTPUT_DIR/*.md` - Transcription notes (default: `/data/transcriptions/`)
-- `NOTES_OUTPUT_DIR/*.md` - Personal notes (default: `/data/notes/`)
-- `BOOKMARKS_OUTPUT_DIR/*.md` - Bookmark exports (default: `/data/bookmarks/`)
-
-## Additional API Endpoints
-
-### Dictionary Management (`/dictionary/*`)
-- `GET /dictionary/stats` - Dictionary statistics
-- `GET /dictionary/categories` - List categories with product counts
-- `GET /dictionary/products?category=&search=` - List/search products
-- `POST /dictionary/products/add` - Add product variant
-- `GET /dictionary/stores` - List stores with aliases
-- `POST /dictionary/stores/add` - Add store alias
-- `GET /dictionary/shortcuts?store=` - List product shortcuts
-- `POST /dictionary/shortcuts/add` - Add product shortcut
-- `DELETE /dictionary/shortcuts/{store}/{shortcut}` - Delete shortcut
-- `GET /dictionary/unmatched` - Products that failed to match (sorted by count)
-- `GET /dictionary/unmatched/suggestions?min_count=3` - High-frequency unmatched products
-- `POST /dictionary/learn/{raw_name}` - Learn from unmatched
-- `GET /dictionary/corrections/stats` - Review correction statistics
-
-### Reports (`/reports/*`)
-- `GET /reports/summary` - Overall stats (receipts, spending, discounts)
-- `GET /reports/discounts` - Discount summary by store/category/month
-- `GET /reports/stores` - Spending per store
-- `GET /reports/monthly` - Monthly spending breakdown
-- `GET /reports/categories` - Spending by category
-
-### Obsidian Sync (`/obsidian/*`) - requires `USE_DB_RECEIPTS=true`
-- `POST /obsidian/sync/receipt/{id}` - Regenerate markdown for one receipt
-- `POST /obsidian/sync/pantry` - Regenerate spiżarnia.md from database
-- `POST /obsidian/sync/all` - Full vault regeneration from database
-
-### Analytics (`/analytics/*`) - requires `USE_DB_RECEIPTS=true`
-- `GET /analytics/price-trends/{product_id}?months=6` - Price history
-- `GET /analytics/store-comparison?product_ids=1,2,3` - Compare prices across stores
-- `GET /analytics/spending/by-category?start=&end=` - Spending by category
-- `GET /analytics/spending/by-store?start=&end=` - Spending by store
-- `GET /analytics/basket-analysis?min_support=0.1` - Frequently bought together
-- `GET /analytics/top-products?limit=20&by=count|spending` - Top products
-- `GET /analytics/discounts?start=&end=` - Discount statistics
-- `GET /analytics/yearly-comparison` - Year-over-year comparison
-
-### Database Stats (`/db/*`) - requires `USE_DB_RECEIPTS=true`
-- `GET /db/receipts/stats` - Receipt statistics
-- `GET /db/receipts/pending` - Receipts pending review
-- `GET /db/pantry/stats` - Pantry statistics
-- `GET /db/feedback/stats` - Unmatched products and corrections stats
-
-### Notes (`/notes/*`)
-- `GET /notes/?search=&tag=&limit=20` - List notes with filtering
-- `POST /notes/` - Create note
-- `GET /notes/{id}` - Get note details
-- `PUT /notes/{id}` - Update note
-- `DELETE /notes/{id}` - Delete note
-
-### Bookmarks (`/bookmarks/*`)
-- `GET /bookmarks/?status=&limit=20` - List bookmarks
-- `POST /bookmarks/` - Create bookmark
-- `GET /bookmarks/stats` - Bookmark statistics
-- `GET /bookmarks/{id}` - Get bookmark
-- `PUT /bookmarks/{id}` - Update bookmark
-- `DELETE /bookmarks/{id}` - Delete bookmark
-
-### Chat AI (`/chat/*`)
-- `POST /chat/message` - Send message (creates session if needed)
-- `GET /chat/sessions` - List recent sessions
-- `GET /chat/sessions/{id}` - Get session with messages
-- `DELETE /chat/sessions/{id}` - Delete session
-- `POST /chat/sessions/{id}/end` - End active session
-
-### Unified Search
-- `GET /search?q=<query>&types=receipt,article,note,bookmark,transcription&limit=5` - Cross-content search
-
-### Metrics
-- `GET /metrics` - Prometheus metrics (via `prometheus_fastapi_instrumentator`)
-
-### Web Interface
-- `GET /app/` - Full web UI (dashboard, receipts, pantry, analytics, articles, transcriptions, notes, bookmarks, dictionary, search, RAG)
-- `GET /web/dictionary` - Legacy redirect → `/app/slownik/`
-
-## Monitoring Stack
-
-Optional Prometheus + Loki + Grafana stack in docker-compose:
-
-```bash
-# Access dashboards
-http://localhost:3000   # Grafana (admin/pantry123)
-http://localhost:9090   # Prometheus
-http://localhost:3100   # Loki
-```
-
-Logs are collected from Docker containers via Promtail. FastAPI exposes `/metrics` for Prometheus scraping.
-
-## n8n Integration
-
-Optional workflow in `n8n-workflows/folder-watch.json` for automatic processing of files dropped in `paragony/inbox/`.
-
-## Database Setup
-
-### First-time Setup
-
-```bash
-# Start services (PostgreSQL + FastAPI)
-docker-compose up -d
-
-# Check PostgreSQL is ready
-docker exec -it pantry-db psql -U pantry -d pantry -c "\dt"
-
-# Run data migration from JSON/Markdown to PostgreSQL
-docker exec -it pantry-api python scripts/migrate_data.py
-
-# Verify migration
-curl http://localhost:8000/db/receipts/stats
-```
-
-### Database Schema
-
-The database uses PostgreSQL 16 with `pg_trgm` extension for fuzzy text matching.
-
-Key tables:
-- `categories` - Product categories
-- `stores`, `store_aliases` - Stores with OCR alias matching
-- `products`, `product_variants` - Normalized products with raw name variants
-- `product_shortcuts` - Store-specific abbreviations (thermal printer)
-- `receipts`, `receipt_items` - Receipt data
-- `pantry_items` - Current pantry state
-- `price_history` - Price tracking for analytics
-- `unmatched_products`, `review_corrections` - Feedback loop
-- `rss_feeds`, `articles`, `article_summaries` - RSS/web summarization
-- `transcription_jobs`, `transcriptions`, `transcription_notes` - Audio/video transcription
-- `notes` - Personal notes (UUID PK, title, content, category, tags, is_archived)
-- `bookmarks` - URL bookmarks (UUID PK, url, title, status, priority, tags, linked article/transcription)
-- `document_embeddings` - RAG vector index (content_type, text_chunk, embedding Vector(768), metadata JSONB)
-- `chat_sessions` - Chat conversation sessions (UUID PK, title, source web/telegram, telegram_chat_id, is_active)
-- `chat_messages` - Chat messages (session_id FK, role, content, sources JSONB, search_type, model_used)
-
-Files:
-- `scripts/init-db.sql` - Initial schema
-- `app/db/models.py` - SQLAlchemy ORM models
-- `app/db/repositories/` - Data access layer (repository pattern)
-- `app/dependencies.py` - FastAPI dependency injection for repositories
-
-**Repository pattern usage:**
-```python
-from app.dependencies import ProductRepoDep, ReceiptRepoDep
-
+from app.dependencies import ProductRepoDep
 @router.get("/products")
 async def list_products(repo: ProductRepoDep):
     return await repo.list_all()
 ```
 
-### Alembic Migrations
+**Telegram callback router** (`app/telegram/callback_router.py`): Prefix-based routing instead of monolithic if/elif. Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`).
+
+**RAG auto-indexing** (`app/rag/hooks.py`): Fire-and-forget hooks in notes_api, bookmarks_api, rss_api, transcription_api auto-index new content for `/ask` queries. If embeddings table is empty on startup, triggers background `reindex_all()`.
+
+**Chat AI intent classification** (`app/chat/intent_classifier.py`): LLM classifies each message as `"rag"` (personal data), `"web"` (internet search via SearXNG), `"both"`, or `"direct"` (no search needed).
+
+**Language detection**: Multiple modules auto-detect Polish vs English based on Polish characters (ą,ć,ę...) and keyword matching. Polish → Bielik 11B model, English → qwen2.5:7b.
+
+### Product Normalization Chain (`app/dictionaries/`)
+
+1. **Exact match** → `products.json` raw_names
+2. **Partial match** → 70%+ word overlap
+3. **Shortcut match** → `product_shortcuts.json` (thermal printer abbreviations per store)
+4. **Fuzzy match** → Levenshtein distance < 0.75
+5. **Keyword match** → Category keywords
+
+### Transcription Map-Reduce (`app/transcription/extractor.py`)
+
+For transcriptions > 15k chars: split into 10k char chunks at sentence boundaries with 1k overlap → MAP phase extracts from each chunk → REDUCE phase deduplicates and synthesizes. Configurable via `MAPREDUCE_*` env vars.
+
+### Store-Specific OCR Prompts (`app/store_prompts.py`)
+
+Each store (Biedronka, Lidl, Kaufland, Żabka, etc.) has a tailored extraction prompt matching its receipt format. To add a new store:
+1. Add detection patterns to `STORE_PATTERNS`
+2. Create `PROMPT_STORENAME` with format-specific instructions
+3. Add to `STORE_PROMPTS` mapping
+
+## Key Configuration
+
+All settings in `app/config.py` via `Settings` class, overridable with env vars. See `.env.example` for the full list.
+
+**Critical env vars:**
 
 ```bash
-# Create new migration
-docker exec -it pantry-api alembic revision --autogenerate -m "description"
+# OCR
+OCR_BACKEND=google|deepseek|vision|paddle
+OCR_MODEL=qwen2.5:7b
+OCR_FALLBACK_MODEL=qwen2.5vl:7b
+CLASSIFIER_MODEL=qwen2.5:7b
 
-# Apply migrations
-docker exec -it pantry-api alembic upgrade head
+# Database
+DATABASE_URL=postgresql+asyncpg://pantry:pantry123@postgres:5432/pantry
 
-# Rollback
-docker exec -it pantry-api alembic downgrade -1
+# Telegram
+TELEGRAM_BOT_TOKEN=xxx
+TELEGRAM_CHAT_ID=123456  # 0 = allow all users
+
+# Feature flags
+USE_DB_DICTIONARIES=true
+USE_DB_RECEIPTS=true
+GENERATE_OBSIDIAN_FILES=true
+RAG_ENABLED=true
+CHAT_ENABLED=true
+TRANSCRIPTION_ENABLED=true
+NOTES_ENABLED=true
+BOOKMARKS_ENABLED=true
+
+# Models
+CHAT_MODEL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM
+EMBEDDING_MODEL=nomic-embed-text                          # RAG embeddings (768 dim)
+SUMMARIZER_MODEL_PL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M
+
+# GPU memory
+VISION_MODEL_KEEP_ALIVE=10m
+TEXT_MODEL_KEEP_ALIVE=30m
+WHISPER_UNLOAD_AFTER_USE=true  # Free VRAM after transcription
 ```
 
-### Feature Flags
+### Ollama Models Required
 
-Control database usage via environment variables:
-- `USE_DB_DICTIONARIES=true` - Use PostgreSQL for product/store lookup (with pg_trgm fuzzy search)
-- `USE_DB_RECEIPTS=true` - Store receipts in database
-- `GENERATE_OBSIDIAN_FILES=true` - Also generate markdown files
-
-Set all to `false` to revert to file-only mode.
-
-## Testing
-
-No automated tests currently. Manual testing via:
 ```bash
-# Test full pipeline
-curl -X POST http://localhost:8000/process-receipt -F "file=@test_receipt.png"
-
-# Test dictionary normalization (check logs)
-docker logs -f pantry-api | grep -i "normalized\|fuzzy\|shortcut\|match"
-
-# Test human-in-the-loop (send receipt via Telegram with mismatched total)
-# Bot should show review interface instead of auto-saving
-
-# Test shortcuts
-curl http://localhost:8000/dictionary/shortcuts
-curl http://localhost:8000/dictionary/shortcuts?store=biedronka
-
-# Test feedback loop
-curl http://localhost:8000/dictionary/unmatched
-curl http://localhost:8000/dictionary/unmatched/suggestions?min_count=2
-curl http://localhost:8000/dictionary/corrections/stats
-
-# Test learning from unmatched
-curl -X POST "http://localhost:8000/dictionary/learn/UNKNOWN_PRODUCT?normalized_name=mleko&category=nabiał"
-
-# Check discount details in response
-curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.jpg" | jq '.receipt.products[] | select(.rabaty_szczegoly != null)'
-
-# Test database analytics
-curl http://localhost:8000/analytics/spending/by-category
-curl http://localhost:8000/analytics/top-products?limit=10
-curl http://localhost:8000/analytics/price-trends/1?months=3
-
-# Test Obsidian sync
-curl -X POST http://localhost:8000/obsidian/sync/all
-
-# Test notes
-curl -X POST http://localhost:8000/notes/ -H "Content-Type: application/json" -d '{"title":"Test","content":"Hello"}'
-curl http://localhost:8000/notes/?search=test
-
-# Test bookmarks
-curl -X POST http://localhost:8000/bookmarks/ -H "Content-Type: application/json" -d '{"url":"https://example.com","title":"Example"}'
-curl http://localhost:8000/bookmarks/?status=pending
-
-# Test unified search
-curl "http://localhost:8000/search?q=mleko&types=receipt,note&limit=5"
-
-# Test web UI
-open http://localhost:8000/app/
-
-# Test RAG
-curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Ile wydałem w Biedronce?"}'
+ollama pull qwen2.5:7b        # Structuring + categorization (4.7GB)
+ollama pull qwen2.5vl:7b      # Vision OCR fallback (6GB)
+ollama pull nomic-embed-text   # RAG embeddings (274MB)
+# For Polish content:
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Chat + summaries (7GB)
 ```
 
-## Troubleshooting
+## Web UI
 
-### Multi-page PDF shows wrong total
-- Check if "Karta płatnicza" or payment info is on the last page
-- System extracts total from combined raw text of all pages
-- If still wrong, use Telegram review to correct manually
+HTMX + Jinja2 templates at `http://localhost:8000/app/`. Templates in `app/templates/` organized by feature with `partials/` subdirectories for HTMX partial responses. Toast notifications via HX-Trigger headers.
 
-### Receipt always triggers review
-- Check if OCR is extracting total correctly (review `raw_text` in logs)
-- Validation thresholds: >5 PLN or >10% variance triggers review
-- Consider adjusting thresholds in `main.py` if needed
+## Output Files
 
-### Review data expired in Telegram
-- Pending review data is stored in `context.user_data`
-- Data may expire if bot restarts or after long delay
-- Solution: reprocess the receipt with `/reprocess <filename>`
+- `vault/paragony/*.md` - Receipt markdown with YAML frontmatter
+- `vault/spiżarnia.md` - Aggregated pantry view
+- `vault/logs/` - Error log, unmatched products JSON, corrections JSON
+- Feature-specific output dirs configured via `*_OUTPUT_DIR` env vars
 
-### Vision OCR: Ollama 500 errors during verification
-- **Status:** FIXED - Verification now uses text-only model
-- **Cause:** Was VRAM exhaustion when re-sending image for verification
-- **Solution:** `_verify_extraction()` uses `qwen2.5:7b` text model with raw OCR text
+## Database
 
-### Vision OCR: Unit prices instead of final prices
-- **Status:** FIXED - Lower threshold for weighted products
-- **Symptom:** Weighted products (kg) show per-kg price, not total
-- **Solution 1:** OCR prompt has ASCII-art examples showing correct price extraction
-- **Solution 2:** `price_fixer.py` flags suspicious prices with lower threshold (15 PLN) for weighted products
-- **Check logs:** `grep -i "price warning\|Likely unit price" pantry-api`
+PostgreSQL 16 with `pg_trgm` (fuzzy text) and `pgvector` (embeddings) extensions. Schema in `scripts/init-db.sql`, ORM in `app/db/models.py`, migrations in `alembic/versions/`.
 
-### Vision OCR: Summary page products
-- **Status:** FIXED - Generic names filter
-- **Symptom:** Fake products like `product1: 48.16 zł`
-- **Cause:** Last page (payment summary) being parsed as products
-- **Solution 1:** Summary page detection (< 150 chars) skips these pages
-- **Solution 2:** Generic names filter (regex) catches `product\d*`, `item\d*`, etc.
-
-### Vision OCR: Multi-page PDF wrong total
-- **Status:** FIXED - Per-page verification disabled
-- **Symptom:** Total shows first page sum (e.g., 64.17) instead of full receipt (144.48)
-- **Cause:** Was running verification per-page, which "fixed" total to partial sum
-- **Solution:** `is_multi_page=True` skips per-page verification; uses last page suma
-
-### Vision OCR: Slow processing (~90s/page)
-- **Status:** IMPROVED - Parallel processing for multi-page PDFs
-- **Expected:** ~2.5 min for 3-page PDF (was ~4.5 min) on RTX 3060 12GB
-- **Config:** `PDF_MAX_PARALLEL_PAGES=2` (default)
-- **Alternative:** Use `paddle` backend for faster (but less accurate) processing
-
-### Models loading slowly (cold start)
-- **Status:** FIXED - Models now stay loaded with keep-alive
-- **Cause:** Was models unloaded after every request
-- **Solution:** `VISION_MODEL_KEEP_ALIVE=10m`, `TEXT_MODEL_KEEP_ALIVE=30m`
-- **Low VRAM:** Set `UNLOAD_MODELS_AFTER_USE=true` to revert to old behavior
-
-### DeepSeek-OCR returns empty response
-- **Status:** FIXED - Automatic fallback to qwen2.5vl:7b
-- **Symptom:** Logs show "DeepSeek-OCR returned empty response" with `eval_count: 1`
-- **Cause:** Bug in deepseek-ocr model (Ollama 0.15+) - generates only 1 token for images
-- **Solution:** System automatically falls back to `qwen2.5vl:7b` for both single images and multipage PDFs
-- **Fallback model:** `ollama pull qwen2.5vl:7b` (must be installed)
-- **Relevant code:** `app/deepseek_ocr.py:ocr_page_only()` and `extract_products_deepseek()`
-
-### DeepSeek-OCR enters infinite repetition loop
-- **Status:** MITIGATED - System detects and falls back to vision backend
-- **Symptom:** Logs show "DeepSeek-OCR n-gram repetition detected" or patterns like "Backgrounds" repeated many times
-- **Cause:** Known DeepSeek-OCR bug on some images (complex layouts, multilingual text)
-- **Solution:** Ensure fallback model is installed: `ollama pull qwen2.5vl:7b`
-- **Relevant code:** `app/deepseek_ocr.py:_detect_repetition()` detects loops, triggers fallback
-
-### qwen3-vl:8b returns empty content
-- **Status:** FIXED - System reads from `thinking` field
-- **Symptom:** `response.message.content` is empty, but `response.message.thinking` contains the answer
-- **Cause:** qwen3-vl uses "thinking mode" by default
-- **Solution:** Code in `app/ocr.py:call_ollama()` now reads from `thinking` field when `content` is empty
-- **Recommendation:** Use `qwen2.5vl:7b` instead (no thinking mode issues)
-
-### DeepSeek fallback returns 500 error
-- **Symptom:** "Ollama error: Server error '500 Internal Server Error'" in fallback
-- **Cause:** Fallback model not installed (default: `qwen2.5vl:7b`)
-- **Solution:** Install the fallback model: `ollama pull qwen2.5vl:7b`
-- **Alternative:** Change fallback to installed model: `OCR_FALLBACK_MODEL=minicpm-v`
+Set all feature flags to `false` to revert to file-only mode (no database).
