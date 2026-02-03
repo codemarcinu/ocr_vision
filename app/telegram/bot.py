@@ -481,8 +481,8 @@ class PantryBot:
             product_count=len(receipt.products)
         )
 
-        # Save the receipt
-        from app.obsidian_writer import update_pantry_file, write_receipt_file
+        # Save the receipt to database
+        from app.services.receipt_saver import save_receipt_to_db
         import shutil
         from pathlib import Path
 
@@ -490,8 +490,9 @@ class PantryBot:
         filename = review_data["filename"]
 
         try:
-            receipt_file = write_receipt_file(receipt, categorized, filename)
-            update_pantry_file(categorized, receipt)
+            db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
+            if not db_receipt_id:
+                raise Exception("Failed to save receipt to database")
 
             # Move file to processed
             inbox_path = Path(review_data.get("inbox_path", settings.INBOX_DIR / filename))
@@ -829,8 +830,8 @@ class PantryBot:
             return
 
         if action == "approve":
-            # Save the receipt as-is
-            from app.obsidian_writer import update_pantry_file, write_receipt_file
+            # Save the receipt to database
+            from app.services.receipt_saver import save_receipt_to_db
             from app.telegram.formatters import get_store_emoji
 
             receipt = review_data["receipt"]
@@ -838,8 +839,9 @@ class PantryBot:
             filename = review_data["filename"]
 
             try:
-                receipt_file = write_receipt_file(receipt, categorized, filename)
-                update_pantry_file(categorized, receipt)
+                db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
+                if not db_receipt_id:
+                    raise Exception("Failed to save receipt to database")
 
                 # Log the approval for learning
                 log_review_correction(

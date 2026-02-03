@@ -8,7 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, ValidationError
 
 from app.models import CategorizedProduct, Receipt, Product
-from app.obsidian_writer import update_pantry_file, write_receipt_file
+from app.services.receipt_saver import save_receipt_to_db
 
 logger = logging.getLogger(__name__)
 
@@ -228,10 +228,11 @@ async def process_json_import(text: str) -> tuple[bool, str, Optional[str]]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"json_import_{timestamp}.json"
 
-    # Save to vault
+    # Save to database
     try:
-        receipt_file = write_receipt_file(receipt, categorized, filename)
-        update_pantry_file(categorized, receipt)
+        db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
+        if not db_receipt_id:
+            return False, "Błąd zapisu do bazy danych", None
 
         summary = format_import_summary(receipt, categorized, filename)
         return True, summary, filename

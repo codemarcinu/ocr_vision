@@ -20,7 +20,8 @@ from app.db.connection import close_db, init_db
 from app.dependencies import AnalyticsRepoDep, FeedbackRepoDep, PantryRepoDep, ReceiptRepoDep
 from app.dictionary_api import router as dictionary_router
 from app.models import HealthStatus, ProcessingResult, Receipt
-from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
+from app.obsidian_writer import log_error, write_error_file
+from app.services.receipt_saver import save_receipt_to_db
 from app.rss_api import router as rss_router
 from app.transcription_api import router as transcription_router
 from app.notes_api import router as notes_router
@@ -564,29 +565,21 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             ])
             logger.debug(f"Unloaded models in parallel: {models_to_unload}")
 
-        # Step 3: Write files (optional - controlled by GENERATE_OBSIDIAN_FILES)
+        # Step 3: Save to database
         receipt_file = None
-        try:
-            if settings.GENERATE_OBSIDIAN_FILES:
-                receipt_file = write_receipt_file(receipt, categorized, filename)
-                update_pantry_file(categorized, receipt)
-            else:
-                logger.info("Skipping Obsidian file generation (GENERATE_OBSIDIAN_FILES=false)")
-        except Exception as e:
-            error_msg = f"Failed to write output files: {e}"
-            logger.error(error_msg)
-
-            error_file = write_error_file(filename, error_msg)
-            log_error(filename, error_msg)
-
-            return ProcessingResult(
-                success=False,
-                receipt=receipt,
-                source_file=filename,
-                output_file=str(error_file),
-                error=error_msg,
-                processed_at=processed_at
-            )
+        if settings.USE_DB_RECEIPTS:
+            db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
+            if not db_receipt_id:
+                error_msg = "Failed to save receipt to database"
+                logger.error(error_msg)
+                log_error(filename, error_msg)
+                return ProcessingResult(
+                    success=False,
+                    receipt=receipt,
+                    source_file=filename,
+                    error=error_msg,
+                    processed_at=processed_at
+                )
 
         # Step 4: Move to processed
         try:

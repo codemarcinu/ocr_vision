@@ -13,7 +13,8 @@ from telegram.ext import ContextTypes
 from app.classifier import categorize_products
 from app.config import settings
 from app.models import CategorizedProduct, Receipt
-from app.obsidian_writer import log_error, update_pantry_file, write_error_file, write_receipt_file
+from app.obsidian_writer import log_error, write_error_file
+from app.services.receipt_saver import save_receipt_to_db
 from app.ocr import extract_products_from_image as extract_vision, unload_model
 from app.pdf_converter import convert_pdf_to_images
 from app.telegram.formatters import (
@@ -387,18 +388,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 )
             return
 
-        # Write files (no review needed)
-        await status_msg.edit_text("Krok 3/3: Zapisywanie do Obsidian...")
+        # Save to database (no review needed)
+        await status_msg.edit_text("Krok 3/3: Zapisywanie do bazy...")
 
-        try:
-            receipt_file = write_receipt_file(combined_receipt, categorized, pdf_filename)
-            update_pantry_file(categorized, combined_receipt)
-        except Exception as e:
-            error_msg = f"Failed to write output files: {e}"
+        db_receipt_id = await save_receipt_to_db(combined_receipt, categorized, pdf_filename)
+        if not db_receipt_id:
+            error_msg = "Failed to save receipt to database"
             logger.error(error_msg)
-            write_error_file(pdf_filename, error_msg)
             log_error(pdf_filename, error_msg)
-            await status_msg.edit_text(f"Błąd zapisu: {e}")
+            await status_msg.edit_text(f"Błąd zapisu do bazy danych")
             return
 
         # Move PDF to processed
@@ -547,16 +545,13 @@ async def _process_pdf_with_progress(
                 "file_path": str(file_path),
             }
 
-        # Write files
-        await status_msg.edit_text("Krok 3/3: Zapisywanie do Obsidian...")
+        # Save to database
+        await status_msg.edit_text("Krok 3/3: Zapisywanie do bazy...")
 
-        try:
-            receipt_file = write_receipt_file(combined_receipt, categorized, filename)
-            update_pantry_file(categorized, combined_receipt)
-        except Exception as e:
-            error_msg = f"Failed to write output files: {e}"
+        db_receipt_id = await save_receipt_to_db(combined_receipt, categorized, filename)
+        if not db_receipt_id:
+            error_msg = "Failed to save receipt to database"
             logger.error(error_msg)
-            write_error_file(filename, error_msg)
             log_error(filename, error_msg)
             return {"success": False, "error": error_msg}
 
@@ -662,23 +657,18 @@ async def _process_receipt_with_progress(
             "file_path": str(file_path),
         }
 
-    # Step 3: Write files
+    # Step 3: Save to database
     elapsed = time.time() - start_time
     await status_msg.edit_text(
-        format_progress_bar(3, 3, "Zapisywanie do Obsidian...", elapsed, filename),
+        format_progress_bar(3, 3, "Zapisywanie do bazy...", elapsed, filename),
         parse_mode="HTML"
     )
 
-    try:
-        receipt_file = write_receipt_file(receipt, categorized, filename)
-        update_pantry_file(categorized, receipt)
-    except Exception as e:
-        error_msg = f"Failed to write output files: {e}"
+    db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
+    if not db_receipt_id:
+        error_msg = "Failed to save receipt to database"
         logger.error(error_msg)
-
-        write_error_file(filename, error_msg)
         log_error(filename, error_msg)
-
         return {"success": False, "error": error_msg}
 
     # Move to processed
