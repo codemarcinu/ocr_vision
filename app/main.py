@@ -25,6 +25,9 @@ from app.transcription_api import router as transcription_router
 from app.notes_api import router as notes_router
 from app.ask_api import router as ask_router
 from app.bookmarks_api import router as bookmarks_router
+from app.pantry_api import router as pantry_router
+from app.receipts_api import router as receipts_router
+from app.search_api import router as search_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
@@ -61,13 +64,43 @@ app.include_router(transcription_router)
 app.include_router(notes_router)
 app.include_router(bookmarks_router)
 app.include_router(ask_router)
+app.include_router(pantry_router)
+app.include_router(receipts_router)
+app.include_router(search_router)
 
 
-# Web UI for dictionary management
+# Web UI pages
 @app.get("/web/dictionary", response_class=HTMLResponse)
 async def dictionary_web_ui():
     """Serve dictionary management web interface."""
     html_path = Path(__file__).parent / "web" / "dictionary.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="Web UI not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/web/pantry", response_class=HTMLResponse)
+async def pantry_web_ui():
+    """Serve pantry management web interface."""
+    html_path = Path(__file__).parent / "web" / "pantry.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="Web UI not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/web/receipts", response_class=HTMLResponse)
+async def receipts_web_ui():
+    """Serve receipt browser web interface."""
+    html_path = Path(__file__).parent / "web" / "receipts.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="Web UI not found")
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/web/search", response_class=HTMLResponse)
+async def search_web_ui():
+    """Serve unified search web interface."""
+    html_path = Path(__file__).parent / "web" / "search.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="Web UI not found")
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))

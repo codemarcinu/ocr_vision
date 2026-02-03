@@ -274,6 +274,61 @@ class ReceiptRepository(BaseRepository[Receipt]):
             "last_receipt": row.last_receipt.isoformat() if row.last_receipt else None,
         }
 
+    async def get_recent_paginated(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        store_id: Optional[int] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+    ) -> tuple[List[Receipt], int]:
+        """Get receipts with pagination and filters. Returns (items, total_count)."""
+        # Count query
+        count_stmt = select(func.count(Receipt.id))
+        if store_id:
+            count_stmt = count_stmt.where(Receipt.store_id == store_id)
+        if date_from:
+            count_stmt = count_stmt.where(Receipt.receipt_date >= date_from)
+        if date_to:
+            count_stmt = count_stmt.where(Receipt.receipt_date <= date_to)
+        total = await self.session.execute(count_stmt)
+        total_count = total.scalar() or 0
+
+        # Data query
+        stmt = (
+            select(Receipt)
+            .options(selectinload(Receipt.store))
+            .order_by(Receipt.receipt_date.desc(), Receipt.processed_at.desc())
+        )
+        if store_id:
+            stmt = stmt.where(Receipt.store_id == store_id)
+        if date_from:
+            stmt = stmt.where(Receipt.receipt_date >= date_from)
+        if date_to:
+            stmt = stmt.where(Receipt.receipt_date <= date_to)
+        stmt = stmt.offset(offset).limit(limit)
+
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total_count
+
+    async def update_item(
+        self, item_id: int, **kwargs
+    ) -> Optional[ReceiptItem]:
+        """Update a receipt item."""
+        stmt = select(ReceiptItem).where(ReceiptItem.id == item_id)
+        result = await self.session.execute(stmt)
+        item = result.scalar_one_or_none()
+        if not item:
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(item, key) and value is not None:
+                setattr(item, key, value)
+
+        await self.session.flush()
+        await self.session.refresh(item)
+        return item
+
     async def get_monthly_spending(
         self, months: int = 12
     ) -> List[dict]:

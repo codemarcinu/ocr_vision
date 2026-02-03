@@ -313,6 +313,149 @@ class AnalyticsRepository(BaseRepository[PriceHistory]):
             for row in result.fetchall()
         ]
 
+    async def get_weekly_comparison(self) -> dict:
+        """Compare spending: this week vs previous week."""
+        stmt = text("""
+            WITH this_week AS (
+                SELECT
+                    COALESCE(SUM(r.total_final), 0) as total,
+                    COUNT(r.id) as receipt_count,
+                    COUNT(ri.id) as product_count
+                FROM receipts r
+                LEFT JOIN receipt_items ri ON ri.receipt_id = r.id
+                WHERE r.receipt_date >= date_trunc('week', CURRENT_DATE)
+            ),
+            prev_week AS (
+                SELECT
+                    COALESCE(SUM(r.total_final), 0) as total,
+                    COUNT(r.id) as receipt_count,
+                    COUNT(ri.id) as product_count
+                FROM receipts r
+                LEFT JOIN receipt_items ri ON ri.receipt_id = r.id
+                WHERE r.receipt_date >= date_trunc('week', CURRENT_DATE) - INTERVAL '7 days'
+                  AND r.receipt_date < date_trunc('week', CURRENT_DATE)
+            ),
+            top_categories AS (
+                SELECT
+                    c.name as category,
+                    SUM(ri.price_final) as total
+                FROM receipt_items ri
+                JOIN receipts r ON ri.receipt_id = r.id
+                LEFT JOIN categories c ON ri.category_id = c.id
+                WHERE r.receipt_date >= date_trunc('week', CURRENT_DATE)
+                GROUP BY c.name
+                ORDER BY total DESC
+                LIMIT 3
+            )
+            SELECT
+                tw.total as this_total,
+                tw.receipt_count as this_receipts,
+                tw.product_count as this_products,
+                pw.total as prev_total,
+                pw.receipt_count as prev_receipts,
+                pw.product_count as prev_products
+            FROM this_week tw, prev_week pw
+        """)
+        result = await self.session.execute(stmt)
+        row = result.fetchone()
+
+        if not row:
+            return {}
+
+        this_total = float(row.this_total)
+        prev_total = float(row.prev_total)
+        diff = this_total - prev_total
+        diff_pct = (diff / prev_total * 100) if prev_total > 0 else 0
+
+        # Get top categories for this week
+        cat_stmt = text("""
+            SELECT
+                c.name as category,
+                SUM(ri.price_final) as total
+            FROM receipt_items ri
+            JOIN receipts r ON ri.receipt_id = r.id
+            LEFT JOIN categories c ON ri.category_id = c.id
+            WHERE r.receipt_date >= date_trunc('week', CURRENT_DATE)
+            GROUP BY c.name
+            ORDER BY total DESC
+            LIMIT 3
+        """)
+        cat_result = await self.session.execute(cat_stmt)
+        top_cats = [
+            {"category": r.category or "Inne", "total": float(r.total)}
+            for r in cat_result.fetchall()
+        ]
+
+        return {
+            "this_week": {
+                "total": this_total,
+                "receipts": row.this_receipts,
+                "products": row.this_products,
+            },
+            "prev_week": {
+                "total": prev_total,
+                "receipts": row.prev_receipts,
+                "products": row.prev_products,
+            },
+            "diff": diff,
+            "diff_pct": diff_pct,
+            "top_categories": top_cats,
+        }
+
+    async def get_price_anomalies(self, threshold_pct: float = 20.0) -> List[dict]:
+        """Detect price anomalies: products costing >threshold% more than avg."""
+        stmt = text("""
+            WITH product_stats AS (
+                SELECT
+                    p.id as product_id,
+                    p.normalized_name as product_name,
+                    AVG(ph.price) as avg_price,
+                    STDDEV(ph.price) as stddev_price,
+                    COUNT(ph.id) as history_count
+                FROM products p
+                JOIN price_history ph ON ph.product_id = p.id
+                GROUP BY p.id, p.normalized_name
+                HAVING COUNT(ph.id) >= 3
+            ),
+            recent_purchases AS (
+                SELECT DISTINCT ON (ri.product_id)
+                    ri.product_id,
+                    ri.price_final as latest_price,
+                    r.receipt_date,
+                    s.name as store
+                FROM receipt_items ri
+                JOIN receipts r ON ri.receipt_id = r.id
+                LEFT JOIN stores s ON r.store_id = s.id
+                WHERE r.receipt_date >= CURRENT_DATE - INTERVAL '14 days'
+                ORDER BY ri.product_id, r.receipt_date DESC
+            )
+            SELECT
+                ps.product_name,
+                ps.avg_price,
+                rp.latest_price,
+                rp.receipt_date,
+                rp.store,
+                ((rp.latest_price - ps.avg_price) / ps.avg_price * 100) as diff_pct
+            FROM product_stats ps
+            JOIN recent_purchases rp ON rp.product_id = ps.product_id
+            WHERE rp.latest_price > ps.avg_price * (1 + :threshold / 100.0)
+              AND ps.avg_price > 0
+            ORDER BY diff_pct DESC
+            LIMIT 10
+        """)
+        result = await self.session.execute(stmt, {"threshold": threshold_pct})
+        return [
+            {
+                "product": row.product_name,
+                "avg_price": float(row.avg_price),
+                "latest_price": float(row.latest_price),
+                "date": row.receipt_date.isoformat() if row.receipt_date else None,
+                "store": row.store,
+                "diff_pct": float(row.diff_pct),
+            }
+            for row in result.fetchall()
+        ]
+
     async def get_yearly_comparison(self) -> List[dict]:
         """Get year-over-year comparison."""
         stmt = text("""

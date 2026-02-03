@@ -52,6 +52,34 @@ async def get_weekly_stats() -> dict:
         return {}
 
 
+async def get_weekly_comparison() -> dict:
+    """Get this week vs previous week spending comparison."""
+    try:
+        from app.db.connection import get_session
+        from app.db.repositories.analytics import AnalyticsRepository
+
+        async for session in get_session():
+            repo = AnalyticsRepository(session)
+            return await repo.get_weekly_comparison()
+    except Exception as e:
+        logger.warning(f"Failed to get weekly comparison: {e}")
+        return {}
+
+
+async def get_price_anomalies() -> list[dict]:
+    """Get products with price anomalies (>20% above average)."""
+    try:
+        from app.db.connection import get_session
+        from app.db.repositories.analytics import AnalyticsRepository
+
+        async for session in get_session():
+            repo = AnalyticsRepository(session)
+            return await repo.get_price_anomalies(threshold_pct=20.0)
+    except Exception as e:
+        logger.warning(f"Failed to get price anomalies: {e}")
+        return []
+
+
 async def get_pending_files() -> list[str]:
     """Get files waiting in inbox."""
     inbox_dir = settings.INBOX_DIR
@@ -64,14 +92,20 @@ async def get_pending_files() -> list[str]:
     ]
 
 
-async def send_daily_digest(bot: Bot, chat_id: int) -> None:
+async def send_daily_digest(bot: Bot, chat_id: int, notification_settings: dict | None = None) -> None:
     """Send daily digest notification.
 
     Includes:
     - Pending files in inbox
     - Unmatched products that need mapping
     - Weekly spending summary
+    - Weekly comparison (if enabled)
+    - Price anomalies (if enabled)
     """
+    ns = notification_settings or {
+        "anomalies_enabled": True,
+        "weekly_comparison_enabled": True,
+    }
     sections = []
 
     # Check for pending files
@@ -123,7 +157,67 @@ async def send_daily_digest(bot: Bot, chat_id: int) -> None:
                 {"name": "Paragony", "detail": str(stats.get("receipt_count", 0))},
                 {"name": "Produkty", "detail": str(stats.get("product_count", 0))},
             ],
-            "count": 0,  # No "more" indicator for stats
+            "count": 0,
+        })
+
+    # Weekly comparison (this week vs previous)
+    if not ns.get("weekly_comparison_enabled", True):
+        comparison = {}
+    else:
+        comparison = await get_weekly_comparison()
+    if comparison and comparison.get("prev_week", {}).get("total", 0) > 0:
+        this_w = comparison["this_week"]
+        prev_w = comparison["prev_week"]
+        diff = comparison["diff"]
+        diff_pct = comparison["diff_pct"]
+
+        if diff > 0:
+            trend = "📈"
+            trend_text = f"+{diff:.2f} zł (+{diff_pct:.0f}%)"
+        elif diff < 0:
+            trend = "📉"
+            trend_text = f"{diff:.2f} zł ({diff_pct:.0f}%)"
+        else:
+            trend = "➡️"
+            trend_text = "bez zmian"
+
+        comp_items = [
+            {"name": f"{trend} Ten tydzień", "detail": f"{this_w['total']:.2f} zł"},
+            {"name": "Poprzedni tydzień", "detail": f"{prev_w['total']:.2f} zł"},
+            {"name": "Różnica", "detail": trend_text},
+        ]
+
+        # Add top categories
+        for cat in comparison.get("top_categories", [])[:3]:
+            comp_items.append({
+                "name": f"  {cat['category']}",
+                "detail": f"{cat['total']:.2f} zł",
+            })
+
+        sections.append({
+            "icon": "📈",
+            "title": "Porównanie tygodniowe",
+            "items": comp_items,
+            "count": 0,
+        })
+
+    # Price anomalies
+    if not ns.get("anomalies_enabled", True):
+        anomalies = []
+    else:
+        anomalies = await get_price_anomalies()
+    if anomalies:
+        sections.append({
+            "icon": "⚠️",
+            "title": "Anomalie cenowe",
+            "items": [
+                {
+                    "name": a["product"],
+                    "detail": f"{a['latest_price']:.2f} zł (śr. {a['avg_price']:.2f}, +{a['diff_pct']:.0f}%)",
+                }
+                for a in anomalies[:5]
+            ],
+            "count": len(anomalies),
         })
 
     # If nothing to report, skip

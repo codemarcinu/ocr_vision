@@ -43,6 +43,12 @@ from app.telegram.handlers.transcription import (
     transcriptions_command,
     note_command,
 )
+from app.telegram.handlers.search import (
+    find_command,
+)
+from app.telegram.handlers.settings import (
+    settings_command,
+)
 
 __all__ = [
     "ask_command",
@@ -72,4 +78,6 @@ __all__ = [
     "transcribe_command",
     "transcriptions_command",
     "note_command",
+    "find_command",
+    "settings_command",
 ]

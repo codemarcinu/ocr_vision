@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Szukaj - Second Brain</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5; color: #333; line-height: 1.5;
+        }
+        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+        header {
+            background: #2c3e50; color: white; padding: 20px;
+            margin-bottom: 20px; border-radius: 8px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        header h1 { font-size: 1.5rem; font-weight: 600; }
+        header p { opacity: 0.8; font-size: 0.9rem; margin-top: 5px; }
+        .header-nav { display: flex; gap: 10px; }
+        .header-nav a {
+            color: white; text-decoration: none; opacity: 0.7;
+            font-size: 0.85rem; padding: 6px 12px; border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+        }
+        .header-nav a:hover { opacity: 1; background: rgba(255,255,255,0.2); }
+
+        /* Search box */
+        .search-box {
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;
+        }
+        .search-input-wrap {
+            display: flex; gap: 10px; margin-bottom: 15px;
+        }
+        .search-input-wrap input {
+            flex: 1; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px;
+            font-size: 1.1rem; transition: border-color 0.2s;
+        }
+        .search-input-wrap input:focus { outline: none; border-color: #3498db; }
+
+        .type-filters { display: flex; gap: 12px; flex-wrap: wrap; }
+        .type-filter {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.9rem; cursor: pointer; user-select: none;
+        }
+        .type-filter input { width: 16px; height: 16px; cursor: pointer; }
+
+        /* Results */
+        .results-summary {
+            font-size: 0.9rem; color: #7f8c8d; margin-bottom: 15px;
+        }
+
+        .result-section {
+            background: white; border-radius: 8px; padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 15px;
+        }
+        .section-header {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 1.1rem; font-weight: 600; margin-bottom: 12px;
+            padding-bottom: 8px; border-bottom: 1px solid #eee;
+        }
+        .section-icon { font-size: 1.3rem; }
+        .section-count {
+            background: #ecf0f1; color: #7f8c8d; padding: 2px 8px;
+            border-radius: 10px; font-size: 0.8rem; font-weight: 400;
+        }
+
+        .result-item {
+            padding: 10px 12px; border-bottom: 1px solid #f5f5f5;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .result-item:last-child { border-bottom: none; }
+        .result-item:hover { background: #f9f9f9; }
+        .result-title { font-weight: 500; }
+        .result-meta { font-size: 0.8rem; color: #7f8c8d; display: flex; gap: 12px; }
+        .result-link {
+            color: #3498db; text-decoration: none; font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .result-link:hover { text-decoration: underline; }
+
+        .result-price { color: #27ae60; font-weight: 600; }
+        .result-category {
+            background: #ecf0f1; padding: 2px 8px; border-radius: 4px;
+            font-size: 0.75rem; color: #555;
+        }
+        .result-tag {
+            background: #e8f4fd; padding: 2px 6px; border-radius: 4px;
+            font-size: 0.75rem; color: #2980b9;
+        }
+        .result-status-pending { color: #f39c12; }
+        .result-status-read { color: #27ae60; }
+
+        .btn {
+            padding: 8px 16px; border: none; border-radius: 6px;
+            cursor: pointer; font-size: 0.9rem; transition: all 0.2s;
+        }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-primary:hover { background: #2980b9; }
+
+        .loading { text-align: center; padding: 40px; color: #7f8c8d; }
+        .loading::after {
+            content: ""; display: inline-block; width: 20px; height: 20px;
+            border: 2px solid #ddd; border-top-color: #3498db; border-radius: 50%;
+            animation: spin 1s linear infinite; margin-left: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state { text-align: center; padding: 60px; color: #7f8c8d; }
+        .empty-state-icon { font-size: 3rem; margin-bottom: 10px; }
+        .empty-state p { font-size: 0.9rem; }
+
+        .initial-state { text-align: center; padding: 60px; color: #95a5a6; }
+        .initial-state-icon { font-size: 4rem; margin-bottom: 15px; opacity: 0.5; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Szukaj</h1>
+                <p>Przeszukaj cala baze wiedzy</p>
+            </div>
+            <div class="header-nav">
+                <a href="/web/dictionary">Slownik</a>
+                <a href="/web/pantry">Spizarnia</a>
+                <a href="/web/receipts">Paragony</a>
+            </div>
+        </header>
+
+        <div class="search-box">
+            <div class="search-input-wrap">
+                <input type="text" id="search-input" placeholder="Wpisz szukana fraze..." autofocus>
+            </div>
+            <div class="type-filters">
+                <label class="type-filter"><input type="checkbox" value="receipt" checked> &#129534; Paragony</label>
+                <label class="type-filter"><input type="checkbox" value="article" checked> &#128240; Artykuly</label>
+                <label class="type-filter"><input type="checkbox" value="note" checked> &#128221; Notatki</label>
+                <label class="type-filter"><input type="checkbox" value="bookmark" checked> &#128278; Zakladki</label>
+                <label class="type-filter"><input type="checkbox" value="transcription" checked> &#127908; Transkrypcje</label>
+            </div>
+        </div>
+
+        <div id="results">
+            <div class="initial-state">
+                <div class="initial-state-icon">&#128269;</div>
+                <p>Wpisz fraze aby przeszukac paragony, artykuly, notatki, zakladki i transkrypcje</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        let searchTimeout;
+
+        const TYPE_CONFIG = {
+            receipt: { icon: '&#129534;', label: 'Paragony' },
+            article: { icon: '&#128240;', label: 'Artykuly' },
+            note: { icon: '&#128221;', label: 'Notatki' },
+            bookmark: { icon: '&#128278;', label: 'Zakladki' },
+            transcription: { icon: '&#127908;', label: 'Transkrypcje' },
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('search-input');
+            input.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(doSearch, 500);
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { clearTimeout(searchTimeout); doSearch(); }
+            });
+
+            document.querySelectorAll('.type-filter input').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    clearTimeout(searchTimeout);
+                    doSearch();
+                });
+            });
+        });
+
+        async function doSearch() {
+            const query = document.getElementById('search-input').value.trim();
+            const container = document.getElementById('results');
+
+            if (query.length < 2) {
+                container.innerHTML = `
+                    <div class="initial-state">
+                        <div class="initial-state-icon">&#128269;</div>
+                        <p>Wpisz co najmniej 2 znaki</p>
+                    </div>`;
+                return;
+            }
+
+            // Get selected types
+            const types = Array.from(document.querySelectorAll('.type-filter input:checked'))
+                .map(cb => cb.value);
+
+            if (!types.length) {
+                container.innerHTML = '<div class="empty-state"><p>Zaznacz co najmniej jeden typ</p></div>';
+                return;
+            }
+
+            container.innerHTML = '<div class="loading">Szukam...</div>';
+
+            try {
+                const url = `${API}/search?q=${encodeURIComponent(query)}&types=${types.join(',')}&limit=5`;
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Search failed');
+                const data = await res.json();
+                renderResults(data);
+            } catch (e) {
+                container.innerHTML = `<div class="empty-state"><p>Blad wyszukiwania: ${e.message}</p></div>`;
+            }
+        }
+
+        function renderResults(data) {
+            const container = document.getElementById('results');
+
+            if (!data.total) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#128533;</div>
+                        <p>Brak wynikow dla "${escapeHtml(data.query)}"</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="results-summary">Znaleziono ${data.total} wynikow dla "${escapeHtml(data.query)}"</div>
+            `;
+
+            const order = ['receipt', 'article', 'note', 'bookmark', 'transcription'];
+            for (const type of order) {
+                if (data.results[type] && data.results[type].length) {
+                    container.innerHTML += renderSection(type, data.results[type]);
+                }
+            }
+        }
+
+        function renderSection(type, items) {
+            const config = TYPE_CONFIG[type];
+            return `
+                <div class="result-section">
+                    <div class="section-header">
+                        <span class="section-icon">${config.icon}</span>
+                        ${config.label}
+                        <span class="section-count">${items.length}</span>
+                    </div>
+                    ${items.map(item => renderItem(type, item)).join('')}
+                </div>
+            `;
+        }
+
+        function renderItem(type, item) {
+            switch (type) {
+                case 'receipt': return renderReceipt(item);
+                case 'article': return renderArticle(item);
+                case 'note': return renderNote(item);
+                case 'bookmark': return renderBookmark(item);
+                case 'transcription': return renderTranscription(item);
+                default: return '';
+            }
+        }
+
+        function renderReceipt(item) {
+            return `
+                <div class="result-item">
+                    <div>
+                        <div class="result-title">${escapeHtml(item.name)}</div>
+                        <div class="result-meta">
+                            ${item.name_raw !== item.name ? '<span>OCR: ' + escapeHtml(item.name_raw) + '</span>' : ''}
+                            ${item.store ? '<span>' + escapeHtml(item.store) + '</span>' : ''}
+                            ${item.date ? '<span>' + item.date + '</span>' : ''}
+                            ${item.category ? '<span class="result-category">' + escapeHtml(item.category) + '</span>' : ''}
+                        </div>
+                    </div>
+                    <div>
+                        <span class="result-price">${item.price.toFixed(2)} zl</span>
+                        ${item.receipt_id ? ' <a class="result-link" href="/web/receipts" title="Otworz paragon">&#8594;</a>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderArticle(item) {
+            return `
+                <div class="result-item">
+                    <div>
+                        <div class="result-title">${escapeHtml(item.title)}</div>
+                        <div class="result-meta">
+                            ${item.published_date ? '<span>' + item.published_date + '</span>' : ''}
+                            ${item.is_summarized ? '<span class="result-category">Podsumowany</span>' : '<span class="result-status-pending">Oczekuje</span>'}
+                        </div>
+                    </div>
+                    ${item.url ? '<a class="result-link" href="' + escapeHtml(item.url) + '" target="_blank">Otworz &#8599;</a>' : ''}
+                </div>
+            `;
+        }
+
+        function renderNote(item) {
+            return `
+                <div class="result-item">
+                    <div>
+                        <div class="result-title">${escapeHtml(item.title)}</div>
+                        <div class="result-meta">
+                            ${item.category ? '<span class="result-category">' + escapeHtml(item.category) + '</span>' : ''}
+                            ${(item.tags || []).map(t => '<span class="result-tag">' + escapeHtml(t) + '</span>').join('')}
+                            ${item.created_at ? '<span>' + item.created_at.split('T')[0] + '</span>' : ''}
+                        </div>
+                        ${item.snippet ? '<div style="font-size:0.85rem;color:#666;margin-top:4px">' + escapeHtml(item.snippet) + '</div>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderBookmark(item) {
+            const statusCls = item.status === 'read' ? 'result-status-read' : 'result-status-pending';
+            return `
+                <div class="result-item">
+                    <div>
+                        <div class="result-title">${escapeHtml(item.title || item.url)}</div>
+                        <div class="result-meta">
+                            <span class="${statusCls}">${item.status}</span>
+                            ${(item.tags || []).map(t => '<span class="result-tag">' + escapeHtml(t) + '</span>').join('')}
+                        </div>
+                    </div>
+                    <a class="result-link" href="${escapeHtml(item.url)}" target="_blank">Otworz &#8599;</a>
+                </div>
+            `;
+        }
+
+        function renderTranscription(item) {
+            const duration = item.duration ? Math.round(item.duration / 60) + ' min' : '';
+            return `
+                <div class="result-item">
+                    <div>
+                        <div class="result-title">${escapeHtml(item.title || 'Transkrypcja')}</div>
+                        <div class="result-meta">
+                            <span>${escapeHtml(item.source_type || '')}</span>
+                            ${duration ? '<span>' + duration + '</span>' : ''}
+                            <span class="${item.status === 'completed' ? 'result-status-read' : 'result-status-pending'}">${item.status}</span>
+                        </div>
+                    </div>
+                    ${item.source_url ? '<a class="result-link" href="' + escapeHtml(item.source_url) + '" target="_blank">Zrodlo &#8599;</a>' : ''}
+                </div>
+            `;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

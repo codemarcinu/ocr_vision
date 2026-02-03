@@ -45,9 +45,12 @@ from app.telegram.handlers import (
     transcriptions_command,
     unsubscribe_command,
     use_command,
+    find_command,
+    settings_command,
 )
 from app.telegram.handlers.menu_articles import handle_articles_callback
 from app.telegram.handlers.menu_bookmarks import handle_bookmarks_callback
+from app.telegram.handlers.settings import handle_settings_callback
 from app.telegram.handlers.menu_notes import handle_note_text_input, handle_notes_callback
 from app.telegram.handlers.menu_receipts import handle_receipts_callback
 from app.telegram.handlers.menu_stats import handle_stats_callback
@@ -79,6 +82,7 @@ class PantryBot:
         self._callback_router.register("stats:", handle_stats_callback)
         self._callback_router.register("notes:", handle_notes_callback)
         self._callback_router.register("bookmarks:", handle_bookmarks_callback)
+        self._callback_router.register("settings:", handle_settings_callback)
 
     async def start(self) -> None:
         """Start the bot in polling mode."""
@@ -138,6 +142,8 @@ class PantryBot:
         self.application.add_handler(CommandHandler("start", self._start_command))
         self.application.add_handler(CommandHandler("help", self._help_command))
         self.application.add_handler(CommandHandler("ask", ask_command))
+        self.application.add_handler(CommandHandler("find", find_command))
+        self.application.add_handler(CommandHandler("settings", settings_command))
         self.application.add_handler(CommandHandler("q", self._quick_search_command))
         self.application.add_handler(CommandHandler("n", self._quick_note_command))
 
@@ -221,6 +227,8 @@ class PantryBot:
             "• <code>/ask &lt;pytanie&gt;</code> — zapytaj bazę wiedzy (RAG)\n"
             "• <code>/n &lt;tekst&gt;</code> — szybka notatka\n"
             "• <code>/q &lt;fraza&gt;</code> — szukaj wszędzie\n"
+            "• <code>/find &lt;fraza&gt;</code> — szukaj w bazie\n"
+            "• <code>/settings</code> — ustawienia powiadomień\n"
             "• <code>/help</code> — ta pomoc\n\n"
             "<b>Wyślij wiadomość:</b>\n"
             "• 📸 Zdjęcie → przetwarzanie paragonu\n"
