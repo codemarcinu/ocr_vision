@@ -1,6 +1,6 @@
 # Second Brain
 
-System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki. Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji. Bot Telegram z menu inline keyboard i **walidacją human-in-the-loop**.
+System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki i **baza wiedzy RAG** (zadawanie pytań do wszystkich zgromadzonych danych). Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji, **PostgreSQL + pgvector** do przechowywania danych i wyszukiwania semantycznego. Bot Telegram z menu inline keyboard i **walidacją human-in-the-loop**.
 
 ## Architektura
 
@@ -11,33 +11,27 @@ System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania 
 │  inbox/         │     │                 │     │                 │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                 │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-           ┌─────────────────┐    ┌─────────────────┐
-           │   Walidacja     │    │  Needs Review?  │
-           │   sumy          │    │    > 5 PLN      │
-           │                 │    │    > 10%        │
-           └────────┬────────┘    └────────┬────────┘
-                    │                      │
-              ┌─────┴─────┐          ┌─────┴─────┐
-              ▼           ▼          ▼           ▼
-         Auto-save    Telegram    Approve    Correct
-                      Review      as-is      total
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │     vault/      │
-                       │  - paragony/    │
-                       │  - spiżarnia.md │
-                       │  - logs/        │
-                       └─────────────────┘
+               ┌────────────────┼────────────────┐
+               ▼                ▼                ▼
+      ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐
+      │ PostgreSQL  │  │   Obsidian  │  │  pgvector RAG   │
+      │ + pgvector  │  │   vault/    │  │  embeddingi     │
+      └─────────────┘  └─────────────┘  └─────────────────┘
+
+Moduły:
+📸 OCR paragonów  → rozpoznawanie produktów i cen
+📰 RSS/Summarizer → podsumowania artykułów
+🎙️ Transkrypcje   → audio/wideo → notatki
+📝 Notatki        → osobiste notatki z tagami
+🔖 Zakładki       → saved links
+🧠 RAG            → pytania do bazy wiedzy (/ask)
 ```
 
 ## Wymagania
 
 - Docker z obsługą GPU (NVIDIA) lub CPU
 - Docker Compose
-- Modele Ollama: `minicpm-v` (opcjonalnie), `qwen2.5:7b`
+- Ollama z modelami (patrz poniżej)
 - Token bota Telegram (opcjonalnie)
 
 ## Szybki start
@@ -61,17 +55,28 @@ docker-compose up -d
 
 ```bash
 # Na hoście (Ollama musi być zainstalowane)
-ollama pull qwen2.5:7b      # Kategoryzacja + strukturyzacja OCR
-ollama pull minicpm-v       # Opcjonalnie: vision OCR backend
+ollama pull deepseek-ocr     # OCR (szybki, zalecany)
+ollama pull qwen2.5:7b       # Kategoryzacja + strukturyzacja + odpowiedzi RAG
+ollama pull qwen2.5vl:7b     # Fallback OCR (dla trudnych paragonów)
+ollama pull nomic-embed-text # Embeddingi dla bazy wiedzy RAG (274MB)
+
+# Opcjonalnie (dla polskich treści)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polski LLM
 ```
 
-### 4. Sprawdź status
+### 4. Uruchom migrację bazy danych
+
+```bash
+docker exec -it pantry-api alembic upgrade head
+```
+
+### 5. Sprawdź status
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-### 5. Przetwórz paragon
+### 6. Przetwórz paragon
 
 **Via Telegram (zalecane):**
 - Wyślij zdjęcie lub PDF do bota
@@ -83,9 +88,22 @@ curl -X POST http://localhost:8000/process-receipt \
   -F "file=@paragon.png"
 ```
 
-**Via folder:**
-- Umieść plik w `paragony/inbox/`
-- Użyj n8n workflow do automatycznego przetwarzania
+### 7. Zapytaj bazę wiedzy
+
+Po zgromadzeniu danych (paragony, artykuły, transkrypcje):
+
+**Przez Telegram:**
+```
+/ask ile wydałem w Biedronce w styczniu?
+/ask co wiem o sztucznej inteligencji?
+```
+
+**Przez API:**
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "ile wydałem w Biedronce?"}'
+```
 
 ## Human-in-the-Loop
 
@@ -116,24 +134,47 @@ Paragon → OCR → Walidacja sumy
                             └─ Odrzuć
 ```
 
-### Przykład komunikatu weryfikacji
+## Baza wiedzy (RAG)
+
+System **Retrieval-Augmented Generation** umożliwia zadawanie pytań w języku naturalnym do całej zgromadzonej wiedzy.
+
+### Jak to działa?
 
 ```
-*PARAGON WYMAGA WERYFIKACJI*
-
-*Powody:*
-  - Suma 84.50 zł różni się od sumy produktów 144.48 zł
-
-*Dane paragonu:*
-Sklep: Biedronka
-Data: 2026-01-31
-*Suma OCR: 84.50 zł*
-Suma produktów: 144.48 zł
-Różnica: -59.98 zł
-Produktów: 27
-
-[Zatwierdź] [Popraw sumę] [Odrzuć]
+Pytanie użytkownika
+    ↓
+Embed pytania (nomic-embed-text, 768 dim)
+    ↓
+pgvector cosine similarity search (top-K)
+    ↓
+Budowa kontekstu z najlepszych fragmentów
+    ↓
+LLM (qwen2.5:7b) generuje odpowiedź
+    ↓
+Odpowiedź + lista źródeł
 ```
+
+### Indeksowane typy treści
+
+| Typ | Źródło |
+|-----|--------|
+| 🧾 Paragony | Sklep, data, produkty, ceny |
+| 📰 Artykuły | Podsumowania RSS i stron |
+| 🎙️ Transkrypcje | Notatki z nagrań |
+| 📝 Notatki | Notatki osobiste |
+| 🔖 Zakładki | Zapisane linki |
+
+### Auto-indeksowanie
+
+Nowe treści są automatycznie indeksowane w momencie tworzenia. Przy pierwszym uruchomieniu z pustą bazą embeddingów system automatycznie uruchamia pełną reindeksację w tle.
+
+### API RAG
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/ask` | POST | Zadaj pytanie (`{"question": "..."}`) |
+| `/ask/stats` | GET | Statystyki indeksu |
+| `/ask/reindex` | POST | Pełna reindeksacja (w tle) |
 
 ## Telegram Bot - Komendy
 
@@ -158,10 +199,15 @@ Produktów: 27
 | `/summarize <URL>` | Podsumuj stronę internetową |
 | `/refresh` | Pobierz nowe artykuły |
 | `/articles` | Lista ostatnich artykułów |
+| `/transcribe <URL>` | Transkrybuj YouTube |
+| `/transcribe` + audio | Transkrybuj przesłany plik |
+| `/transcriptions` | Lista transkrypcji |
+| `/note <ID>` | Notatka z transkrypcji |
+| `/ask <pytanie>` | Zapytaj bazę wiedzy (RAG) |
 
 ## RSS/Web Summarizer
 
-System zawiera także agenta do subskrypcji kanałów RSS i podsumowywania stron internetowych.
+System zawiera agenta do subskrypcji kanałów RSS i podsumowywania stron internetowych.
 
 ### Funkcje
 
@@ -169,17 +215,7 @@ System zawiera także agenta do subskrypcji kanałów RSS i podsumowywania stron
 - **Podsumowania na żądanie** - `/summarize <URL>` generuje bullet points
 - **Auto-fetch** - cykliczne pobieranie nowych artykułów (co 4h)
 - **Zapis do Obsidian** - podsumowania w `vault/summaries/`
-
-### Komendy RSS
-
-| Komenda | Opis |
-|---------|------|
-| `/feeds` | Lista subskrybowanych kanałów |
-| `/subscribe <URL>` | Dodaj kanał RSS/Atom |
-| `/unsubscribe <ID>` | Usuń kanał |
-| `/summarize <URL>` | Podsumuj stronę internetową |
-| `/refresh` | Ręczne pobranie artykułów |
-| `/articles [feed_id]` | Lista ostatnich artykułów |
+- **Auto-indeksowanie RAG** - nowe artykuły automatycznie trafiają do bazy wiedzy
 
 ### API RSS
 
@@ -190,105 +226,127 @@ System zawiera także agenta do subskrypcji kanałów RSS i podsumowywania stron
 | `/rss/summarize` | POST | Podsumuj URL |
 | `/rss/articles` | GET | Lista artykułów |
 
+## Transkrypcje audio/wideo
+
+Agent do transkrypcji nagrań (YouTube, pliki lokalne) z generowaniem notatek.
+
+### Funkcje
+
+- **YouTube** - automatyczne pobieranie i transkrypcja filmów
+- **Pliki audio** - MP3, M4A, WAV, OGG, OPUS
+- **Faster-Whisper** - GPU-accelerated transkrypcja
+- **Notatki AI** - podsumowanie, tematy, encje, zadania
+- **Auto-indeksowanie RAG** - transkrypcje automatycznie w bazie wiedzy
+
+### API transkrypcji
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/transcription/jobs` | GET/POST | Lista/tworzenie zadań |
+| `/transcription/jobs/upload` | POST | Upload pliku |
+| `/transcription/jobs/{id}/note` | GET | Pobranie notatki |
+| `/transcription/jobs/{id}/generate-note` | POST | Generowanie notatki |
+
+## Notatki i zakładki
+
+### Notatki osobiste
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/notes/` | GET | Lista notatek |
+| `/notes/` | POST | Utwórz notatkę |
+| `/notes/{id}` | GET/PUT/DELETE | CRUD notatki |
+
+### Zakładki
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/bookmarks/` | GET | Lista zakładek |
+| `/bookmarks/` | POST | Dodaj zakładkę |
+| `/bookmarks/{id}` | GET/PUT/DELETE | CRUD zakładki |
+
 ## Struktura projektu
 
 ```
 OCR_V2/
-├── docker-compose.yml      # Konfiguracja serwisów
+├── docker-compose.yml      # Konfiguracja serwisów (pgvector/pgvector:pg16)
 ├── Dockerfile              # Build FastAPI
-├── requirements.txt        # Zależności Python
+├── requirements.txt        # Zależności Python (w tym pgvector)
 ├── app/
-│   ├── main.py             # Endpointy FastAPI + walidacja
+│   ├── main.py             # Endpointy FastAPI + walidacja + startup RAG
+│   ├── config.py           # Konfiguracja (w tym RAG settings)
+│   ├── models.py           # Modele Pydantic (Receipt, Product)
+│   ├── dependencies.py     # FastAPI DI (w tym EmbeddingRepoDep)
 │   ├── ocr.py              # Vision OCR backend
-│   ├── paddle_ocr.py       # PaddleOCR + LLM backend (zalecany)
+│   ├── deepseek_ocr.py     # DeepSeek OCR backend (zalecany)
 │   ├── classifier.py       # Kategoryzacja (qwen2.5:7b)
 │   ├── obsidian_writer.py  # Generowanie markdown
-│   ├── pdf_converter.py    # Konwersja PDF → PNG
-│   ├── models.py           # Modele Pydantic (Receipt, Product)
-│   ├── config.py           # Konfiguracja
-│   ├── rss_fetcher.py      # Pobieranie feedów RSS/Atom
-│   ├── web_scraper.py      # Ekstrakcja treści ze stron
-│   ├── summarizer.py       # Podsumowania LLM
-│   ├── summary_writer.py   # Zapis podsumowań do Obsidian
-│   ├── rss_api.py          # Endpointy API dla RSS
-│   ├── dictionaries/       # Normalizacja nazw produktów/sklepów
-│   │   ├── products.json
-│   │   └── stores.json
+│   ├── ask_api.py          # RAG API (/ask, /ask/stats, /ask/reindex)
+│   ├── notes_api.py        # Notatki API
+│   ├── bookmarks_api.py    # Zakładki API
+│   ├── rss_api.py          # RSS API
+│   ├── transcription_api.py # Transkrypcje API
+│   ├── rag/                # Baza wiedzy RAG
+│   │   ├── embedder.py     # Embeddingi via Ollama /api/embed
+│   │   ├── indexer.py      # Chunking + embedding + storage
+│   │   ├── retriever.py    # Vector search + keyword fallback
+│   │   ├── answerer.py     # LLM answer generation (PL/EN)
+│   │   └── hooks.py        # Auto-indexing hooks
 │   ├── db/
+│   │   ├── models.py       # SQLAlchemy ORM (w tym DocumentEmbedding)
 │   │   └── repositories/
-│   │       └── rss.py      # Repository dla RSS/artykułów
-│   └── telegram/
-│       ├── bot.py          # Główna klasa bota + review callbacks
-│       ├── middleware.py   # Autoryzacja
-│       ├── keyboards.py    # Klawiatury inline (w tym review)
-│       ├── formatters.py   # Formatowanie wiadomości
-│       ├── rss_scheduler.py # Scheduler auto-fetch RSS
-│       └── handlers/       # Handlery komend
-│           ├── receipts.py # Zdjęcia/PDF + review flow
-│           ├── pantry.py   # Spiżarnia
-│           ├── stats.py    # Statystyki
-│           ├── errors.py   # Błędy
-│           └── feeds.py    # Komendy RSS/Summarizer
+│   │       ├── embeddings.py # pgvector repository
+│   │       ├── receipts.py
+│   │       ├── rss.py
+│   │       └── ...
+│   ├── transcription/      # Transkrypcje Whisper
+│   │   ├── transcriber.py
+│   │   ├── downloader.py
+│   │   └── extractor.py
+│   ├── telegram/
+│   │   ├── bot.py          # Główna klasa bota + review callbacks
+│   │   ├── handlers/
+│   │   │   ├── ask.py      # /ask command (RAG)
+│   │   │   ├── receipts.py # Zdjęcia/PDF + review flow
+│   │   │   ├── feeds.py    # RSS commands
+│   │   │   ├── transcription.py
+│   │   │   └── ...
+│   │   └── rss_scheduler.py
+│   └── dictionaries/       # Normalizacja produktów/sklepów
+├── alembic/                # Migracje bazy danych
+│   └── versions/
+│       ├── 001_initial.py
+│       ├── ...
+│       └── 004_add_rag_embeddings.py
 ├── paragony/
 │   ├── inbox/              # Folder monitorowany
 │   └── processed/          # Archiwum
 └── vault/
     ├── paragony/           # Historia paragonów (.md)
     ├── summaries/          # Podsumowania artykułów (.md)
-    ├── logs/
-    │   └── ocr-errors.md   # Log błędów
-    └── spiżarnia.md        # Agregowany widok
+    └── logs/               # Logi i feedback
 ```
 
-## API
+## Konfiguracja
 
-### `GET /health`
+Zmienne środowiskowe (w `docker-compose.yml` lub `.env`):
 
-Sprawdza status serwisów.
+| Zmienna | Domyślnie | Opis |
+|---------|-----------|------|
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | URL Ollama API |
+| `OCR_MODEL` | `deepseek-ocr` | Model OCR |
+| `OCR_BACKEND` | `deepseek` | `deepseek`, `vision`, lub `paddle` |
+| `CLASSIFIER_MODEL` | `qwen2.5:7b` | Model kategoryzacji |
+| `RAG_ENABLED` | `true` | Włącz/wyłącz bazę wiedzy RAG |
+| `EMBEDDING_MODEL` | `nomic-embed-text` | Model embeddingów |
+| `RAG_AUTO_INDEX` | `true` | Auto-indeksowanie nowej treści |
+| `RAG_TOP_K` | `5` | Ilość fragmentów do wyszukania |
+| `ASK_MODEL` | `` | Model LLM dla /ask (pusty = CLASSIFIER_MODEL) |
+| `TELEGRAM_BOT_TOKEN` | - | Token bota Telegram |
+| `TELEGRAM_CHAT_ID` | `0` | ID chatu (0 = wszyscy) |
+| `BOT_ENABLED` | `true` | Włącz/wyłącz bota |
 
-**Odpowiedź:**
-```json
-{
-  "status": "healthy",
-  "ollama_available": true,
-  "ocr_model_loaded": true,
-  "classifier_model_loaded": true,
-  "inbox_path": "/data/paragony/inbox",
-  "vault_path": "/data/vault"
-}
-```
-
-### `POST /process-receipt`
-
-Przetwarza paragon (zdjęcie lub PDF).
-
-**Request:**
-- `file`: Plik obrazu (PNG, JPG, JPEG, WEBP) lub PDF
-
-**Odpowiedź:**
-```json
-{
-  "success": true,
-  "needs_review": false,
-  "receipt": {
-    "products": [
-      {"nazwa": "Mleko 3.2% 1L", "cena": 4.99, "kategoria": "Nabiał"}
-    ],
-    "sklep": "Biedronka",
-    "data": "2026-01-31",
-    "suma": 144.48,
-    "calculated_total": 144.48,
-    "needs_review": false,
-    "review_reasons": []
-  },
-  "source_file": "paragon.png",
-  "output_file": "/data/vault/paragony/2026-01-31_paragon.md"
-}
-```
-
-### `POST /reprocess/{filename}`
-
-Ponowne przetwarzanie pliku z inbox lub processed.
+Pełna lista zmiennych: patrz [CLAUDE.md](CLAUDE.md#environment-variables).
 
 ## Prompty per sklep
 
@@ -305,90 +363,45 @@ System automatycznie wykrywa sklep i używa dedykowanego promptu LLM:
 | **Netto** | Prosty format jak Żabka |
 | **Dino** | Nazwy wielkimi literami |
 
-Prompty znajdują się w `app/store_prompts.py`. Każdy prompt zawiera:
-- Dokładny opis formatu paragonu danego sklepu
-- Jak identyfikować cenę końcową (po rabacie)
-- Co ignorować (VAT, PTU, kaucje)
-- Przykłady ekstrakcji
+## API
 
-## Wielostronicowe PDF
+### `GET /health`
 
-System prawidłowo obsługuje paragony rozłożone na wiele stron:
+Sprawdza status serwisów.
 
-1. PDF jest konwertowany na osobne obrazy PNG
-2. Każda strona jest przetwarzana przez OCR
-3. Produkty ze wszystkich stron są **łączone**
-4. Tekst ze wszystkich stron jest **scalany** do ekstrakcji sumy
-5. Informacja o płatności (np. "Karta płatnicza 144.48") zwykle na ostatniej stronie
-6. Walidacja sumy względem sumy produktów
-7. Jeśli rozbieżność > 5 PLN lub > 10% → review
+### `POST /process-receipt`
 
-## Konfiguracja
+Przetwarza paragon (zdjęcie lub PDF).
 
-Zmienne środowiskowe (w `docker-compose.yml` lub `.env`):
+### `POST /ask`
 
-| Zmienna | Domyślnie | Opis |
-|---------|-----------|------|
-| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | URL Ollama API |
-| `OCR_MODEL` | `minicpm-v` | Model vision (dla OCR_BACKEND=vision) |
-| `OCR_BACKEND` | `paddle` | `paddle` (szybki) lub `vision` (LLM) |
-| `CLASSIFIER_MODEL` | `qwen2.5:7b` | Model kategoryzacji |
-| `TELEGRAM_BOT_TOKEN` | - | Token bota Telegram |
-| `TELEGRAM_CHAT_ID` | `0` | ID chatu (0 = wszyscy) |
-| `BOT_ENABLED` | `true` | Włącz/wyłącz bota |
+Zadaj pytanie do bazy wiedzy.
 
-## Walidacja
-
-- **Suma vs produkty**: różnica > 5 PLN lub > 10% → wymaga review
-- **Cena > 100 zł**: flaga `⚠️` (możliwy błąd OCR)
-- **Brak daty**: fallback do timestamp pliku
-- **OCR fail**: `ERROR.md` + wpis w `ocr-errors.md`
-
-## Rozwiązywanie problemów
-
-### Paragon zawsze wymaga weryfikacji
-
-Sprawdź czy OCR prawidłowo ekstrahuje sumę:
-```bash
-docker logs -f pantry-api | grep -i "total\|suma\|extracted"
+**Request:**
+```json
+{"question": "ile wydałem w Biedronce w styczniu?"}
 ```
 
-Progi walidacji można dostosować w `app/main.py` i `app/telegram/handlers/receipts.py`.
-
-### Wielostronicowy PDF pokazuje złą sumę
-
-- Upewnij się, że informacja o płatności jest na ostatniej stronie
-- System szuka wzorców: "Karta płatnicza", "Gotówka", "DO ZAPŁATY"
-- Użyj weryfikacji Telegram do ręcznej korekty
-
-### Dane review wygasły w Telegram
-
-- Dane są przechowywane w `context.user_data`
-- Mogą wygasnąć po restarcie bota
-- Rozwiązanie: `/reprocess <nazwa_pliku>`
-
-### Ollama nie odpowiada
-
-```bash
-# Sprawdź czy Ollama działa
-ollama list
-ollama ps
-
-# Sprawdź logi
-docker logs pantry-api
+**Odpowiedź:**
+```json
+{
+  "answer": "Na podstawie paragonów...",
+  "sources": [
+    {"content_type": "receipt", "label": "Paragon: Biedronka | 2026-01-05"}
+  ],
+  "model_used": "qwen2.5:7b",
+  "chunks_found": 5,
+  "processing_time_sec": 2.3
+}
 ```
 
-### Błędy OCR
+### `GET /ask/stats`
 
-Sprawdź log: `vault/logs/ocr-errors.md`
+Statystyki indeksu embeddingów (ilość per typ treści).
 
-```bash
-# Ponowne przetwarzanie
-curl -X POST http://localhost:8000/reprocess/paragon.png
+### `POST /ask/reindex`
 
-# Lub przez Telegram
-/reprocess paragon.png
-```
+Pełna reindeksacja całej bazy wiedzy (uruchamiana w tle).
 
 ## Monitorowanie
 
@@ -401,3 +414,9 @@ http://localhost:3100   # Loki
 ```
 
 Metryki FastAPI: `GET /metrics`
+
+## Dokumentacja
+
+- [docs/QUICK_START.md](docs/QUICK_START.md) - Szybki start
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - Przewodnik użytkownika
+- [CLAUDE.md](CLAUDE.md) - Pełna dokumentacja techniczna

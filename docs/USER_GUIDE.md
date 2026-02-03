@@ -1,26 +1,29 @@
 # Second Brain - Przewodnik Użytkownika
 
-> Inteligentny system śledzenia zakupów i zarządzania spiżarnią
+> Inteligentny system zarządzania wiedzą osobistą
 
 ---
 
 ## Spis treści
 
-1. [Co to jest Second Brain?](#co-to-jest-smart-pantry-tracker)
+1. [Co to jest Second Brain?](#co-to-jest-second-brain)
 2. [Jak zacząć?](#jak-zacząć)
 3. [Codzienne użycie](#codzienne-użycie)
 4. [Weryfikacja paragonów](#weryfikacja-paragonów)
 5. [Przeglądanie danych](#przeglądanie-danych)
 6. [Obsługiwane sklepy](#obsługiwane-sklepy)
 7. [RSS i podsumowania stron](#rss-i-podsumowania-stron)
-8. [Słownik produktów](#słownik-produktów)
-9. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
+8. [Transkrypcje audio/wideo](#transkrypcje-audiowideo)
+9. [Baza wiedzy (RAG)](#baza-wiedzy-rag)
+10. [Notatki osobiste](#notatki-osobiste)
+11. [Słownik produktów](#słownik-produktów)
+12. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
 
 ---
 
 ## Co to jest Second Brain?
 
-Second Brain to **inteligentny asystent zakupowy**, który:
+Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
 
 | Funkcja | Opis |
 |---------|------|
@@ -29,25 +32,23 @@ Second Brain to **inteligentny asystent zakupowy**, który:
 | Zapamiętuje | Przechowuje historię wszystkich zakupów |
 | Analizuje | Pokazuje statystyki wydatków i trendy cenowe |
 | Zarządza spiżarnią | Śledzi co masz w domu |
+| Podsumowuje artykuły | Śledzi kanały RSS i generuje podsumowania |
+| Transkrybuje | Zamienia nagrania audio/wideo na tekst i notatki |
+| Odpowiada na pytania | Przeszukuje całą bazę wiedzy i generuje odpowiedzi (RAG) |
+| Notatki | Osobiste notatki z tagami i kategoriami |
 
 ### Jak to działa?
 
 ```
-📸 Zdjęcie paragonu
+📸 Zdjęcie paragonu / 🔗 Link / 🎙️ Nagranie / 📝 Notatka
         ↓
-🤖 AI odczytuje tekst
+🤖 AI przetwarza treść
         ↓
-🏪 Rozpoznaje sklep
+💾 Zapis do bazy danych + Obsidian
         ↓
-📋 Wyciąga produkty i ceny
+🧠 Automatyczne indeksowanie w bazie wiedzy (RAG)
         ↓
-🔍 Sprawdza poprawność
-        ↓
-   ┌────┴────┐
-   │         │
-  OK       Wątpliwości
-   ↓         ↓
-💾 Zapisz   📱 Zapytaj użytkownika
+❓ Możesz zadawać pytania: /ask co wiem o mleku?
 ```
 
 ---
@@ -177,6 +178,7 @@ Wpisz w rozmowie z botem:
 | `/pantry` | Zawartość spiżarni |
 | `/search mleko` | Szukaj produktu "mleko" |
 | `/pending` | Paragony czekające na weryfikację |
+| `/ask <pytanie>` | Zapytaj bazę wiedzy (patrz sekcja [RAG](#baza-wiedzy-rag)) |
 
 ### Przykładowe statystyki
 
@@ -330,11 +332,6 @@ System automatycznie sprawdza kanały RSS co **4 godziny** i pobiera nowe artyku
 
 Wszystkie podsumowania są zapisywane w folderze `vault/summaries/` jako pliki markdown. Możesz je przeglądać w Obsidian lub dowolnym edytorze tekstu.
 
-**Przykładowy plik:**
-```
-vault/summaries/2026-02-02_example-article.md
-```
-
 ### Obsługiwane formaty
 
 | Format | Przykład |
@@ -342,6 +339,175 @@ vault/summaries/2026-02-02_example-article.md
 | RSS 2.0 | Większość blogów i serwisów |
 | Atom | Blogi na Bloggerze, niektóre serwisy |
 | Strony HTML | Dowolna strona z `/summarize` |
+
+---
+
+## Transkrypcje audio/wideo
+
+System umożliwia **transkrypcję nagrań audio i wideo** (w tym filmów z YouTube) oraz automatyczne generowanie notatek z kluczowymi informacjami.
+
+### Co to robi?
+
+| Funkcja | Opis |
+|---------|------|
+| 🎬 YouTube | Transkrybuje filmy z YouTube (z URL) |
+| 🎙️ Pliki audio | Transkrybuje przesłane pliki (MP3, M4A, WAV, OGG, OPUS) |
+| 📝 Notatki | AI generuje podsumowanie, tematy, encje i zadania do wykonania |
+| 💾 Obsidian | Notatki zapisywane w `transcriptions/` |
+
+### Jak używać?
+
+#### Transkrypcja filmu z YouTube
+
+W Telegram wpisz:
+```
+/transcribe https://youtube.com/watch?v=abc123
+```
+
+Bot pobierze film, transkrybuje go i wygeneruje notatkę:
+```
+🎙️ Transkrypcja zakończona
+
+📹 Tytuł: Interesujący film o AI
+📺 Kanał: Tech Channel
+⏱️ Czas: 45:00
+🗣️ Język: polski
+📊 Słów: 8,500
+
+📝 Notatka wygenerowana automatycznie.
+Użyj /note <ID> aby zobaczyć.
+```
+
+#### Transkrypcja pliku audio
+
+Wyślij plik audio (MP3, M4A, WAV, OGG, OPUS) do bota - system automatycznie go transkrybuje.
+
+### Komendy transkrypcji
+
+| Komenda | Co robi |
+|---------|---------|
+| `/transcribe <URL>` | Transkrybuj film z YouTube |
+| `/transcribe` + plik audio | Transkrybuj przesłany plik |
+| `/transcriptions` | Lista ostatnich transkrypcji |
+| `/note <ID>` | Pokaż wygenerowaną notatkę |
+
+### Notatki z transkrypcji
+
+Automatycznie generowana notatka zawiera:
+
+- **Podsumowanie** - krótki opis treści
+- **Główne tematy** - lista omawianych zagadnień
+- **Kluczowe punkty** - najważniejsze informacje
+- **Encje** - wspomniane osoby, firmy, produkty
+- **Zadania do wykonania** - jeśli w nagraniu pojawiły się akcje do podjęcia
+
+---
+
+## Baza wiedzy (RAG)
+
+System posiada **inteligentną bazę wiedzy**, która pozwala zadawać pytania w języku naturalnym dotyczące wszystkich zgromadzonych danych: paragonów, artykułów, transkrypcji, notatek i zakładek.
+
+### Jak to działa?
+
+```
+❓ Pytanie: "Ile wydałem w Biedronce w styczniu?"
+        ↓
+🔍 Przeszukanie bazy wiedzy (embeddingi + pgvector)
+        ↓
+📚 Znalezienie najlepszych fragmentów
+        ↓
+🤖 AI generuje odpowiedź na podstawie Twoich danych
+        ↓
+🧠 Odpowiedź z listą źródeł
+```
+
+### Jak używać?
+
+W Telegram wpisz `/ask` i zadaj pytanie:
+
+```
+/ask ile wydałem w Biedronce w styczniu?
+```
+
+Bot odpowie:
+```
+🧠 Odpowiedź:
+
+Na podstawie paragonów ze stycznia, w Biedronce wydałeś
+łącznie 892.45 zł w 12 wizytach. Najczęściej kupowane
+produkty to mleko (4.99 zł), chleb (5.49 zł) i jabłka...
+
+📚 Źródła:
+  🧾 Paragon: Biedronka | 2026-01-05 | 78.50 zł
+  🧾 Paragon: Biedronka | 2026-01-12 | 92.30 zł
+  🧾 Paragon: Biedronka | 2026-01-19 | 65.40 zł
+
+⏱️ 2.3s | 📊 5 fragmentów | 🤖 qwen2.5:7b
+```
+
+### Przykłady pytań
+
+| Pytanie | Co wyszuka |
+|---------|------------|
+| `/ask ile wydałem w Biedronce?` | Paragony z Biedronki |
+| `/ask co wiem o sztucznej inteligencji?` | Artykuły, transkrypcje, notatki o AI |
+| `/ask jakie produkty kupuję najczęściej?` | Analiza paragonów |
+| `/ask co mówił prelegent o bezpieczeństwie?` | Transkrypcje wykładów |
+| `/ask jakie artykuły czytałem o Pythonie?` | Podsumowania RSS |
+
+### Jakie dane są przeszukiwane?
+
+| Typ danych | Źródło |
+|------------|--------|
+| 🧾 Paragony | Sklepy, daty, produkty, ceny |
+| 📰 Artykuły | Podsumowania RSS i stron |
+| 🎙️ Transkrypcje | Notatki z nagrań audio/wideo |
+| 📝 Notatki | Osobiste notatki |
+| 🔖 Zakładki | Zapisane linki z opisami |
+
+### Automatyczne indeksowanie
+
+Nowe treści są **automatycznie** dodawane do bazy wiedzy zaraz po ich utworzeniu. Nie musisz nic robić - system sam indeksuje nowe paragony, artykuły, transkrypcje i notatki.
+
+### API (zaawansowane)
+
+Baza wiedzy dostępna jest również przez REST API:
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/ask` | POST | Zadaj pytanie (JSON: `{"question": "..."}`) |
+| `/ask/stats` | GET | Statystyki indeksu |
+| `/ask/reindex` | POST | Pełna reindeksacja |
+
+---
+
+## Notatki osobiste
+
+System umożliwia tworzenie i zarządzanie **notatkami osobistymi** z tagami i kategoriami.
+
+### Jak używać?
+
+Notatki tworzy się przez REST API:
+
+```bash
+curl -X POST http://localhost:8000/notes/ \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Moja notatka", "content": "Treść notatki...", "tags": ["ważne"]}'
+```
+
+### Gdzie znajdę notatki?
+
+Notatki zapisywane są w folderze `notes/` jako pliki Markdown oraz w bazie danych PostgreSQL.
+
+### API notatek
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/notes/` | GET | Lista notatek (z wyszukiwaniem i filtrami) |
+| `/notes/` | POST | Utwórz nową notatkę |
+| `/notes/{id}` | GET | Pobierz notatkę |
+| `/notes/{id}` | PUT | Zaktualizuj notatkę |
+| `/notes/{id}` | DELETE | Usuń notatkę |
 
 ---
 
@@ -377,15 +543,16 @@ Jeśli system **nie rozpozna** produktu:
 
 ### Czy moje dane są bezpieczne?
 
-✅ **Tak.** Wszystkie dane są przechowywane **lokalnie** na Twoim komputerze. Nic nie jest wysyłane do chmury ani zewnętrznych serwisów.
+✅ **Tak.** Wszystkie dane są przechowywane **lokalnie** na Twoim komputerze. Modele AI działają lokalnie przez Ollama. Nic nie jest wysyłane do chmury ani zewnętrznych serwisów.
 
 ### Czy potrzebuję internetu?
 
 Potrzebujesz internetu tylko do:
 - Komunikacji przez Telegram
 - Pierwszego pobrania modeli AI
+- Pobierania artykułów RSS i transkrypcji z YouTube
 
-Po skonfigurowaniu system działa lokalnie.
+Po skonfigurowaniu przetwarzanie paragonów i pytania do bazy wiedzy działają w pełni lokalnie.
 
 ### Ile czasu zajmuje przetworzenie paragonu?
 
@@ -394,6 +561,10 @@ Po skonfigurowaniu system działa lokalnie.
 | Krótki (do 10 produktów) | ~30-60 sekund |
 | Średni (10-30 produktów) | ~1-2 minuty |
 | Długi (30+ produktów) | ~2-4 minuty |
+
+### Ile czasu zajmuje odpowiedź na pytanie (/ask)?
+
+Zwykle 2-5 sekund - zależy od liczby fragmentów do przeszukania i wydajności GPU.
 
 ### Co jeśli paragon jest nieczytelny?
 
@@ -410,6 +581,44 @@ Skontaktuj się z administratorem lub użyj komendy:
 ```
 /delete [nazwa_pliku]
 ```
+
+### Baza wiedzy nie zwraca wyników
+
+Jeśli `/ask` nie znajduje odpowiedzi:
+1. Upewnij się, że dane zostały zindeksowane (sprawdź: `curl http://localhost:8000/ask/stats`)
+2. Jeśli indeks jest pusty, uruchom reindeksację: `curl -X POST http://localhost:8000/ask/reindex`
+3. Spróbuj zadać pytanie innymi słowami
+
+---
+
+## Wszystkie komendy Telegram
+
+| Komenda | Opis |
+|---------|------|
+| `/help` | Pokaż pomoc |
+| `/recent [N]` | Ostatnie N paragonów |
+| `/pending` | Paragony do weryfikacji |
+| `/reprocess <plik>` | Ponowne przetwarzanie |
+| `/pantry [kategoria]` | Zawartość spiżarni |
+| `/use <produkt>` | Oznacz jako zużyty |
+| `/remove <produkt>` | Usuń ze spiżarni |
+| `/search <fraza>` | Szukaj produktu |
+| `/stats [week/month]` | Statystyki wydatków |
+| `/stores` | Wydatki wg sklepów |
+| `/categories` | Wydatki wg kategorii |
+| `/rabaty` | Raport rabatów |
+| `/errors` | Lista błędów OCR |
+| `/clearerrors` | Wyczyść błędy |
+| `/feeds` | Lista kanałów RSS |
+| `/subscribe <URL>` | Dodaj kanał RSS |
+| `/unsubscribe <ID>` | Usuń kanał RSS |
+| `/summarize <URL>` | Podsumuj stronę |
+| `/refresh` | Pobierz nowe artykuły |
+| `/articles [feed_id]` | Lista artykułów |
+| `/transcribe <URL>` | Transkrybuj YouTube |
+| `/transcriptions` | Lista transkrypcji |
+| `/note <ID>` | Notatka z transkrypcji |
+| `/ask <pytanie>` | Zapytaj bazę wiedzy |
 
 ---
 

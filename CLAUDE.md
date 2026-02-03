@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Second Brain - personal knowledge management system with multiple modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, and bookmarks. Uses Ollama LLMs for extraction and categorization, **PostgreSQL database** for persistence, and outputs to Obsidian markdown files. Includes a Telegram bot with inline menu navigation and **human-in-the-loop validation**.
+Second Brain - personal knowledge management system with multiple modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, and **RAG knowledge base** (ask questions about all your data). Uses Ollama LLMs for extraction and categorization, **PostgreSQL + pgvector** for persistence and semantic search, and outputs to Obsidian markdown files. Includes a Telegram bot with inline menu navigation and **human-in-the-loop validation**.
 
 ## Build & Run Commands
 
@@ -305,6 +305,7 @@ class Product(BaseModel):
 | `/transcribe` + audio | Transcribe uploaded file |
 | `/transcriptions` | List recent transcriptions |
 | `/note <ID>` | Generate note from transcription |
+| `/ask <question>` | Query RAG knowledge base |
 
 ### JSON Import via Telegram
 
@@ -649,6 +650,55 @@ class DiscountDetail(BaseModel):
     opis: str       # "Rabat", "Promocja", "Zniżka", "Upust"
 ```
 
+### RAG Knowledge Base (`app/rag/`)
+
+Retrieval-Augmented Generation system for querying the knowledge base (articles, transcriptions, receipts, notes, bookmarks) via natural language.
+
+**Architecture:**
+```
+Question (/ask or POST /ask)
+  → Embed query via Ollama /api/embed (nomic-embed-text, 768 dim)
+  → pgvector cosine similarity search (top-K)
+  → Build context from best chunks
+  → LLM generates answer with source citations
+  → Return answer + sources list
+```
+
+**Key files:**
+- `app/rag/embedder.py` - Embedding generation via Ollama `/api/embed`
+- `app/rag/indexer.py` - Content chunking, embedding, and storage pipeline
+- `app/rag/retriever.py` - Vector search with pg_trgm keyword fallback
+- `app/rag/answerer.py` - RAG answer generation with bilingual prompts (PL/EN)
+- `app/rag/hooks.py` - Fire-and-forget indexing hooks for content creation flows
+- `app/db/repositories/embeddings.py` - pgvector repository (cosine search, keyword fallback, stats)
+- `app/ask_api.py` - REST API (`POST /ask`, `GET /ask/stats`, `POST /ask/reindex`)
+- `app/telegram/handlers/ask.py` - Telegram `/ask` command handler
+
+**Database model (`app/db/models.py`):**
+- `DocumentEmbedding` - Chunked embeddings (content_type, content_id, chunk_index, text_chunk, embedding Vector(768), metadata_ JSONB)
+
+**API endpoints (`/ask/*`):**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/ask` | POST | Query knowledge base with natural language |
+| `/ask/stats` | GET | Embedding index statistics per content type |
+| `/ask/reindex` | POST | Full background reindexation of all content |
+
+**Auto-indexing:** New content is automatically indexed via hooks in:
+- `app/notes_api.py` - after note creation
+- `app/bookmarks_api.py` - after bookmark creation
+- `app/rss_api.py` - after on-demand summarization
+- `app/telegram/rss_scheduler.py` - after auto-fetch articles
+- `app/transcription_api.py` - after note generation (both endpoints)
+
+**Startup behavior:** If embeddings table is empty on startup, triggers background `reindex_all()`.
+
+**Content types indexed:** article, transcription, receipt, note, bookmark
+
+**Chunking:** Sentence-boundary splitting with configurable size (RAG_CHUNK_SIZE=1500) and overlap (RAG_CHUNK_OVERLAP=200). Each chunk gets a contextual header (store/date/title).
+
+**Search strategy:** Vector search (pgvector cosine `<=>`) with automatic keyword fallback (pg_trgm ILIKE) when too few high-score results.
+
 ### Environment Variables
 
 ```bash
@@ -710,6 +760,17 @@ MAPREDUCE_CHUNK_SIZE=10000                          # Chunk size in characters
 MAPREDUCE_OVERLAP=1000                              # Overlap between chunks
 MAPREDUCE_THRESHOLD=15000                           # Use map-reduce above this length
 MAPREDUCE_MAX_CHUNKS=30                             # Safety limit (prevents OOM)
+
+# RAG (Retrieval-Augmented Generation)
+RAG_ENABLED=true                                    # Enable/disable RAG system
+EMBEDDING_MODEL=nomic-embed-text                    # Ollama embedding model
+EMBEDDING_DIMENSIONS=768                            # Embedding vector dimensions
+ASK_MODEL=                                          # Empty = use CLASSIFIER_MODEL
+RAG_TOP_K=5                                         # Number of chunks to retrieve
+RAG_CHUNK_SIZE=1500                                 # Chunk size for indexing (chars)
+RAG_CHUNK_OVERLAP=200                               # Overlap between chunks (chars)
+RAG_MIN_SCORE=0.3                                   # Min cosine similarity threshold
+RAG_AUTO_INDEX=true                                 # Auto-index new content
 ```
 
 ## Ollama Models Required
@@ -725,6 +786,9 @@ ollama pull qwen2.5vl:7b    # OCR extraction (6GB, requires num_ctx=4096)
 
 # RSS/Summarizer (Polish content)
 ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM for summaries (7GB)
+
+# RAG embeddings
+ollama pull nomic-embed-text  # Embedding model for RAG (274MB)
 ```
 
 Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30m by default). Set `UNLOAD_MODELS_AFTER_USE=true` for low VRAM systems.
