@@ -30,5 +30,7 @@ lxml>=5.0.0
 validators>=0.22.0
 # Transcription Agent
 faster-whisper>=1.0.0
+# RAG - pgvector for semantic search
+pgvector>=0.2.5
 yt-dlp>=2024.1.0
 mutagen>=1.47.0
