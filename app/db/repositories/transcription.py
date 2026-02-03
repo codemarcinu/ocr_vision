@@ -20,8 +20,15 @@ class TranscriptionJobRepository(BaseRepository[TranscriptionJob]):
         super().__init__(session, TranscriptionJob)
 
     async def get_by_url(self, url: str) -> Optional[TranscriptionJob]:
-        """Get job by source URL."""
-        stmt = select(TranscriptionJob).where(TranscriptionJob.source_url == url)
+        """Get job by source URL (with relations loaded)."""
+        stmt = (
+            select(TranscriptionJob)
+            .options(
+                selectinload(TranscriptionJob.transcription),
+                selectinload(TranscriptionJob.note),
+            )
+            .where(TranscriptionJob.source_url == url)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

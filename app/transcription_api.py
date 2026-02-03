@@ -86,6 +86,10 @@ class StatsResponse(BaseModel):
 
 def _job_to_response(job) -> TranscriptionJobResponse:
     """Convert job model to response."""
+    # Use getattr to avoid lazy loading issues in async context
+    has_transcription = getattr(job, 'transcription', None) is not None
+    has_note = getattr(job, 'note', None) is not None
+
     return TranscriptionJobResponse(
         id=str(job.id),
         source_type=job.source_type,
@@ -102,8 +106,8 @@ def _job_to_response(job) -> TranscriptionJobResponse:
         created_at=job.created_at.isoformat(),
         started_at=job.started_at.isoformat() if job.started_at else None,
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
-        has_transcription=job.transcription is not None,
-        has_note=job.note is not None,
+        has_transcription=has_transcription,
+        has_note=has_note,
     )
 
 
