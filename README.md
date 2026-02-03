@@ -1,6 +1,6 @@
-# Smart Pantry Tracker
+# Second Brain
 
-System OCR paragonów z automatycznym zarządzaniem spiżarnią. Wykorzystuje Ollama (PaddleOCR + qwen2.5:7b) do rozpoznawania produktów i kategoryzacji. Zawiera bot Telegram z **walidacją human-in-the-loop**.
+System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki. Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji. Bot Telegram z menu inline keyboard i **walidacją human-in-the-loop**.
 
 ## Architektura
 

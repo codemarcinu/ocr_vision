@@ -1,8 +1,8 @@
-# 📄 Brief Techniczny: Smart Pantry Tracker
+# 📄 Brief Techniczny: Second Brain
 
 ## 1. O produkcie
 
-**Nazwa produktu:** Smart Pantry Tracker
+**Nazwa produktu:** Second Brain
 
 **Hasło przewodnie:** Automatyczne zarządzanie domową spiżarnią przez OCR paragonów – koniec z marnowaniem jedzenia i chaotycznymi zakupami.
 

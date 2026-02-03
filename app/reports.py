@@ -1,4 +1,4 @@
-"""Reports generation for Smart Pantry Tracker."""
+"""Reports generation for Second Brain."""
 
 import logging
 import re

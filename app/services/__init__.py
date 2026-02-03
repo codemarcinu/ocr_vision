@@ -1,4 +1,4 @@
-"""Services module for Smart Pantry Tracker."""
+"""Services module for Second Brain."""
 
 from .obsidian_sync import ObsidianSyncService
 

@@ -1,7 +1,7 @@
 # Raport: Analiza Pipeline'u OCR Przetwarzania Paragonów
 
 **Data analizy:** 2026-02-01
-**Wersja systemu:** Smart Pantry Tracker v1.0.0
+**Wersja systemu:** Second Brain v1.0.0
 
 ---
 
@@ -725,7 +725,7 @@ Wykorzystać `corrections.json` do:
 
 ### 9.4 Wnioski końcowe
 
-System Smart Pantry Tracker oferuje zaawansowany pipeline przetwarzania paragonów z wieloma warstwami walidacji i normalizacji. Główne zalecenia to:
+System Second Brain oferuje zaawansowany pipeline przetwarzania paragonów z wieloma warstwami walidacji i normalizacji. Główne zalecenia to:
 
 1. **Dodanie ekstrakcji ilości** - obecnie pomijana, ważna dla produktów wagowych
 2. **Automatyczna korekta cen wagowych** - price_fixer tylko ostrzega, nie naprawia

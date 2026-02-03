@@ -1,6 +1,6 @@
 # Szybki Start
 
-> Zacznij korzystać ze Smart Pantry Tracker w 5 minut
+> Zacznij korzystać ze Second Brain w 5 minut
 
 ---
 

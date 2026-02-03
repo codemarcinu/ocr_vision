@@ -1,4 +1,4 @@
--- Smart Pantry Tracker Database Schema
+-- Second Brain Database Schema
 -- PostgreSQL 16 with pg_trgm for fuzzy matching
 
 -- Extensions

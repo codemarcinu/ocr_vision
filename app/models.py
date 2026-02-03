@@ -1,4 +1,4 @@
-"""Pydantic models for Smart Pantry Tracker."""
+"""Pydantic models for Second Brain."""
 
 from datetime import datetime
 from typing import Optional

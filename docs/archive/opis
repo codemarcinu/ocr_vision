@@ -997,7 +997,7 @@ async def call_ollama(
 async def startup_event():
     """Initialize and preload models."""
     settings.ensure_directories()
-    logger.info("Smart Pantry Tracker started")
+    logger.info("Second Brain started")
     
     if settings.PRELOAD_MODELS_ON_STARTUP:
         logger.info("Preloading models...")

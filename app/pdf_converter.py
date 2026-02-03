@@ -1,4 +1,4 @@
-"""PDF to image conversion for Smart Pantry Tracker."""
+"""PDF to image conversion for Second Brain."""
 
 import logging
 from pathlib import Path

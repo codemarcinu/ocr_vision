@@ -1,4 +1,4 @@
-"""Telegram bot package for Smart Pantry Tracker."""
+"""Telegram bot package for Second Brain."""
 
 from app.telegram.bot import bot
 

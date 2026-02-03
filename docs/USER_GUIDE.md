@@ -1,4 +1,4 @@
-# Smart Pantry Tracker - Przewodnik Użytkownika
+# Second Brain - Przewodnik Użytkownika
 
 > Inteligentny system śledzenia zakupów i zarządzania spiżarnią
 
@@ -6,7 +6,7 @@
 
 ## Spis treści
 
-1. [Co to jest Smart Pantry Tracker?](#co-to-jest-smart-pantry-tracker)
+1. [Co to jest Second Brain?](#co-to-jest-smart-pantry-tracker)
 2. [Jak zacząć?](#jak-zacząć)
 3. [Codzienne użycie](#codzienne-użycie)
 4. [Weryfikacja paragonów](#weryfikacja-paragonów)
@@ -18,9 +18,9 @@
 
 ---
 
-## Co to jest Smart Pantry Tracker?
+## Co to jest Second Brain?
 
-Smart Pantry Tracker to **inteligentny asystent zakupowy**, który:
+Second Brain to **inteligentny asystent zakupowy**, który:
 
 | Funkcja | Opis |
 |---------|------|

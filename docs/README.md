@@ -1,4 +1,4 @@
-# Dokumentacja Smart Pantry Tracker
+# Dokumentacja Second Brain
 
 ## Dla użytkowników
 

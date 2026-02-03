@@ -1,1 +1,1 @@
-"""Smart Pantry Tracker - OCR-based receipt processing."""
+"""Second Brain - OCR-based receipt processing."""
