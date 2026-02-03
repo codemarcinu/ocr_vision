@@ -129,8 +129,17 @@ async def _process_single_job(repo, session, job) -> None:
         await repo.update_status(job_id, "extracting", progress=80)
         await session.commit()
 
+        # Progress callback for map-reduce extraction
+        def extraction_progress(percent: int, status: str) -> None:
+            # Scale 0-100% to 80-99% range (extracting phase)
+            scaled_progress = 80 + int(percent * 0.19)
+            logger.debug(f"Job {job_id}: Extraction progress {percent}% ({status})")
+
         extractor = KnowledgeExtractor()
-        result, error = await extractor.extract(full_text)
+        result, error = await extractor.extract(
+            full_text,
+            progress_callback=extraction_progress,
+        )
 
         if result:
             note = await repo.add_note(
@@ -159,7 +168,12 @@ async def _process_single_job(repo, session, job) -> None:
                 )
                 note.obsidian_file_path = str(file_path)
 
-            logger.info(f"Job {job_id}: Note generated")
+            if result.chunks_processed > 0:
+                logger.info(
+                    f"Job {job_id}: Note generated (map-reduce: {result.chunks_processed} chunks)"
+                )
+            else:
+                logger.info(f"Job {job_id}: Note generated (single-pass)")
         elif error:
             logger.warning(f"Job {job_id}: Note extraction failed: {error}")
 
