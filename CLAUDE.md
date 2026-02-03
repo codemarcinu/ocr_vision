@@ -47,6 +47,26 @@ No automated tests exist. No linting or formatting tools configured. Testing is 
 
 FastAPI auto-docs available at `http://localhost:8000/docs` (Swagger UI).
 
+### Development Workflow
+
+After modifying Python code:
+```bash
+docker-compose up -d --build          # Rebuild and restart
+docker logs -f pantry-api             # Watch for startup errors
+curl http://localhost:8000/health      # Verify running
+```
+
+For quick iteration on non-startup code, `uvicorn --reload` inside the container picks up changes if the source is volume-mounted. Currently, the source is baked into the Docker image, so a rebuild is needed.
+
+### Database Schema Changes
+
+Database initializes from `scripts/init-db.sql` on first PostgreSQL start (empty volume). For schema changes after initial setup, use Alembic migrations—**not** init-db.sql edits:
+```bash
+docker exec -it pantry-api alembic revision --autogenerate -m "description"
+docker exec -it pantry-api alembic upgrade head
+```
+The ORM source of truth is `app/db/models.py`. Alembic's `env.py` is configured for async (asyncpg).
+
 ## Architecture
 
 ### High-Level Data Flow
@@ -112,13 +132,14 @@ All `*_OUTPUT_DIR` settings in `config.py` use `/data/` prefixed paths.
 
 ### Key Design Patterns
 
-**Repository pattern** with FastAPI dependency injection:
+**Repository pattern** with FastAPI dependency injection via typed aliases (`app/dependencies.py`):
 ```python
-from app.dependencies import ProductRepoDep
+from app.dependencies import ProductRepoDep  # = Annotated[ProductRepository, Depends(...)]
 @router.get("/products")
 async def list_products(repo: ProductRepoDep):
     return await repo.list_all()
 ```
+All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository classes accept `AsyncSession` and use `await session.execute()`. Never use synchronous SQLAlchemy calls.
 
 **Telegram callback router** (`app/telegram/callback_router.py`): Prefix-based routing instead of monolithic if/elif. Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`).
 
@@ -129,6 +150,8 @@ async def list_products(repo: ProductRepoDep):
 **Language detection**: Multiple modules auto-detect Polish vs English based on Polish characters (ą,ć,ę...) and keyword matching. Polish → Bielik 11B model, English → qwen2.5:7b.
 
 **OCR backend conditional imports** (`app/main.py`): Backend selection happens at import time via `settings.OCR_BACKEND`, loading the appropriate module (paddle_ocr, deepseek_ocr, google_ocr_backend, openai_ocr_backend, or default vision ocr).
+
+**Error messages in Polish**: User-facing error text uses Polish (e.g., "Wystąpił błąd"). Keep this convention in Telegram handlers and web UI.
 
 ### Product Normalization Chain (`app/dictionaries/`)
 
@@ -144,10 +167,7 @@ For transcriptions > 15k chars: split into 10k char chunks at sentence boundarie
 
 ### Store-Specific OCR Prompts (`app/store_prompts.py`)
 
-Each store (Biedronka, Lidl, Kaufland, Żabka, etc.) has a tailored extraction prompt matching its receipt format. To add a new store:
-1. Add detection patterns to `STORE_PATTERNS`
-2. Create `PROMPT_STORENAME` with format-specific instructions
-3. Add to `STORE_PROMPTS` mapping
+Each store (Biedronka, Lidl, Kaufland, Żabka, etc.) has a tailored extraction prompt matching its receipt format. See "Adding a New Store for OCR" below for extension instructions.
 
 ## Key Configuration
 
@@ -224,3 +244,29 @@ HTMX + Jinja2 templates at `http://localhost:8000/app/`. Templates in `app/templ
 PostgreSQL 16 with `pg_trgm` (fuzzy text) and `pgvector` (embeddings) extensions. Schema in `scripts/init-db.sql`, ORM in `app/db/models.py`, migrations in `alembic/versions/`.
 
 Set all feature flags to `false` to revert to file-only mode (no database).
+
+## Extending the Codebase
+
+### Adding a New API Module
+
+Follow the existing module pattern:
+1. Create repository in `app/db/repositories/` (extend base pattern)
+2. Add ORM model to `app/db/models.py`, create Alembic migration
+3. Create API router as `app/<module>_api.py` with FastAPI `APIRouter`
+4. Add dependency alias to `app/dependencies.py` (typed `Annotated` alias)
+5. Register router in `app/main.py`
+6. Optionally: add Obsidian writer (`app/<module>_writer.py`), Telegram handler, RAG auto-indexing hook
+
+### Adding a New Telegram Handler
+
+1. Create handler in `app/telegram/handlers/`
+2. For inline keyboard menus: create `menu_<module>.py`, register callback prefix in `app/telegram/bot.py` via `CallbackRouter.register("<prefix>:", handler_function)`
+3. Handler signature for callbacks: `async def handler(query: CallbackQuery, action: str, context: ContextTypes.DEFAULT_TYPE)`
+4. For command handlers: register in `bot.py` using `application.add_handler(CommandHandler(...))`
+
+### Adding a New Store for OCR
+
+Documented in `app/store_prompts.py`:
+1. Add detection patterns to `STORE_PATTERNS`
+2. Create `PROMPT_STORENAME` with format-specific instructions
+3. Add to `STORE_PROMPTS` mapping
