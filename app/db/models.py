@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for Smart Pantry Tracker."""
+"""SQLAlchemy ORM models for Second Brain."""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -567,3 +567,68 @@ class TranscriptionNote(Base):
 
     # Relationships
     job: Mapped["TranscriptionJob"] = relationship(back_populates="note")
+
+
+# =============================================================================
+# Personal Notes
+# =============================================================================
+
+class Note(Base):
+    """Personal note."""
+
+    __tablename__ = "notes"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tags: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    source_refs: Mapped[Optional[dict]] = mapped_column(
+        JSONB, default=list
+    )  # [{type: "receipt", id: "..."}, ...]
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+# =============================================================================
+# Bookmarks / Read Later
+# =============================================================================
+
+class Bookmark(Base):
+    """URL bookmark / read later."""
+
+    __tablename__ = "bookmarks"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending"
+    )  # pending, read, archived
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(
+        String(20), default="telegram"
+    )  # telegram, api
+    article_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("articles.id"), nullable=True
+    )
+    transcription_job_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("transcription_jobs.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
