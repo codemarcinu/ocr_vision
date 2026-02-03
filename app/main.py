@@ -12,6 +12,7 @@ from uuid import UUID
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.classifier import categorize_products
 from app.config import settings
@@ -28,6 +29,7 @@ from app.bookmarks_api import router as bookmarks_router
 from app.pantry_api import router as pantry_router
 from app.receipts_api import router as receipts_router
 from app.search_api import router as search_router
+from app.web_routes import router as web_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
@@ -67,43 +69,10 @@ app.include_router(ask_router)
 app.include_router(pantry_router)
 app.include_router(receipts_router)
 app.include_router(search_router)
+app.include_router(web_router)
 
-
-# Web UI pages
-@app.get("/web/dictionary", response_class=HTMLResponse)
-async def dictionary_web_ui():
-    """Serve dictionary management web interface."""
-    html_path = Path(__file__).parent / "web" / "dictionary.html"
-    if not html_path.exists():
-        raise HTTPException(status_code=404, detail="Web UI not found")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
-
-@app.get("/web/pantry", response_class=HTMLResponse)
-async def pantry_web_ui():
-    """Serve pantry management web interface."""
-    html_path = Path(__file__).parent / "web" / "pantry.html"
-    if not html_path.exists():
-        raise HTTPException(status_code=404, detail="Web UI not found")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
-
-@app.get("/web/receipts", response_class=HTMLResponse)
-async def receipts_web_ui():
-    """Serve receipt browser web interface."""
-    html_path = Path(__file__).parent / "web" / "receipts.html"
-    if not html_path.exists():
-        raise HTTPException(status_code=404, detail="Web UI not found")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-
-
-@app.get("/web/search", response_class=HTMLResponse)
-async def search_web_ui():
-    """Serve unified search web interface."""
-    html_path = Path(__file__).parent / "web" / "search.html"
-    if not html_path.exists():
-        raise HTTPException(status_code=404, detail="Web UI not found")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+# Mount static files for web UI
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 # Prometheus metrics
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
@@ -559,10 +528,14 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             ])
             logger.debug(f"Unloaded models in parallel: {models_to_unload}")
 
-        # Step 3: Write files
+        # Step 3: Write files (optional - controlled by GENERATE_OBSIDIAN_FILES)
+        receipt_file = None
         try:
-            receipt_file = write_receipt_file(receipt, categorized, filename)
-            update_pantry_file(categorized, receipt)
+            if settings.GENERATE_OBSIDIAN_FILES:
+                receipt_file = write_receipt_file(receipt, categorized, filename)
+                update_pantry_file(categorized, receipt)
+            else:
+                logger.info("Skipping Obsidian file generation (GENERATE_OBSIDIAN_FILES=false)")
         except Exception as e:
             error_msg = f"Failed to write output files: {e}"
             logger.error(error_msg)
@@ -609,21 +582,9 @@ async def _process_file(file_path: Path) -> ProcessingResult:
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
-    return {
-        "name": "Second Brain",
-        "version": "1.0.0",
-        "database_enabled": settings.USE_DB_RECEIPTS,
-        "endpoints": {
-            "health": "/health",
-            "process": "/process-receipt",
-            "reprocess": "/reprocess/{filename}",
-            "obsidian_sync": "/obsidian/sync/*",
-            "analytics": "/analytics/*",
-            "ask": "/ask",
-            "web_dictionary": "/web/dictionary"
-        }
-    }
+    """Root endpoint - redirect to web UI."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/app/")
 
 
 # --- Obsidian Sync Endpoints ---

@@ -42,11 +42,11 @@ vault/*.md
 !paragony/inbox/.gitkeep
 !paragony/processed/.gitkeep
 
-# Generated output data
-notes/
-transcriptions/
-summaries/
-bookmarks/
+# Generated output data (root-level directories only)
+/notes/
+/transcriptions/
+/summaries/
+/bookmarks/
 
 # Test files with personal receipts
 do testów/
