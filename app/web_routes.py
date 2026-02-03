@@ -243,7 +243,7 @@ async def receipt_item_update(
         await repo.update_item(item_id, **kwargs)
 
     receipt = await repo.get_with_items(receipt_id)
-    response = templates.TemplateResponse("receipts/partials/table_rows.html", {
+    response = templates.TemplateResponse("receipts/partials/items_table.html", {
         "request": request, "receipt": receipt,
     })
     response.headers.update(_htmx_trigger("Produkt zaktualizowany"))

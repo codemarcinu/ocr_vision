@@ -95,69 +95,7 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">Produkty ({{ receipt.items|length if receipt.items else 0 }})</h6>
             </div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th>Nazwa oryginalna</th>
-                            <th>Nazwa znormalizowana</th>
-                            <th class="text-end">Cena</th>
-                            <th class="text-end">Rabat</th>
-                            <th>Kategoria</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in receipt.items or [] %}
-                        <tr>
-                            <td>
-                                <small class="text-muted">{{ item.name_raw or "-" }}</small>
-                            </td>
-                            <td class="fw-medium">
-                                {{ item.name_normalized or item.name_raw or "-" }}
-                            </td>
-                            <td class="text-end">
-                                {% if item.price_original and item.discount_amount %}
-                                <small class="text-decoration-line-through text-muted">{{ "%.2f"|format(item.price_original|float) }}</small>
-                                {% endif %}
-                                <span class="fw-bold">{{ "%.2f"|format(item.price_final|float) if item.price_final else "0.00" }}</span>
-                            </td>
-                            <td class="text-end">
-                                {% if item.discount_amount %}
-                                <span class="text-danger">-{{ "%.2f"|format(item.discount_amount|float) }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if item.category %}
-                                <span class="badge bg-light text-dark">
-                                    {{ category_emoji(item.category.name) }} {{ item.category.name }}
-                                </span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light">
-                            <td colspan="2" class="fw-bold">Razem</td>
-                            <td class="text-end fw-bold">
-                                {{ "%.2f"|format(receipt.total_final|float) if receipt.total_final else "0.00" }} zl
-                            </td>
-                            <td class="text-end text-danger">
-                                {% set total_discount = namespace(val=0) %}
-                                {% for item in receipt.items or [] %}
-                                    {% if item.discount_amount %}
-                                        {% set total_discount.val = total_discount.val + item.discount_amount|float %}
-                                    {% endif %}
-                                {% endfor %}
-                                {% if total_discount.val > 0 %}
-                                -{{ "%.2f"|format(total_discount.val) }}
-                                {% endif %}
-                            </td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+            {% include "receipts/partials/items_table.html" %}
         </div>
     </div>
 </div>
