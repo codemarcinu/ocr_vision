@@ -1,6 +1,6 @@
 # Second Brain
 
-System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki i **baza wiedzy RAG** (zadawanie pytań do wszystkich zgromadzonych danych). Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji, **PostgreSQL + pgvector** do przechowywania danych i wyszukiwania semantycznego. Bot Telegram z menu inline keyboard i **walidacją human-in-the-loop**.
+System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki, **baza wiedzy RAG** (zadawanie pytań do wszystkich zgromadzonych danych) i **Chat AI** (wieloturowe rozmowy z RAG + wyszukiwanie SearXNG). Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji, **PostgreSQL + pgvector** do przechowywania danych i wyszukiwania semantycznego. Bot Telegram z menu inline keyboard i **walidacją human-in-the-loop**.
 
 ## Architektura
 
@@ -25,6 +25,7 @@ Moduły:
 📝 Notatki        → osobiste notatki z tagami
 🔖 Zakładki       → saved links
 🧠 RAG            → pytania do bazy wiedzy (/ask)
+💬 Chat AI        → wieloturowe rozmowy z RAG + web search
 ```
 
 ## Wymagania
@@ -55,13 +56,12 @@ docker-compose up -d
 
 ```bash
 # Na hoście (Ollama musi być zainstalowane)
-ollama pull deepseek-ocr     # OCR (szybki, zalecany)
-ollama pull qwen2.5:7b       # Kategoryzacja + strukturyzacja + odpowiedzi RAG
-ollama pull qwen2.5vl:7b     # Fallback OCR (dla trudnych paragonów)
+ollama pull qwen2.5:7b       # Kategoryzacja + strukturyzacja + odpowiedzi RAG (4.7GB)
+ollama pull qwen2.5vl:7b     # Vision OCR + fallback (6GB)
 ollama pull nomic-embed-text # Embeddingi dla bazy wiedzy RAG (274MB)
 
-# Opcjonalnie (dla polskich treści)
-ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polski LLM
+# Opcjonalnie (dla polskich treści - Chat AI, podsumowania)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polski LLM (7GB)
 ```
 
 ### 4. Uruchom migrację bazy danych
@@ -187,12 +187,15 @@ Nowe treści są automatycznie indeksowane w momencie tworzenia. Przy pierwszym 
 | `/pending` | Pliki w kolejce |
 | `/pantry [kategoria]` | Zawartość spiżarni |
 | `/use <produkt>` | Oznacz jako zużyty |
+| `/remove <produkt>` | Usuń z spiżarni |
 | `/search <fraza>` | Szukaj produktu |
+| `/q <fraza>` | Szybkie wyszukiwanie |
 | `/stats [week/month]` | Statystyki wydatków |
 | `/stores` | Wydatki wg sklepów |
 | `/categories` | Wydatki wg kategorii |
 | `/rabaty` | Raport rabatów |
 | `/errors` | Lista błędów OCR |
+| `/clearerrors` | Wyczyść błędy OCR |
 | `/feeds` | Lista subskrybowanych kanałów RSS |
 | `/subscribe <URL>` | Dodaj kanał RSS/Atom |
 | `/unsubscribe <ID>` | Usuń kanał RSS |
@@ -203,7 +206,45 @@ Nowe treści są automatycznie indeksowane w momencie tworzenia. Przy pierwszym 
 | `/transcribe` + audio | Transkrybuj przesłany plik |
 | `/transcriptions` | Lista transkrypcji |
 | `/note <ID>` | Notatka z transkrypcji |
+| `/n <tekst>` | Szybka notatka |
 | `/ask <pytanie>` | Zapytaj bazę wiedzy (RAG) |
+| `/find <fraza>` | Szukaj w bazie wiedzy |
+| `/chat` | Rozpocznij sesję Chat AI |
+| `/endchat` | Zakończ sesję Chat AI |
+| `/settings` | Ustawienia bota |
+
+## Chat AI
+
+Wieloturowy asystent konwersacyjny z dostępem do bazy wiedzy (RAG) i wyszukiwania internetowego (SearXNG).
+
+### Jak to działa?
+
+```
+Wiadomość użytkownika
+    ↓
+Klasyfikacja intencji (rag/web/both/direct)
+    ↓
+┌───────┴───────┐
+RAG search   Web search (SearXNG)
+└───────┬───────┘
+    ↓
+Odpowiedź LLM z kontekstem + historią rozmowy
+```
+
+### Komendy Telegram
+
+- `/chat` - Rozpocznij nową sesję rozmowy
+- `/endchat` - Zakończ bieżącą sesję
+- Menu inline z przyciskami do zarządzania sesjami
+
+### API Chat
+
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/chat/sessions` | POST | Utwórz sesję |
+| `/chat/sessions` | GET | Lista sesji |
+| `/chat/sessions/{id}/messages` | POST | Wyślij wiadomość |
+| `/chat/sessions/{id}` | DELETE | Usuń sesję |
 
 ## RSS/Web Summarizer
 
@@ -268,62 +309,69 @@ Agent do transkrypcji nagrań (YouTube, pliki lokalne) z generowaniem notatek.
 ## Struktura projektu
 
 ```
-OCR_V2/
-├── docker-compose.yml      # Konfiguracja serwisów (pgvector/pgvector:pg16)
-├── Dockerfile              # Build FastAPI
-├── requirements.txt        # Zależności Python (w tym pgvector)
+ocr_vision/
+├── docker-compose.yml      # Konfiguracja serwisów (pgvector, fastapi, searxng, monitoring)
+├── Dockerfile              # NVIDIA CUDA + Python 3.11
+├── requirements.txt        # Zależności Python
 ├── app/
-│   ├── main.py             # Endpointy FastAPI + walidacja + startup RAG
-│   ├── config.py           # Konfiguracja (w tym RAG settings)
+│   ├── main.py             # Endpointy FastAPI + startup + pipeline OCR
+│   ├── config.py           # Konfiguracja (env vars)
 │   ├── models.py           # Modele Pydantic (Receipt, Product)
-│   ├── dependencies.py     # FastAPI DI (w tym EmbeddingRepoDep)
+│   ├── dependencies.py     # FastAPI DI (repozytoria)
 │   ├── ocr.py              # Vision OCR backend
-│   ├── deepseek_ocr.py     # DeepSeek OCR backend (zalecany)
-│   ├── classifier.py       # Kategoryzacja (qwen2.5:7b)
+│   ├── deepseek_ocr.py     # DeepSeek OCR backend
+│   ├── google_ocr_backend.py # Google Vision OCR backend
+│   ├── openai_ocr_backend.py # Google Vision + OpenAI structuring
+│   ├── openai_client.py    # Klient OpenAI (singleton + retry)
+│   ├── paddle_ocr.py       # PaddleOCR backend
+│   ├── classifier.py       # Kategoryzacja produktów (LLM)
+│   ├── store_prompts.py    # Prompty per sklep (12 sklepów)
 │   ├── obsidian_writer.py  # Generowanie markdown
-│   ├── ask_api.py          # RAG API (/ask, /ask/stats, /ask/reindex)
+│   ├── ask_api.py          # RAG API
+│   ├── chat_api.py         # Chat AI API
 │   ├── notes_api.py        # Notatki API
 │   ├── bookmarks_api.py    # Zakładki API
 │   ├── rss_api.py          # RSS API
 │   ├── transcription_api.py # Transkrypcje API
+│   ├── dictionary_api.py   # Słownik produktów API
+│   ├── pantry_api.py       # Spiżarnia API
+│   ├── receipts_api.py     # Paragony API (przeglądanie/edycja)
+│   ├── search_api.py       # Wyszukiwanie unified
+│   ├── web_routes.py       # Web UI (HTMX + Jinja2)
+│   ├── chat/               # Chat AI
+│   │   ├── intent_classifier.py  # Klasyfikacja intencji (rag/web/both/direct)
+│   │   ├── orchestrator.py       # Orkiestracja rozmowy
+│   │   └── searxng_client.py     # Klient SearXNG
 │   ├── rag/                # Baza wiedzy RAG
-│   │   ├── embedder.py     # Embeddingi via Ollama /api/embed
+│   │   ├── embedder.py     # Embeddingi via Ollama
 │   │   ├── indexer.py      # Chunking + embedding + storage
-│   │   ├── retriever.py    # Vector search + keyword fallback
-│   │   ├── answerer.py     # LLM answer generation (PL/EN)
+│   │   ├── retriever.py    # Vector search (pgvector)
+│   │   ├── answerer.py     # Generowanie odpowiedzi (PL/EN)
 │   │   └── hooks.py        # Auto-indexing hooks
 │   ├── db/
-│   │   ├── models.py       # SQLAlchemy ORM (w tym DocumentEmbedding)
-│   │   └── repositories/
-│   │       ├── embeddings.py # pgvector repository
-│   │       ├── receipts.py
-│   │       ├── rss.py
-│   │       └── ...
+│   │   ├── models.py       # SQLAlchemy ORM (~740 linii)
+│   │   └── repositories/   # Repozytoria (16 plików)
 │   ├── transcription/      # Transkrypcje Whisper
-│   │   ├── transcriber.py
-│   │   ├── downloader.py
-│   │   └── extractor.py
+│   │   ├── transcriber.py  # Faster-Whisper (GPU)
+│   │   ├── downloader.py   # yt-dlp
+│   │   └── extractor.py    # Map-reduce ekstrakcja wiedzy
 │   ├── telegram/
-│   │   ├── bot.py          # Główna klasa bota + review callbacks
-│   │   ├── handlers/
-│   │   │   ├── ask.py      # /ask command (RAG)
-│   │   │   ├── receipts.py # Zdjęcia/PDF + review flow
-│   │   │   ├── feeds.py    # RSS commands
-│   │   │   ├── transcription.py
-│   │   │   └── ...
+│   │   ├── bot.py          # Główna klasa bota
+│   │   ├── callback_router.py  # Router callbacków (prefix-based)
+│   │   ├── handlers/       # Handlery komend (19 plików)
 │   │   └── rss_scheduler.py
-│   └── dictionaries/       # Normalizacja produktów/sklepów
+│   ├── dictionaries/       # Normalizacja produktów/sklepów
+│   ├── templates/          # Jinja2 szablony (Web UI)
+│   └── static/             # CSS/JS
 ├── alembic/                # Migracje bazy danych
-│   └── versions/
-│       ├── 001_initial.py
-│       ├── ...
-│       └── 004_add_rag_embeddings.py
+│   └── versions/           # 001-006
+├── searxng/                # Konfiguracja SearXNG
+├── monitoring/             # Prometheus/Grafana/Loki
 ├── paragony/
-│   ├── inbox/              # Folder monitorowany
+│   ├── inbox/              # Folder wejściowy
 │   └── processed/          # Archiwum
 └── vault/
     ├── paragony/           # Historia paragonów (.md)
-    ├── summaries/          # Podsumowania artykułów (.md)
     └── logs/               # Logi i feedback
 ```
 
@@ -333,20 +381,24 @@ Zmienne środowiskowe (w `docker-compose.yml` lub `.env`):
 
 | Zmienna | Domyślnie | Opis |
 |---------|-----------|------|
-| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | URL Ollama API |
-| `OCR_MODEL` | `deepseek-ocr` | Model OCR |
-| `OCR_BACKEND` | `deepseek` | `deepseek`, `vision`, lub `paddle` |
-| `CLASSIFIER_MODEL` | `qwen2.5:7b` | Model kategoryzacji |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | URL Ollama API |
+| `OCR_MODEL` | `qwen2.5vl:7b` | Model OCR (vision) |
+| `OCR_BACKEND` | `vision` | `vision`, `deepseek`, `paddle`, `google`, lub `openai` |
+| `CLASSIFIER_MODEL` | `qwen2.5:7b` | Model kategoryzacji i strukturyzacji |
+| `OPENAI_API_KEY` | - | Klucz API OpenAI (wymagany dla `OCR_BACKEND=openai`) |
+| `OPENAI_OCR_MODEL` | `gpt-4o-mini` | Model OpenAI do strukturyzacji |
 | `RAG_ENABLED` | `true` | Włącz/wyłącz bazę wiedzy RAG |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Model embeddingów |
 | `RAG_AUTO_INDEX` | `true` | Auto-indeksowanie nowej treści |
 | `RAG_TOP_K` | `5` | Ilość fragmentów do wyszukania |
-| `ASK_MODEL` | `` | Model LLM dla /ask (pusty = CLASSIFIER_MODEL) |
+| `CHAT_ENABLED` | `true` | Włącz/wyłącz Chat AI |
+| `CHAT_MODEL` | `` | Model LLM dla chatu (pusty = CLASSIFIER_MODEL) |
+| `SEARXNG_URL` | `http://searxng:8080` | URL instancji SearXNG |
 | `TELEGRAM_BOT_TOKEN` | - | Token bota Telegram |
 | `TELEGRAM_CHAT_ID` | `0` | ID chatu (0 = wszyscy) |
 | `BOT_ENABLED` | `true` | Włącz/wyłącz bota |
 
-Pełna lista zmiennych: patrz [CLAUDE.md](CLAUDE.md#environment-variables).
+Pełna lista zmiennych: patrz [CLAUDE.md](CLAUDE.md).
 
 ## Prompty per sklep
 
@@ -362,6 +414,10 @@ System automatycznie wykrywa sklep i używa dedykowanego promptu LLM:
 | **Carrefour** | Produkt + cena w linii, rabat osobno |
 | **Netto** | Prosty format jak Żabka |
 | **Dino** | Nazwy wielkimi literami |
+| **Lewiatan** | Prompt generyczny |
+| **Polo Market** | Prompt generyczny |
+| **Stokrotka** | Prompt generyczny |
+| **Intermarché** | Prompt generyczny |
 
 ## API
 

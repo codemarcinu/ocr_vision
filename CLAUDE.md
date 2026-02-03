@@ -76,6 +76,7 @@ Receipt (photo/PDF) → OCR Backend → Store Detection → Store-Specific Promp
 | `google` | ~5s | Google Cloud Vision API → raw text → qwen2.5:7b structuring. Requires API key, ~$1.50/1000 images |
 | `deepseek` | ~15s | DeepSeek-OCR model → raw text → qwen2.5:7b structuring. Has fallback to qwen2.5vl:7b |
 | `paddle` | ~11s | PaddleOCR → raw text → qwen2.5:7b structuring. Less accurate on complex receipts |
+| `openai` | ~5s | Google Cloud Vision API → OpenAI GPT-4o-mini structuring. Requires `OPENAI_API_KEY` |
 | `vision` | ~4min | qwen2.5vl:7b single model for everything. Slowest but no dependencies |
 
 **Human-in-the-loop review** triggers when extracted total vs product sum differs by >5 PLN AND >10%. User approves, corrects total, or rejects via Telegram inline keyboard.
@@ -139,10 +140,13 @@ All settings in `app/config.py` via `Settings` class, overridable with env vars.
 
 ```bash
 # OCR
-OCR_BACKEND=google|deepseek|vision|paddle
-OCR_MODEL=qwen2.5:7b
+OCR_BACKEND=google|deepseek|vision|paddle|openai
+OCR_MODEL=qwen2.5vl:7b               # Default vision model
 OCR_FALLBACK_MODEL=qwen2.5vl:7b
 CLASSIFIER_MODEL=qwen2.5:7b
+STRUCTURING_MODEL=                    # For deepseek backend (empty = CLASSIFIER_MODEL)
+OPENAI_API_KEY=                       # Required for OCR_BACKEND=openai
+OPENAI_OCR_MODEL=gpt-4o-mini         # OpenAI model for structuring
 
 # Database
 DATABASE_URL=postgresql+asyncpg://pantry:pantry123@postgres:5432/pantry
@@ -161,15 +165,20 @@ TRANSCRIPTION_ENABLED=true
 NOTES_ENABLED=true
 BOOKMARKS_ENABLED=true
 
-# Models
-CHAT_MODEL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Polish LLM
+# Models (empty string = falls back to CLASSIFIER_MODEL)
+CHAT_MODEL=                                               # Empty = CLASSIFIER_MODEL; typically Bielik for Polish
 EMBEDDING_MODEL=nomic-embed-text                          # RAG embeddings (768 dim)
 SUMMARIZER_MODEL_PL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M
+
+# A/B testing for classifier
+CLASSIFIER_MODEL_B=                   # Set to enable A/B testing
+CLASSIFIER_AB_MODE=primary            # primary|secondary|both
 
 # GPU memory
 VISION_MODEL_KEEP_ALIVE=10m
 TEXT_MODEL_KEEP_ALIVE=30m
-WHISPER_UNLOAD_AFTER_USE=true  # Free VRAM after transcription
+UNLOAD_MODELS_AFTER_USE=false         # Set true for low VRAM systems
+WHISPER_UNLOAD_AFTER_USE=true         # Free VRAM after transcription
 ```
 
 ### Ollama Models Required

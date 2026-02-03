@@ -15,9 +15,11 @@
 7. [RSS i podsumowania stron](#rss-i-podsumowania-stron)
 8. [Transkrypcje audio/wideo](#transkrypcje-audiowideo)
 9. [Baza wiedzy (RAG)](#baza-wiedzy-rag)
-10. [Notatki osobiste](#notatki-osobiste)
-11. [Słownik produktów](#słownik-produktów)
-12. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
+10. [Chat AI](#chat-ai)
+11. [Notatki osobiste](#notatki-osobiste)
+12. [Słownik produktów](#słownik-produktów)
+13. [Interfejs webowy](#interfejs-webowy)
+14. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
 
 ---
 
@@ -35,6 +37,7 @@ Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
 | Podsumowuje artykuły | Śledzi kanały RSS i generuje podsumowania |
 | Transkrybuje | Zamienia nagrania audio/wideo na tekst i notatki |
 | Odpowiada na pytania | Przeszukuje całą bazę wiedzy i generuje odpowiedzi (RAG) |
+| Rozmawia | Wieloturowy Chat AI z dostępem do RAG i wyszukiwania internetowego |
 | Notatki | Osobiste notatki z tagami i kategoriami |
 
 ### Jak to działa?
@@ -225,6 +228,10 @@ System rozpoznaje i prawidłowo odczytuje paragony z następujących sklepów:
 | Carrefour | ✅ Pełne wsparcie | - |
 | Netto | ✅ Pełne wsparcie | - |
 | Dino | ✅ Pełne wsparcie | - |
+| Lewiatan | ✅ Obsługiwany | Prompt generyczny |
+| Polo Market | ✅ Obsługiwany | Prompt generyczny |
+| Stokrotka | ✅ Obsługiwany | Prompt generyczny |
+| Intermarché | ✅ Obsługiwany | Prompt generyczny |
 
 ### Dlaczego różne sklepy?
 
@@ -481,6 +488,59 @@ Baza wiedzy dostępna jest również przez REST API:
 
 ---
 
+## Chat AI
+
+System posiada **wieloturowego asystenta konwersacyjnego**, który łączy bazę wiedzy (RAG) z wyszukiwaniem internetowym (SearXNG).
+
+### Czym różni się od /ask?
+
+| Funkcja | `/ask` | `/chat` |
+|---------|--------|---------|
+| Typ rozmowy | Jednorazowe pytanie | Wieloturowa konwersacja |
+| Kontekst | Tylko aktualne pytanie | Pamięta historię rozmowy |
+| Źródła | Tylko baza wiedzy (RAG) | RAG + wyszukiwanie internetowe |
+| Sesje | Brak | Zarządzanie sesjami |
+
+### Jak używać?
+
+W Telegram wpisz:
+```
+/chat
+```
+
+Bot utworzy nową sesję rozmowy. Każda kolejna wiadomość trafia do tej sesji:
+```
+💬 Sesja utworzona. Możesz teraz rozmawiać.
+
+Ty: Co wiesz o moich wydatkach w styczniu?
+Bot: Na podstawie Twoich danych z paragonów...
+
+Ty: A jakie są najnowsze trendy w cenach mleka?
+Bot: [przeszukuje internet przez SearXNG]...
+```
+
+### Klasyfikacja intencji
+
+System automatycznie rozpoznaje typ pytania:
+
+| Intencja | Kiedy | Przykład |
+|----------|-------|---------|
+| `rag` | Pytanie o osobiste dane | "ile wydałem w Biedronce?" |
+| `web` | Pytanie o informacje z internetu | "jaka jest pogoda jutro?" |
+| `both` | Połączenie obu źródeł | "porównaj moje wydatki z cenami rynkowymi" |
+| `direct` | Bez wyszukiwania | "przetłumacz to na angielski" |
+
+### Komendy Chat AI
+
+| Komenda | Co robi |
+|---------|---------|
+| `/chat` | Rozpocznij nową sesję rozmowy |
+| `/endchat` | Zakończ bieżącą sesję |
+
+Sesje dostępne również przez menu inline (przyciski w Telegram).
+
+---
+
 ## Notatki osobiste
 
 System umożliwia tworzenie i zarządzanie **notatkami osobistymi** z tagami i kategoriami.
@@ -539,11 +599,33 @@ Jeśli system **nie rozpozna** produktu:
 
 ---
 
+## Interfejs webowy
+
+System posiada interfejs webowy dostępny pod adresem `http://localhost:8000/app/`.
+
+### Dostępne widoki
+
+| Widok | Opis |
+|-------|------|
+| Dashboard | Przegląd systemu |
+| Paragony | Przeglądanie i zarządzanie paragonami |
+| Spiżarnia | Stan zapasów |
+| Analityka | Statystyki i wykresy wydatków |
+| Artykuły | Pobrane i podsumowane artykuły |
+| Transkrypcje | Lista transkrypcji z notatkami |
+| Notatki | Przeglądanie i edycja notatek |
+| Zakładki | Zarządzanie zakładkami |
+| Chat | Interfejs Chat AI |
+| Słownik | Zarządzanie słownikiem produktów |
+| Wyszukiwanie | Wyszukiwanie unified po całej bazie |
+
+---
+
 ## Najczęstsze pytania (FAQ)
 
 ### Czy moje dane są bezpieczne?
 
-✅ **Tak.** Wszystkie dane są przechowywane **lokalnie** na Twoim komputerze. Modele AI działają lokalnie przez Ollama. Nic nie jest wysyłane do chmury ani zewnętrznych serwisów.
+✅ **Tak.** Wszystkie dane są przechowywane **lokalnie** na Twoim komputerze. Przy użyciu lokalnych backendów OCR (`vision`, `paddle`, `deepseek`) modele AI działają lokalnie przez Ollama. Przy backendach `google` lub `openai` zdjęcia paragonów są przesyłane do zewnętrznych API (Google Vision, OpenAI) w celu przetworzenia.
 
 ### Czy potrzebuję internetu?
 
@@ -596,6 +678,7 @@ Jeśli `/ask` nie znajduje odpowiedzi:
 | Komenda | Opis |
 |---------|------|
 | `/help` | Pokaż pomoc |
+| `/start` | Uruchom bota |
 | `/recent [N]` | Ostatnie N paragonów |
 | `/pending` | Paragony do weryfikacji |
 | `/reprocess <plik>` | Ponowne przetwarzanie |
@@ -603,6 +686,7 @@ Jeśli `/ask` nie znajduje odpowiedzi:
 | `/use <produkt>` | Oznacz jako zużyty |
 | `/remove <produkt>` | Usuń ze spiżarni |
 | `/search <fraza>` | Szukaj produktu |
+| `/q <fraza>` | Szybkie wyszukiwanie |
 | `/stats [week/month]` | Statystyki wydatków |
 | `/stores` | Wydatki wg sklepów |
 | `/categories` | Wydatki wg kategorii |
@@ -618,7 +702,12 @@ Jeśli `/ask` nie znajduje odpowiedzi:
 | `/transcribe <URL>` | Transkrybuj YouTube |
 | `/transcriptions` | Lista transkrypcji |
 | `/note <ID>` | Notatka z transkrypcji |
+| `/n <tekst>` | Szybka notatka |
 | `/ask <pytanie>` | Zapytaj bazę wiedzy |
+| `/find <fraza>` | Szukaj w bazie wiedzy |
+| `/chat` | Rozpocznij sesję Chat AI |
+| `/endchat` | Zakończ sesję Chat AI |
+| `/settings` | Ustawienia bota |
 
 ---
 

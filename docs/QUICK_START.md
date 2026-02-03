@@ -19,8 +19,11 @@ Poczekaj na uruchomienie wszystkich usług.
 ```bash
 # Na hoście (Ollama musi być zainstalowane)
 ollama pull qwen2.5:7b           # Kategoryzacja + strukturyzacja
-ollama pull deepseek-ocr          # OCR (lub qwen2.5vl:7b jako alternatywa)
-ollama pull nomic-embed-text      # Embeddingi dla bazy wiedzy (RAG)
+ollama pull qwen2.5vl:7b         # Vision OCR + fallback
+ollama pull nomic-embed-text     # Embeddingi dla bazy wiedzy (RAG)
+
+# Opcjonalnie (dla polskich treści - Chat AI, podsumowania)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M
 ```
 
 ---
@@ -92,9 +95,12 @@ Po przetworzeniu kilku paragonów lub artykułów, możesz zadawać pytania:
 | `/stats` | Statystyki wydatków |
 | `/pantry` | Spiżarnia |
 | `/ask <pytanie>` | Zapytaj bazę wiedzy |
+| `/chat` | Rozpocznij rozmowę z Chat AI |
 | `/feeds` | Kanały RSS |
 | `/subscribe <URL>` | Dodaj kanał RSS |
 | `/transcribe <URL>` | Transkrybuj YouTube |
+| `/q <fraza>` | Szybkie wyszukiwanie |
+| `/n <tekst>` | Szybka notatka |
 | `/help` | Pomoc |
 
 ---
