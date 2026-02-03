@@ -43,7 +43,9 @@ pip install -r requirements.txt
 OLLAMA_BASE_URL=http://localhost:11434 uvicorn app.main:app --reload
 ```
 
-No automated tests exist. Testing is manual via API calls and Telegram bot.
+No automated tests exist. No linting or formatting tools configured. Testing is manual via API calls and Telegram bot.
+
+FastAPI auto-docs available at `http://localhost:8000/docs` (Swagger UI).
 
 ## Architecture
 
@@ -89,11 +91,24 @@ Each module follows a consistent pattern:
 - **API router** (`app/*_api.py`) - FastAPI endpoints
 - **Database models** (`app/db/models.py`) - SQLAlchemy ORM
 - **Repository** (`app/db/repositories/*.py`) - Data access layer
+- **Service** (`app/services/*.py`) - Business logic orchestration (emerging pattern)
 - **Writer** (`app/*_writer.py`) - Obsidian markdown generation
 - **Telegram handler** (`app/telegram/handlers/*.py`) - Bot commands
 - **Telegram menu** (`app/telegram/handlers/menu_*.py`) - Inline keyboard navigation
 
 Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, analytics, dictionary, search.
+
+### Docker Volume Mounts
+
+Local paths map to `/data/` inside the container:
+```
+./paragony    → /data/paragony    (receipt inbox/processed)
+./vault       → /data/vault       (Obsidian output)
+./transcriptions → /data/transcriptions
+./notes       → /data/notes
+./bookmarks   → /data/bookmarks
+```
+All `*_OUTPUT_DIR` settings in `config.py` use `/data/` prefixed paths.
 
 ### Key Design Patterns
 
@@ -112,6 +127,8 @@ async def list_products(repo: ProductRepoDep):
 **Chat AI intent classification** (`app/chat/intent_classifier.py`): LLM classifies each message as `"rag"` (personal data), `"web"` (internet search via SearXNG), `"both"`, or `"direct"` (no search needed).
 
 **Language detection**: Multiple modules auto-detect Polish vs English based on Polish characters (ą,ć,ę...) and keyword matching. Polish → Bielik 11B model, English → qwen2.5:7b.
+
+**OCR backend conditional imports** (`app/main.py`): Backend selection happens at import time via `settings.OCR_BACKEND`, loading the appropriate module (paddle_ocr, deepseek_ocr, google_ocr_backend, openai_ocr_backend, or default vision ocr).
 
 ### Product Normalization Chain (`app/dictionaries/`)
 
