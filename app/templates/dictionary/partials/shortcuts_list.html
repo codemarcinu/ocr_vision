@@ -1,0 +1,46 @@
+<!-- Filter by store -->
+<div class="mb-3">
+    <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-shop"></i></span>
+        <select name="store" class="form-select" style="max-width:200px"
+                hx-get="/app/slownik/partials/shortcuts" hx-target="#shortcuts-list"
+                hx-trigger="change" hx-indicator="#shortcuts-loading">
+            <option value="">Wszystkie sklepy</option>
+            {% for s in stores %}
+            <option value="{{ s }}" {% if store == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <span id="shortcuts-loading" class="htmx-indicator input-group-text">
+            <span class="spinner-border spinner-border-sm"></span>
+        </span>
+    </div>
+</div>
+
+{% if shortcuts %}
+<div class="mb-2 text-muted small">Znaleziono {{ shortcuts|length }} skrotow</div>
+<div class="table-responsive">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Skrot</th>
+                <th>Pelna nazwa</th>
+                <th>Sklep</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in shortcuts %}
+            <tr>
+                <td><code>{{ s.shortcut }}</code></td>
+                <td class="fw-medium">{{ s.full_name }}</td>
+                <td><span class="badge bg-secondary">{{ s.store }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-lightning"></i></div>
+    <p>Brak skrotow produktowych</p>
+</div>
+{% endif %}
