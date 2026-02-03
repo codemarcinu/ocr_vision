@@ -52,6 +52,7 @@ from app.telegram.handlers import (
     handle_chat_message,
 )
 from app.telegram.handlers.menu_articles import handle_articles_callback
+from app.telegram.handlers.menu_chat import handle_chat_callback
 from app.telegram.handlers.menu_bookmarks import handle_bookmarks_callback
 from app.telegram.handlers.settings import handle_settings_callback
 from app.telegram.handlers.menu_notes import handle_note_text_input, handle_notes_callback
@@ -86,6 +87,7 @@ class PantryBot:
         self._callback_router.register("notes:", handle_notes_callback)
         self._callback_router.register("bookmarks:", handle_bookmarks_callback)
         self._callback_router.register("settings:", handle_settings_callback)
+        self._callback_router.register("chat:", handle_chat_callback)
 
     async def start(self) -> None:
         """Start the bot in polling mode."""

@@ -22,6 +22,9 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔖 Zakładki", callback_data="bookmarks:menu"),
             InlineKeyboardButton("📊 Statystyki", callback_data="stats:menu"),
         ],
+        [
+            InlineKeyboardButton("💬 Chat AI", callback_data="chat:menu"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -117,6 +120,31 @@ def get_bookmarks_menu() -> InlineKeyboardMarkup:
         ],
         get_back_button(),
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_chat_menu(has_active_session: bool = False) -> InlineKeyboardMarkup:
+    """Chat AI sub-menu."""
+    if has_active_session:
+        keyboard = [
+            [
+                InlineKeyboardButton("⏹️ Zakończ czat", callback_data="chat:end"),
+            ],
+            [
+                InlineKeyboardButton("📋 Sesje", callback_data="chat:sessions"),
+            ],
+            get_back_button(),
+        ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton("▶️ Rozpocznij czat", callback_data="chat:start"),
+            ],
+            [
+                InlineKeyboardButton("📋 Sesje", callback_data="chat:sessions"),
+            ],
+            get_back_button(),
+        ]
     return InlineKeyboardMarkup(keyboard)
 
 
