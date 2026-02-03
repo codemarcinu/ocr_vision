@@ -485,16 +485,22 @@ async def summarize_url(request: Request, url: str = Form(...)):
     from app.summarizer import summarize_content
 
     try:
-        content = await scrape_url(url)
-        if not content or not content.get("text"):
+        scraped, scrape_error = await scrape_url(url)
+        if not scraped or not scraped.content:
             return templates.TemplateResponse("articles/partials/summarize_result.html", {
-                "request": request, "success": False, "error": "Nie udalo sie pobrac tresci",
+                "request": request, "success": False,
+                "error": scrape_error or "Nie udalo sie pobrac tresci",
             })
 
-        result = await summarize_content(content["text"], content.get("title", ""))
+        result, sum_error = await summarize_content(scraped.content)
+        if not result:
+            return templates.TemplateResponse("articles/partials/summarize_result.html", {
+                "request": request, "success": False,
+                "error": sum_error or "Podsumowanie nie powiodlo sie",
+            })
         return templates.TemplateResponse("articles/partials/summarize_result.html", {
             "request": request, "success": True, "result": result,
-            "title": content.get("title", url), "url": url,
+            "title": scraped.title or url, "url": url,
         })
     except Exception as e:
         return templates.TemplateResponse("articles/partials/summarize_result.html", {
