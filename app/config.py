@@ -34,8 +34,12 @@ class Settings:
     # "secondary" - use CLASSIFIER_MODEL_B as primary
     # "both" - run both, use primary, log comparison
 
-    # OCR backend: "vision" (LLM vision model), "paddle" (PaddleOCR + LLM), or "deepseek" (DeepSeek-OCR + LLM)
+    # OCR backend: "vision", "paddle", "deepseek", "google", or "openai" (Google Vision + OpenAI API)
     OCR_BACKEND: str = os.getenv("OCR_BACKEND", "vision")
+
+    # OpenAI configuration (for OCR pipeline only, when OCR_BACKEND=openai)
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_OCR_MODEL: str = os.getenv("OPENAI_OCR_MODEL", "gpt-4o-mini")
 
     # Structuring model for deepseek backend (converts OCR text to JSON)
     # If not set, uses CLASSIFIER_MODEL

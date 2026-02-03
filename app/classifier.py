@@ -117,6 +117,60 @@ async def _call_classifier_model(
         return None, elapsed, f"JSON parse error: {e}"
 
 
+async def _call_classifier_openai(
+    prompt: str,
+    timeout: float = 60.0,
+) -> tuple[Optional[list[dict]], float, Optional[str]]:
+    """
+    Call OpenAI API for product categorization.
+
+    Uses JSON mode for guaranteed valid JSON output.
+
+    Returns:
+        Tuple of (parsed products list, time in seconds, error message or None)
+    """
+    start_time = time.time()
+
+    try:
+        from app.openai_client import get_client
+
+        client = get_client()
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_OCR_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Kategoryzujesz produkty z polskich paragonów. Odpowiadaj TYLKO w formacie JSON.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=4096,
+            timeout=timeout,
+        )
+
+        elapsed = time.time() - start_time
+        content = response.choices[0].message.content
+
+        if not content:
+            return None, elapsed, "OpenAI returned empty response"
+
+        usage = response.usage
+        if usage:
+            logger.info(
+                f"OpenAI classifier: {usage.prompt_tokens} in + {usage.completion_tokens} out tokens"
+            )
+
+        data = json.loads(content)
+        return data.get("products", []), elapsed, None
+
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"OpenAI classifier error: {e}")
+        return None, elapsed, f"OpenAI error: {e}"
+
+
 CATEGORIZATION_PROMPT = """Skategoryzuj poniższe produkty spożywcze/domowe.
 
 Dostępne kategorie z przykładami:
@@ -217,52 +271,57 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
         products=products_text
     )
 
-    # Determine which model(s) to use
-    model_a = settings.CLASSIFIER_MODEL
-    model_b = settings.CLASSIFIER_MODEL_B
-    ab_mode = settings.CLASSIFIER_AB_MODE
-
-    # Select primary model based on mode
-    if ab_mode == "secondary" and model_b:
-        primary_model = model_b
+    # Route to OpenAI or Ollama based on OCR backend
+    if settings.OCR_BACKEND == "openai":
+        # Use OpenAI for categorization (no A/B testing)
+        result_a, time_a, error_a = await _call_classifier_openai(prompt)
     else:
-        primary_model = model_a
+        # Determine which model(s) to use
+        model_a = settings.CLASSIFIER_MODEL
+        model_b = settings.CLASSIFIER_MODEL_B
+        ab_mode = settings.CLASSIFIER_AB_MODE
 
-    # A/B testing: run both models in PARALLEL if configured
-    result_b = None
-    time_b = 0.0
-    error_b = None
-
-    if model_b and ab_mode in ("primary", "both"):
-        secondary_model = model_b if ab_mode == "primary" else model_a
-        if secondary_model != primary_model:
-            # Run BOTH models in parallel for A/B testing (saves ~7-30s)
-            logger.info(f"A/B test: running {primary_model} and {secondary_model} in parallel")
-            results = await asyncio.gather(
-                _call_classifier_model(primary_model, prompt),
-                _call_classifier_model(secondary_model, prompt),
-            )
-            result_a, time_a, error_a = results[0]
-            result_b, time_b, error_b = results[1]
-
-            # Log comparison
-            _log_ab_result(
-                model_a=primary_model,
-                model_b=secondary_model,
-                products_count=len(products),
-                result_a=result_a or [],
-                result_b=result_b or [],
-                time_a=time_a,
-                time_b=time_b,
-                error_a=error_a,
-                error_b=error_b,
-            )
+        # Select primary model based on mode
+        if ab_mode == "secondary" and model_b:
+            primary_model = model_b
         else:
-            # Same model for A and B - just call once
+            primary_model = model_a
+
+        # A/B testing: run both models in PARALLEL if configured
+        result_b = None
+        time_b = 0.0
+        error_b = None
+
+        if model_b and ab_mode in ("primary", "both"):
+            secondary_model = model_b if ab_mode == "primary" else model_a
+            if secondary_model != primary_model:
+                # Run BOTH models in parallel for A/B testing (saves ~7-30s)
+                logger.info(f"A/B test: running {primary_model} and {secondary_model} in parallel")
+                results = await asyncio.gather(
+                    _call_classifier_model(primary_model, prompt),
+                    _call_classifier_model(secondary_model, prompt),
+                )
+                result_a, time_a, error_a = results[0]
+                result_b, time_b, error_b = results[1]
+
+                # Log comparison
+                _log_ab_result(
+                    model_a=primary_model,
+                    model_b=secondary_model,
+                    products_count=len(products),
+                    result_a=result_a or [],
+                    result_b=result_b or [],
+                    time_a=time_a,
+                    time_b=time_b,
+                    error_a=error_a,
+                    error_b=error_b,
+                )
+            else:
+                # Same model for A and B - just call once
+                result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
+        else:
+            # No A/B testing - just call primary model
             result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
-    else:
-        # No A/B testing - just call primary model
-        result_a, time_a, error_a = await _call_classifier_model(primary_model, prompt)
 
     # Handle primary model failure
     if error_a or result_a is None:

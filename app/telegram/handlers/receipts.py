@@ -33,6 +33,8 @@ elif settings.OCR_BACKEND == "deepseek":
     from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text
 elif settings.OCR_BACKEND == "google":
     from app.google_ocr_backend import extract_products_google, process_multipage_pdf_google
+elif settings.OCR_BACKEND == "openai":
+    from app.openai_ocr_backend import extract_products_openai, process_multipage_pdf_openai, extract_total_from_text
 
 
 async def extract_products_from_image(image_path, is_multi_page: bool = False):
@@ -43,6 +45,8 @@ async def extract_products_from_image(image_path, is_multi_page: bool = False):
         return await extract_products_deepseek(image_path)
     elif settings.OCR_BACKEND == "google":
         return await extract_products_google(image_path, is_multi_page=is_multi_page)
+    elif settings.OCR_BACKEND == "openai":
+        return await extract_products_openai(image_path, is_multi_page=is_multi_page)
     return await extract_vision(image_path)
 
 logger = logging.getLogger(__name__)
@@ -187,8 +191,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         all_products = []
         all_raw_texts = []  # Collect raw text for multi-page total extraction
         combined_receipt: Receipt | None = None
+        used_unified_processing = False  # Track if we used unified (google/openai) multipage path
 
-        # For Google backend with multi-page PDF, use unified processing
+        # For Google/OpenAI backend with multi-page PDF, use unified processing
+        # (all pages OCR'd then combined into single LLM structuring call)
         if settings.OCR_BACKEND == "google" and len(temp_images) > 1:
             await status_msg.edit_text(f"Krok 1/3: Google Vision OCR ({len(temp_images)} stron)...")
             combined_receipt, ocr_error = await process_multipage_pdf_google(temp_images, pdf_filename)
@@ -208,6 +214,28 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             all_products = combined_receipt.products
             if combined_receipt.raw_text:
                 all_raw_texts.append(combined_receipt.raw_text)
+            used_unified_processing = True
+
+        elif settings.OCR_BACKEND == "openai" and len(temp_images) > 1:
+            await status_msg.edit_text(f"Krok 1/3: OpenAI OCR ({len(temp_images)} stron)...")
+            combined_receipt, ocr_error = await process_multipage_pdf_openai(temp_images, pdf_filename)
+
+            if ocr_error or not combined_receipt:
+                error_msg = ocr_error or "OpenAI OCR returned no data"
+                logger.error(f"OpenAI OCR failed for {pdf_filename}: {error_msg}")
+                write_error_file(pdf_filename, error_msg)
+                log_error(pdf_filename, error_msg)
+                await status_msg.edit_text(
+                    f"Błąd OCR: {error_msg}\n\n"
+                    f"Użyj `/reprocess {pdf_filename}` aby spróbować ponownie.",
+                    parse_mode="Markdown"
+                )
+                return
+
+            all_products = combined_receipt.products
+            if combined_receipt.raw_text:
+                all_raw_texts.append(combined_receipt.raw_text)
+            used_unified_processing = True
 
         else:
             # Legacy per-page processing for other backends
@@ -247,6 +275,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         combined_receipt.sklep = receipt.sklep
                     if not combined_receipt.data and receipt.data:
                         combined_receipt.data = receipt.data
+                    # For multi-page PDFs, prefer the last page's suma
+                    # (payment total like "Karta płatnicza" is typically on the last page)
+                    if receipt.suma:
+                        combined_receipt.suma = receipt.suma
 
         # Check if any products were found across all pages
         if not all_products:
@@ -269,13 +301,21 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             calculated_total = round(sum(p.cena for p in all_products), 2)
             combined_receipt.calculated_total = calculated_total
 
-            # For multi-page PDFs, re-extract total from combined raw text
+            # For multi-page PDFs processed per-page, re-extract total from combined raw text
             # Payment info (Karta płatnicza) is typically on the last page
-            if len(temp_images) > 1 and all_raw_texts and settings.OCR_BACKEND == "paddle":
+            # Skip for unified processing (google/openai) where LLM already has all pages
+            if len(temp_images) > 1 and all_raw_texts and not used_unified_processing:
                 combined_raw_text = "\n".join(all_raw_texts)
                 combined_receipt.raw_text = combined_raw_text
 
-                final_total = extract_total_from_text(combined_raw_text)
+                # Use backend-specific extract_total_from_text if available,
+                # otherwise fall back to the one from app.ocr
+                try:
+                    final_total = extract_total_from_text(combined_raw_text)
+                except NameError:
+                    from app.ocr import extract_total_from_text as _extract_total
+                    final_total = _extract_total(combined_raw_text)
+
                 if final_total:
                     logger.info(f"Multi-page PDF: extracted payment total {final_total} from combined text")
                     combined_receipt.suma = final_total

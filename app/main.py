@@ -46,6 +46,8 @@ elif settings.OCR_BACKEND == "deepseek":
     from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text, process_multipage_pdf
 elif settings.OCR_BACKEND == "google":
     from app.google_ocr_backend import extract_products_google, process_multipage_pdf_google
+elif settings.OCR_BACKEND == "openai":
+    from app.openai_ocr_backend import extract_products_openai, process_multipage_pdf_openai, extract_total_from_text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -129,6 +131,12 @@ async def shutdown_event():
     # Close Ollama HTTP client
     await ollama_client.close_client()
     logger.info("Ollama client closed")
+
+    # Close OpenAI client if used
+    if settings.OCR_BACKEND == "openai":
+        from app.openai_client import close_client as close_openai
+        await close_openai()
+        logger.info("OpenAI client closed")
 
     # Close database connection
     if settings.USE_DB_RECEIPTS or settings.USE_DB_DICTIONARIES:
@@ -245,6 +253,8 @@ async def _process_single_page(
             receipt, ocr_error = await extract_products_deepseek(image_path, is_multi_page=is_multi_page)
         elif settings.OCR_BACKEND == "google":
             receipt, ocr_error = await extract_products_google(image_path, is_multi_page=is_multi_page)
+        elif settings.OCR_BACKEND == "openai":
+            receipt, ocr_error = await extract_products_openai(image_path, is_multi_page=is_multi_page)
         else:
             receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
@@ -295,6 +305,8 @@ async def _process_pages_sequential(
             receipt, ocr_error = await extract_products_deepseek(image_path, is_multi_page=is_multi_page)
         elif settings.OCR_BACKEND == "google":
             receipt, ocr_error = await extract_products_google(image_path, is_multi_page=is_multi_page)
+        elif settings.OCR_BACKEND == "openai":
+            receipt, ocr_error = await extract_products_openai(image_path, is_multi_page=is_multi_page)
         else:
             receipt, ocr_error = await extract_products_from_image(image_path, is_multi_page=is_multi_page)
 
@@ -366,6 +378,27 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             if ocr_error or not combined_receipt:
                 error_msg = ocr_error or "Google Vision OCR returned no data"
                 logger.error(f"Google Vision OCR failed for {filename}: {error_msg}")
+                error_file = write_error_file(filename, error_msg)
+                log_error(filename, error_msg)
+                return ProcessingResult(
+                    success=False,
+                    source_file=filename,
+                    output_file=str(error_file),
+                    error=error_msg,
+                    processed_at=processed_at
+                )
+
+            # Skip the per-page processing loop - go directly to categorization
+            all_products = combined_receipt.products
+            page_results = []  # Empty - not used in unified mode
+
+        elif len(image_paths) > 1 and settings.OCR_BACKEND == "openai":
+            logger.info(f"Multipage PDF ({len(image_paths)} pages): using OpenAI pipeline")
+            combined_receipt, ocr_error = await process_multipage_pdf_openai(image_paths, filename)
+
+            if ocr_error or not combined_receipt:
+                error_msg = ocr_error or "OpenAI OCR returned no data"
+                logger.error(f"OpenAI OCR failed for {filename}: {error_msg}")
                 error_file = write_error_file(filename, error_msg)
                 log_error(filename, error_msg)
                 return ProcessingResult(
@@ -456,7 +489,7 @@ async def _process_file(file_path: Path) -> ProcessingResult:
 
             # For multi-page PDFs with LEGACY per-page processing, re-extract total
             # Skip this for unified mode (deepseek multipage) - already handled
-            is_unified_mode = len(image_paths) > 1 and settings.OCR_BACKEND == "deepseek"
+            is_unified_mode = len(image_paths) > 1 and settings.OCR_BACKEND in ("deepseek", "google", "openai")
 
             if len(image_paths) > 1 and all_raw_texts and not is_unified_mode:
                 combined_raw_text = "\n".join(all_raw_texts)
@@ -521,7 +554,8 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             logger.warning(f"Categorization warning: {cat_error}")
 
         # Optionally unload ALL models in parallel (saves ~1-2s vs sequential)
-        if settings.UNLOAD_MODELS_AFTER_USE:
+        # Skip for OpenAI backend - no local models to unload
+        if settings.UNLOAD_MODELS_AFTER_USE and settings.OCR_BACKEND != "openai":
             models_to_unload = [settings.OCR_MODEL, settings.CLASSIFIER_MODEL]
             # Remove duplicates (e.g., if both use same model)
             models_to_unload = list(set(models_to_unload))

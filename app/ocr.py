@@ -73,7 +73,7 @@ Return ONLY valid JSON (no markdown, no explanation):
   ],
   "sklep": "store name",
   "data": "YYYY-MM-DD",
-  "suma": 144.48
+  "suma": 19.16
 }
 
 Field definitions:

@@ -36,7 +36,9 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # DeepSeek pipeline: fast OCR + LLM structuring (~20s total)
       - OCR_MODEL=qwen2.5:7b
-      - OCR_BACKEND=google
+      - OCR_BACKEND=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_OCR_MODEL=gpt-4o-mini
       - STRUCTURING_MODEL=qwen2.5:7b
       - CLASSIFIER_MODEL=qwen2.5:7b
       # A/B testing (optional)
