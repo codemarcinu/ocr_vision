@@ -47,6 +47,9 @@ from app.telegram.handlers import (
     use_command,
     find_command,
     settings_command,
+    chat_command,
+    endchat_command,
+    handle_chat_message,
 )
 from app.telegram.handlers.menu_articles import handle_articles_callback
 from app.telegram.handlers.menu_bookmarks import handle_bookmarks_callback
@@ -144,6 +147,8 @@ class PantryBot:
         self.application.add_handler(CommandHandler("ask", ask_command))
         self.application.add_handler(CommandHandler("find", find_command))
         self.application.add_handler(CommandHandler("settings", settings_command))
+        self.application.add_handler(CommandHandler("chat", chat_command))
+        self.application.add_handler(CommandHandler("endchat", endchat_command))
         self.application.add_handler(CommandHandler("q", self._quick_search_command))
         self.application.add_handler(CommandHandler("n", self._quick_note_command))
 
@@ -390,6 +395,11 @@ class PantryBot:
         # 2. Check if we're awaiting manual total input
         if context.user_data and "awaiting_manual_total" in context.user_data:
             await self._handle_manual_total(update, context)
+            return
+
+        # 2.5. Check for active chat session
+        if context.user_data and context.user_data.get("active_chat_session"):
+            await handle_chat_message(update, context)
             return
 
         # 3. Check for URL - show action picker

@@ -193,6 +193,15 @@ class Settings:
     RAG_MIN_SCORE: float = float(os.getenv("RAG_MIN_SCORE", "0.3"))
     RAG_AUTO_INDEX: bool = os.getenv("RAG_AUTO_INDEX", "true").lower() == "true"
 
+    # ==========================================================================
+    # Chat AI (multi-turn conversation with RAG + web search)
+    # ==========================================================================
+    CHAT_ENABLED: bool = os.getenv("CHAT_ENABLED", "true").lower() == "true"
+    CHAT_MODEL: str = os.getenv("CHAT_MODEL", "")  # Empty = use CLASSIFIER_MODEL
+    CHAT_MAX_HISTORY: int = int(os.getenv("CHAT_MAX_HISTORY", "10"))
+    SEARXNG_URL: str = os.getenv("SEARXNG_URL", "http://searxng:8080")
+    SEARXNG_TIMEOUT: int = int(os.getenv("SEARXNG_TIMEOUT", "15"))
+
     # Validation
     PRICE_WARNING_THRESHOLD: float = 100.0  # Flag prices above this
 

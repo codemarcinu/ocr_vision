@@ -1,0 +1,36 @@
+{% if user_message %}
+<div class="chat-bubble chat-user">
+    {{ user_message }}
+</div>
+{% endif %}
+
+{% if answer %}
+<div class="chat-bubble chat-assistant">
+    <div class="chat-md" data-raw="{{ answer|e }}"></div>
+
+    {% if sources %}
+    <div class="chat-sources">
+        {% for s in sources %}
+        <span class="badge bg-light text-dark me-1 mb-1">
+            {% if s.type == "web" %}<i class="bi bi-globe2"></i>{% else %}<i class="bi bi-archive"></i>{% endif %}
+            {{ s.title[:40] }}{% if s.title|length > 40 %}...{% endif %}
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="chat-meta">
+        {% if search_type == "rag" %}<i class="bi bi-archive"></i> Baza wiedzy
+        {% elif search_type == "web" %}<i class="bi bi-globe2"></i> Internet
+        {% elif search_type == "both" %}<i class="bi bi-archive"></i>+<i class="bi bi-globe2"></i>
+        {% else %}<i class="bi bi-chat-left"></i> Bezposrednio{% endif %}
+        | {{ "%.1f"|format(processing_time) }}s
+    </div>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="chat-bubble chat-assistant">
+    <div class="text-danger"><i class="bi bi-exclamation-triangle"></i> {{ error }}</div>
+</div>
+{% endif %}

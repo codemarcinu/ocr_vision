@@ -14,6 +14,7 @@ from app.db.repositories.receipts import ReceiptRepository
 from app.db.repositories.rss import ArticleRepository, RssFeedRepository
 from app.db.repositories.bookmarks import BookmarkRepository
 from app.db.repositories.notes import NoteRepository
+from app.db.repositories.chat import ChatRepository
 from app.db.repositories.embeddings import EmbeddingRepository
 from app.db.repositories.stores import StoreRepository
 
@@ -85,6 +86,11 @@ async def get_embedding_repo(session: DbSession) -> EmbeddingRepository:
     return EmbeddingRepository(session)
 
 
+async def get_chat_repo(session: DbSession) -> ChatRepository:
+    """Get chat repository."""
+    return ChatRepository(session)
+
+
 # Type aliases for repository dependencies
 ProductRepoDep = Annotated[ProductRepository, Depends(get_product_repo)]
 StoreRepoDep = Annotated[StoreRepository, Depends(get_store_repo)]
@@ -97,3 +103,4 @@ ArticleRepoDep = Annotated[ArticleRepository, Depends(get_article_repo)]
 NoteRepoDep = Annotated[NoteRepository, Depends(get_note_repo)]
 BookmarkRepoDep = Annotated[BookmarkRepository, Depends(get_bookmark_repo)]
 EmbeddingRepoDep = Annotated[EmbeddingRepository, Depends(get_embedding_repo)]
+ChatRepoDep = Annotated[ChatRepository, Depends(get_chat_repo)]

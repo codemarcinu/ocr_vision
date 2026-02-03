@@ -49,6 +49,11 @@ from app.telegram.handlers.search import (
 from app.telegram.handlers.settings import (
     settings_command,
 )
+from app.telegram.handlers.chat import (
+    chat_command,
+    endchat_command,
+    handle_chat_message,
+)
 
 __all__ = [
     "ask_command",
@@ -80,4 +85,7 @@ __all__ = [
     "note_command",
     "find_command",
     "settings_command",
+    "chat_command",
+    "endchat_command",
+    "handle_chat_message",
 ]

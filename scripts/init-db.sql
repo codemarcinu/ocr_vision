@@ -180,6 +180,35 @@ CREATE TABLE review_corrections (
 CREATE INDEX idx_corrections_receipt ON review_corrections(receipt_id);
 CREATE INDEX idx_corrections_type ON review_corrections(correction_type);
 
+-- Sesje czatu (multi-turn conversations)
+CREATE TABLE chat_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title VARCHAR(500),
+    source VARCHAR(20) NOT NULL DEFAULT 'web',  -- 'web' or 'telegram'
+    telegram_chat_id INTEGER,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ix_chat_sessions_telegram ON chat_sessions(telegram_chat_id);
+CREATE INDEX ix_chat_sessions_active ON chat_sessions(is_active, created_at);
+
+-- Wiadomosci czatu
+CREATE TABLE chat_messages (
+    id SERIAL PRIMARY KEY,
+    session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE NOT NULL,
+    role VARCHAR(20) NOT NULL,  -- 'user', 'assistant', 'system'
+    content TEXT NOT NULL,
+    sources JSONB DEFAULT '[]',
+    search_type VARCHAR(10),  -- 'rag', 'web', 'both', 'direct'
+    search_query TEXT,
+    model_used VARCHAR(100),
+    processing_time_sec DECIMAL(6,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX ix_chat_messages_session ON chat_messages(session_id);
+CREATE INDEX ix_chat_messages_session_time ON chat_messages(session_id, created_at);
+
 -- Funkcja do aktualizacji updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -197,6 +226,11 @@ CREATE TRIGGER update_products_updated_at
 
 CREATE TRIGGER update_unmatched_updated_at
     BEFORE UPDATE ON unmatched_products
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_chat_sessions_updated_at
+    BEFORE UPDATE ON chat_sessions
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

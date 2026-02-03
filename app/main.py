@@ -25,6 +25,7 @@ from app.rss_api import router as rss_router
 from app.transcription_api import router as transcription_router
 from app.notes_api import router as notes_router
 from app.ask_api import router as ask_router
+from app.chat_api import router as chat_router
 from app.bookmarks_api import router as bookmarks_router
 from app.pantry_api import router as pantry_router
 from app.receipts_api import router as receipts_router
@@ -66,6 +67,7 @@ app.include_router(transcription_router)
 app.include_router(notes_router)
 app.include_router(bookmarks_router)
 app.include_router(ask_router)
+app.include_router(chat_router)
 app.include_router(pantry_router)
 app.include_router(receipts_router)
 app.include_router(search_router)

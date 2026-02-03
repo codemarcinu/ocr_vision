@@ -1,0 +1,14 @@
+{% for s in sessions %}
+<div class="chat-session-item {% if s.id|string == active_session_id %}active{% endif %}"
+     data-session="{{ s.id }}"
+     onclick="loadSession('{{ s.id }}')">
+    <div>{{ s.title or "Nowy czat" }}</div>
+    <div class="chat-session-time">{{ s.updated_at.strftime('%d.%m %H:%M') }}</div>
+</div>
+{% endfor %}
+
+{% if not sessions %}
+<div class="text-center text-muted small p-3">
+    Brak rozmow
+</div>
+{% endif %}

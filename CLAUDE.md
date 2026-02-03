@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Second Brain - personal knowledge management system with multiple modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, and **RAG knowledge base** (ask questions about all your data). Uses Ollama LLMs for extraction and categorization, **PostgreSQL + pgvector** for persistence and semantic search, and outputs to Obsidian markdown files. Includes a Telegram bot with inline menu navigation and **human-in-the-loop validation**.
+Second Brain - personal knowledge management system with multiple modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, **RAG knowledge base** (ask questions about all your data), and **Chat AI** (multi-turn conversations with RAG + internet search via SearXNG). Uses Ollama LLMs for extraction and categorization, **PostgreSQL + pgvector** for persistence and semantic search, and outputs to Obsidian markdown files. Includes a Telegram bot with inline menu navigation and **human-in-the-loop validation**.
 
 ## Build & Run Commands
 
@@ -320,6 +320,8 @@ class Product(BaseModel):
 | `/transcriptions` | List recent transcriptions |
 | `/note <ID>` | Generate note from transcription |
 | `/ask <question>` | Query RAG knowledge base |
+| `/chat [question]` | Start multi-turn chat session (RAG + web search) |
+| `/endchat` | End active chat session |
 | `/settings` | Notification preferences (digest time, toggles) |
 
 ### JSON Import via Telegram
@@ -366,7 +368,8 @@ Modern interactive web application built with **Jinja2 templates + HTMX** for se
 | `/app/zakladki/` | Bookmarks manager with status tracking |
 | `/app/slownik/` | Dictionary and unmatched products learning |
 | `/app/szukaj/` | Unified search across all content types |
-| `/app/zapytaj/` | RAG query interface |
+| `/app/czat/` | Multi-turn Chat AI (RAG + web search) |
+| `/app/zapytaj/` | RAG query interface (single-turn) |
 
 **Template structure:** (`app/templates/`)
 - `components/` - Reusable UI components (navbar, metric cards, pagination)
@@ -847,6 +850,72 @@ Question (/ask or POST /ask)
 
 **Search strategy:** Vector search (pgvector cosine `<=>`) with automatic keyword fallback (pg_trgm ILIKE) when too few high-score results.
 
+### Chat AI (`app/chat/`)
+
+Multi-turn conversational AI with access to both the personal knowledge base (RAG) and the internet (SearXNG).
+
+**Architecture:**
+```
+User Message + Conversation History
+         │
+         ▼
+┌─────────────────────┐
+│  Intent Classifier   │  (LLM: "rag" | "web" | "both" | "direct")
+└─────────────────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+ RAG Search  SearXNG Search  (parallel if "both")
+    │         │
+    └────┬────┘
+         ▼
+┌─────────────────────┐
+│  LLM /api/chat      │  (with history + search context)
+└─────────────────────┘
+         │
+         ▼
+  Answer + Sources → PostgreSQL
+```
+
+**Key files:**
+- `app/chat/orchestrator.py` - Main chat processing pipeline (intent → search → LLM)
+- `app/chat/intent_classifier.py` - LLM-based query intent classification
+- `app/chat/searxng_client.py` - SearXNG web search JSON API client
+- `app/chat_api.py` - REST API endpoints
+- `app/db/repositories/chat.py` - Chat session/message repository
+- `app/telegram/handlers/chat.py` - Telegram `/chat` and `/endchat` handlers
+
+**Database models (`app/db/models.py`):**
+- `ChatSession` - Conversation sessions (id UUID, title, source web/telegram, telegram_chat_id, is_active)
+- `ChatMessage` - Messages (id, session_id, role user/assistant/system, content, sources JSONB, search_type, model_used)
+
+**API endpoints (`/chat/*`):**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/chat/message` | POST | Send message (auto-creates session) |
+| `/chat/sessions` | GET | List recent sessions |
+| `/chat/sessions/{id}` | GET | Get session with messages |
+| `/chat/sessions/{id}` | DELETE | Delete session |
+| `/chat/sessions/{id}/end` | POST | End active session |
+
+**Telegram commands:**
+| Command | Description |
+|---------|-------------|
+| `/chat [question]` | Start/continue chat session |
+| `/endchat` | End active chat session |
+
+In Telegram, after `/chat` is started, all text messages are routed to the chat handler until `/endchat` is called.
+
+**Web UI:** `/app/czat/` - Chat interface with session sidebar, message bubbles, HTMX real-time updates.
+
+**SearXNG:** Self-hosted metasearch engine in docker-compose (`searxng` service, port 8080). Configuration in `searxng/settings.yml`.
+
+**Intent classification:** The classifier analyzes the question and conversation history to decide:
+- `"rag"` - personal data queries (spending, articles, notes, etc.)
+- `"web"` - current events, facts to look up online
+- `"both"` - needs both personal data and internet context
+- `"direct"` - greetings, general knowledge, conversation continuation
+
 ### Environment Variables
 
 ```bash
@@ -919,6 +988,13 @@ RAG_CHUNK_SIZE=1500                                 # Chunk size for indexing (c
 RAG_CHUNK_OVERLAP=200                               # Overlap between chunks (chars)
 RAG_MIN_SCORE=0.3                                   # Min cosine similarity threshold
 RAG_AUTO_INDEX=true                                 # Auto-index new content
+
+# Chat AI (multi-turn with RAG + web search)
+CHAT_ENABLED=true                                   # Enable/disable chat feature
+CHAT_MODEL=                                         # Empty = use CLASSIFIER_MODEL
+CHAT_MAX_HISTORY=10                                 # Max messages in conversation context
+SEARXNG_URL=http://searxng:8080                     # SearXNG instance URL
+SEARXNG_TIMEOUT=15                                  # Web search timeout (seconds)
 
 # Personal Notes
 NOTES_ENABLED=true                                  # Enable/disable notes module
@@ -1151,6 +1227,13 @@ curl http://localhost:8000/reports/classifier-ab
 - `PUT /bookmarks/{id}` - Update bookmark
 - `DELETE /bookmarks/{id}` - Delete bookmark
 
+### Chat AI (`/chat/*`)
+- `POST /chat/message` - Send message (creates session if needed)
+- `GET /chat/sessions` - List recent sessions
+- `GET /chat/sessions/{id}` - Get session with messages
+- `DELETE /chat/sessions/{id}` - Delete session
+- `POST /chat/sessions/{id}/end` - End active session
+
 ### Unified Search
 - `GET /search?q=<query>&types=receipt,article,note,bookmark,transcription&limit=5` - Cross-content search
 
@@ -1214,6 +1297,8 @@ Key tables:
 - `notes` - Personal notes (UUID PK, title, content, category, tags, is_archived)
 - `bookmarks` - URL bookmarks (UUID PK, url, title, status, priority, tags, linked article/transcription)
 - `document_embeddings` - RAG vector index (content_type, text_chunk, embedding Vector(768), metadata JSONB)
+- `chat_sessions` - Chat conversation sessions (UUID PK, title, source web/telegram, telegram_chat_id, is_active)
+- `chat_messages` - Chat messages (session_id FK, role, content, sources JSONB, search_type, model_used)
 
 Files:
 - `scripts/init-db.sql` - Initial schema

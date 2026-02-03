@@ -640,6 +640,76 @@ class Bookmark(Base):
 # RAG Document Embeddings
 # =============================================================================
 
+# =============================================================================
+# Chat AI (multi-turn conversations)
+# =============================================================================
+
+class ChatSession(Base):
+    """Chat conversation session."""
+
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="web"
+    )  # 'web' or 'telegram'
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+    # Relationships
+    messages: Mapped[List["ChatMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at",
+    )
+
+
+class ChatMessage(Base):
+    """Single message in a chat session."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # 'user', 'assistant', 'system'
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    sources: Mapped[Optional[dict]] = mapped_column(JSONB, default=list)
+    search_type: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
+    )  # 'rag', 'web', 'both', 'direct'
+    search_query: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    processing_time_sec: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 2), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+
+    # Relationships
+    session: Mapped["ChatSession"] = relationship(back_populates="messages")
+
+
+# =============================================================================
+# RAG Document Embeddings
+# =============================================================================
+
 class DocumentEmbedding(Base):
     """Document embedding for RAG semantic search."""
 

@@ -1,0 +1,30 @@
+{% for msg in messages %}
+<div class="chat-bubble {% if msg.role == 'user' %}chat-user{% else %}chat-assistant{% endif %}">
+    {% if msg.role == 'assistant' %}
+    <div class="chat-md" data-raw="{{ msg.content|e }}"></div>
+    {% else %}
+    <div style="white-space: pre-wrap;">{{ msg.content }}</div>
+    {% endif %}
+
+    {% if msg.role == 'assistant' and msg.sources %}
+    <div class="chat-sources">
+        {% for s in msg.sources %}
+        <span class="badge bg-light text-dark me-1 mb-1">
+            {% if s.type == "web" %}<i class="bi bi-globe2"></i>{% else %}<i class="bi bi-archive"></i>{% endif %}
+            {{ s.title[:40] }}{% if s.title|length > 40 %}...{% endif %}
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if msg.role == 'assistant' and msg.search_type %}
+    <div class="chat-meta">
+        {% if msg.search_type == "rag" %}<i class="bi bi-archive"></i> Baza wiedzy
+        {% elif msg.search_type == "web" %}<i class="bi bi-globe2"></i> Internet
+        {% elif msg.search_type == "both" %}<i class="bi bi-archive"></i>+<i class="bi bi-globe2"></i>
+        {% else %}<i class="bi bi-chat-left"></i> Bezposrednio{% endif %}
+        {% if msg.processing_time_sec %}| {{ "%.1f"|format(msg.processing_time_sec) }}s{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
