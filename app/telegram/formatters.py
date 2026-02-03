@@ -66,6 +66,13 @@ CATEGORY_ICONS = {
     "ryby": "🐟",
     "jaja": "🥚",
     "sosy": "🥫",
+    "napoje_gorące": "☕",
+    "napoje_gorace": "☕",
+    "produkty_sypkie": "🍝",
+    "dania_gotowe": "🍲",
+    "dla_dzieci": "👶",
+    "dla_zwierząt": "🐾",
+    "dla_zwierzat": "🐾",
 }
 
 

@@ -32,6 +32,16 @@ async def get_unmatched_summary() -> list[dict]:
         return []
 
 
+async def get_inne_products_summary() -> list[dict]:
+    """Get products categorized as 'Inne' in the last 7 days."""
+    try:
+        from app.feedback_logger import get_recent_inne_products
+        return get_recent_inne_products(days=7)
+    except Exception as e:
+        logger.warning(f"Failed to get 'Inne' products: {e}")
+        return []
+
+
 async def get_weekly_stats() -> dict:
     """Get spending stats for the past week."""
     try:
@@ -85,6 +95,21 @@ async def send_daily_digest(bot: Bot, chat_id: int) -> None:
                 for p in unmatched[:5]
             ],
             "count": len(unmatched),
+        })
+
+    # Check for products categorized as "Inne"
+    inne = await get_inne_products_summary()
+    if inne:
+        # Sort by count descending, show most frequent first
+        inne_sorted = sorted(inne, key=lambda x: x.get("count", 1), reverse=True)
+        sections.append({
+            "icon": "❓",
+            "title": "Produkty w kategorii 'Inne' (ostatnie 7 dni)",
+            "items": [
+                {"name": p.get("raw_name", "?"), "detail": f"{p.get('count', 1)}x, {p.get('last_price', 0):.2f} zł"}
+                for p in inne_sorted[:5]
+            ],
+            "count": len(inne_sorted),
         })
 
     # Weekly stats
