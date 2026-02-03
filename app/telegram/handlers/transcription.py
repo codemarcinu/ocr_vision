@@ -288,6 +288,16 @@ async def _process_transcription_job(update: Update, status_msg, job_id: UUID) -
                             note_path = file_path
 
                         await session.commit()
+
+                        # RAG indexing
+                        if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+                            try:
+                                from app.rag.hooks import index_transcription_hook
+                                await index_transcription_hook(job, session)
+                                await session.commit()
+                            except Exception:
+                                pass
+
                 except Exception as e:
                     logger.warning(f"Note generation failed: {e}")
                     # Continue - transcription is still valid
@@ -493,6 +503,15 @@ async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 note.obsidian_file_path = str(file_path)
 
             await session.commit()
+
+            # RAG indexing
+            if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+                try:
+                    from app.rag.hooks import index_transcription_hook
+                    await index_transcription_hook(job, session)
+                    await session.commit()
+                except Exception:
+                    pass
 
             # Format response
             summary_short = result.summary_text[:500] + "..." if len(result.summary_text) > 500 else result.summary_text

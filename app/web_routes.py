@@ -680,6 +680,21 @@ async def note_create(
     async for session in get_session():
         await session.commit()
 
+    # Write to Obsidian
+    if settings.GENERATE_OBSIDIAN_FILES:
+        from app.notes_writer import write_note_file
+        write_note_file(note)
+
+    # RAG indexing
+    if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+        try:
+            from app.rag.hooks import index_note_hook
+            async for session in get_session():
+                await index_note_hook(note, session)
+                await session.commit()
+        except Exception:
+            pass
+
     notes = await repo.get_recent(limit=50)
     response = templates.TemplateResponse("notes/partials/note_list.html", {
         "request": request, "notes": notes,

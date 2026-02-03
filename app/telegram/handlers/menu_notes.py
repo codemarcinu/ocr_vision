@@ -132,6 +132,15 @@ async def handle_note_text_input(
                 from app.notes_writer import write_note_file
                 write_note_file(note)
 
+            # RAG indexing
+            if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
+                try:
+                    from app.rag.hooks import index_note_hook
+                    await index_note_hook(note, session)
+                    await session.commit()
+                except Exception:
+                    pass
+
             return (
                 f"✅ <b>Notatka zapisana!</b>\n\n"
                 f"📌 {escape_html(title)}\n"
