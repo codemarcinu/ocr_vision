@@ -252,6 +252,15 @@ class PantryRepository(BaseRepository[PantryItem]):
             "expiring_soon": row.expiring_soon or 0,
         }
 
+    async def delete_item(self, item_id: int) -> bool:
+        """Delete a pantry item."""
+        item = await self.get_by_id(item_id)
+        if not item:
+            return False
+        await self.session.delete(item)
+        await self.session.flush()
+        return True
+
     async def get_category_summary(self) -> List[dict]:
         """Get summary of items per category."""
         stmt = text("""

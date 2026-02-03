@@ -4,11 +4,19 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="mb-0">Spizarnia</h4>
-    <button class="btn btn-primary btn-sm"
-            hx-get="/app/spizarnia/partials/add-form" hx-target="#modal-content"
-            data-bs-toggle="modal" data-bs-target="#globalModal">
-        <i class="bi bi-plus-lg me-1"></i> Dodaj produkt
-    </button>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm"
+                hx-post="/app/spizarnia/backfill" hx-target="#pantry-items"
+                hx-confirm="Zaimportowac produkty z istniejacych paragonow?"
+                hx-indicator="#pantry-loading">
+            <i class="bi bi-arrow-repeat me-1"></i> Import z paragonow
+        </button>
+        <button class="btn btn-primary btn-sm"
+                hx-get="/app/spizarnia/partials/add-form" hx-target="#modal-content"
+                data-bs-toggle="modal" data-bs-target="#globalModal">
+            <i class="bi bi-plus-lg me-1"></i> Dodaj produkt
+        </button>
+    </div>
 </div>
 
 <!-- Stats -->

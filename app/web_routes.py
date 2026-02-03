@@ -346,6 +346,95 @@ async def pantry_add_form(request: Request):
     })
 
 
+@router.post("/app/spizarnia/{item_id}/consume", response_class=HTMLResponse)
+async def pantry_consume_single(request: Request, item_id: int, repo: PantryRepoDep):
+    await repo.consume_item(item_id)
+
+    grouped = await repo.get_grouped_by_category()
+    stats = await repo.get_stats()
+    response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
+        "request": request, "grouped": grouped, "stats": stats, "q": "",
+    })
+    response.headers.update(_htmx_trigger("Produkt zuzytowany"))
+    return response
+
+
+@router.post("/app/spizarnia/{item_id}/restore", response_class=HTMLResponse)
+async def pantry_restore(request: Request, item_id: int, repo: PantryRepoDep):
+    await repo.restore_item(item_id)
+
+    grouped = await repo.get_grouped_by_category()
+    stats = await repo.get_stats()
+    response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
+        "request": request, "grouped": grouped, "stats": stats, "q": "",
+    })
+    response.headers.update(_htmx_trigger("Produkt przywrocony"))
+    return response
+
+
+@router.post("/app/spizarnia/{item_id}/update", response_class=HTMLResponse)
+async def pantry_update_item(
+    request: Request,
+    item_id: int,
+    repo: PantryRepoDep,
+    name: Optional[str] = Form(None),
+    category: Optional[str] = Form(None),
+):
+    kwargs = {}
+    if name:
+        kwargs["name"] = name
+    if category:
+        from app.db.models import Category
+        from sqlalchemy import select
+        result = await repo.session.execute(select(Category).where(Category.name == category))
+        cat = result.scalar_one_or_none()
+        if cat:
+            kwargs["category_id"] = cat.id
+
+    if kwargs:
+        await repo.update(item_id, **kwargs)
+
+    grouped = await repo.get_grouped_by_category()
+    stats = await repo.get_stats()
+    response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
+        "request": request, "grouped": grouped, "stats": stats, "q": "",
+    })
+    response.headers.update(_htmx_trigger("Produkt zaktualizowany"))
+    return response
+
+
+@router.post("/app/spizarnia/{item_id}/delete", response_class=HTMLResponse)
+async def pantry_delete_item(request: Request, item_id: int, repo: PantryRepoDep):
+    await repo.delete_item(item_id)
+
+    grouped = await repo.get_grouped_by_category()
+    stats = await repo.get_stats()
+    response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
+        "request": request, "grouped": grouped, "stats": stats, "q": "",
+    })
+    response.headers.update(_htmx_trigger("Produkt usuniety"))
+    return response
+
+
+@router.get("/app/spizarnia/partials/edit-form/{item_id}", response_class=HTMLResponse)
+async def pantry_edit_form(request: Request, item_id: int, repo: PantryRepoDep):
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.db.models import PantryItem
+    stmt = (
+        select(PantryItem)
+        .options(selectinload(PantryItem.category))
+        .where(PantryItem.id == item_id)
+    )
+    result = await repo.session.execute(stmt)
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Produkt nie znaleziony")
+    return templates.TemplateResponse("pantry/partials/edit_form.html", {
+        "request": request, "item": item, "categories": settings.CATEGORIES,
+    })
+
+
 # ============================================================================
 # Analytics
 # ============================================================================

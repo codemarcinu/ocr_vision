@@ -13,7 +13,7 @@
             <div class="accordion-body p-0">
                 <div class="list-group list-group-flush">
                     {% for item in items %}
-                    <label class="list-group-item d-flex align-items-center gap-2 {% if item.is_consumed %}text-decoration-line-through text-muted{% endif %}">
+                    <div class="list-group-item d-flex align-items-center gap-2 {% if item.is_consumed %}text-decoration-line-through text-muted{% endif %}">
                         {% if not item.is_consumed %}
                         <input type="checkbox" class="form-check-input pantry-check" value="{{ item.id }}">
                         {% else %}
@@ -25,10 +25,52 @@
                             <small class="text-muted ms-1">{{ store_emoji(item.store.name) }} {{ item.store.name }}</small>
                             {% endif %}
                         </div>
-                        <small class="text-muted">
+                        <small class="text-muted me-2">
                             {{ item.purchase_date.strftime("%d.%m") if item.purchase_date else "" }}
                         </small>
-                    </label>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary py-0 px-1" type="button"
+                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-three-dots-vertical"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                {% if not item.is_consumed %}
+                                <li>
+                                    <button class="dropdown-item" type="button"
+                                            hx-post="/app/spizarnia/{{ item.id }}/consume"
+                                            hx-target="#pantry-items" hx-swap="innerHTML">
+                                        <i class="bi bi-check2 me-1"></i> Zuzij
+                                    </button>
+                                </li>
+                                {% else %}
+                                <li>
+                                    <button class="dropdown-item" type="button"
+                                            hx-post="/app/spizarnia/{{ item.id }}/restore"
+                                            hx-target="#pantry-items" hx-swap="innerHTML">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i> Przywroc
+                                    </button>
+                                </li>
+                                {% endif %}
+                                <li>
+                                    <button class="dropdown-item" type="button"
+                                            hx-get="/app/spizarnia/partials/edit-form/{{ item.id }}"
+                                            hx-target="#modal-content"
+                                            data-bs-toggle="modal" data-bs-target="#globalModal">
+                                        <i class="bi bi-pencil me-1"></i> Edytuj
+                                    </button>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <button class="dropdown-item text-danger" type="button"
+                                            hx-post="/app/spizarnia/{{ item.id }}/delete"
+                                            hx-target="#pantry-items" hx-swap="innerHTML"
+                                            hx-confirm="Na pewno usunac ten produkt?">
+                                        <i class="bi bi-trash me-1"></i> Usun
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
             </div>

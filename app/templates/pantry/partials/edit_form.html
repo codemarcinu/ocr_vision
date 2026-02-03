@@ -1,0 +1,27 @@
+<div class="modal-header">
+    <h5 class="modal-title">Edytuj produkt</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<form hx-post="/app/spizarnia/{{ item.id }}/update" hx-target="#pantry-items" hx-swap="innerHTML">
+    <div class="modal-body">
+        <div class="mb-3">
+            <label class="form-label">Nazwa produktu</label>
+            <input type="text" name="name" class="form-control" value="{{ item.name }}" required autofocus>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Kategoria</label>
+            <select name="category" class="form-select">
+                <option value="">Wybierz...</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}" {% if item.category and item.category.name == cat %}selected{% endif %}>
+                    {{ category_emoji(cat) }} {{ cat }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+        <button type="submit" class="btn btn-primary" data-bs-dismiss="modal">Zapisz</button>
+    </div>
+</form>
