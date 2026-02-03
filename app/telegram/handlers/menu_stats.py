@@ -17,13 +17,10 @@ logger = logging.getLogger(__name__)
 
 async def handle_stats_callback(
     query: CallbackQuery,
-    data: str,
+    action: str,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Handle stats:* callbacks."""
-    await query.answer()
-    action = data.split(":", 1)[1] if ":" in data else ""
-
     if action == "menu":
         await query.edit_message_text(
             "<b>📊 Statystyki</b>\n\nWybierz zakres:",

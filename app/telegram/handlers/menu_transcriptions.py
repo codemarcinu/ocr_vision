@@ -14,13 +14,10 @@ logger = logging.getLogger(__name__)
 
 async def handle_transcriptions_callback(
     query: CallbackQuery,
-    data: str,
+    action: str,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Handle transcriptions:* callbacks."""
-    await query.answer()
-    action = data.split(":", 1)[1] if ":" in data else ""
-
     if action == "menu":
         await query.edit_message_text(
             "<b>🎙️ Transkrypcje</b>\n\n"

@@ -9,29 +9,18 @@ from telegram.ext import ContextTypes
 from app.config import settings
 from app.db.connection import get_session
 from app.db.repositories.chat import ChatRepository
+from app.telegram.formatters import escape_html
 from app.telegram.keyboards import get_chat_menu, get_main_keyboard
 
 logger = logging.getLogger(__name__)
 
 
-def _escape_html(text: str) -> str:
-    """Escape HTML special characters."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-
-
 async def handle_chat_callback(
     query: CallbackQuery,
-    data: str,
+    action: str,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Handle chat:* callbacks."""
-    await query.answer()
-    action = data.split(":", 1)[1] if ":" in data else ""
-
     if action == "menu":
         if not settings.CHAT_ENABLED:
             await query.edit_message_text(
@@ -151,7 +140,7 @@ async def handle_chat_callback(
 
                 lines = ["<b>💬 Ostatnie sesje czatu</b>\n"]
                 for s in sessions:
-                    title = _escape_html(s.title or "Bez tytułu")
+                    title = escape_html(s.title or "Bez tytułu")
                     if len(title) > 40:
                         title = title[:37] + "..."
                     status = "🟢" if s.is_active else "⚪"

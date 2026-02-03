@@ -10,18 +10,10 @@ from app.config import settings
 from app.db.connection import get_session
 from app.db.repositories.chat import ChatRepository
 from app.chat import orchestrator
+from app.telegram.formatters import escape_html
 from app.telegram.middleware import authorized_only
 
 logger = logging.getLogger(__name__)
-
-
-def _escape_html(text: str) -> str:
-    """Escape HTML special characters."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
 
 
 def _search_type_label(search_type: str) -> str:
@@ -30,6 +22,7 @@ def _search_type_label(search_type: str) -> str:
         "rag": "📚 Baza wiedzy",
         "web": "🌐 Internet",
         "both": "📚🌐 Baza + Internet",
+        "weather": "⛅ Pogoda",
         "direct": "💬 Bezpośrednio",
     }.get(search_type, "")
 
@@ -103,13 +96,13 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await session.commit()
 
             # Format response
-            parts = [_escape_html(response.answer)]
+            parts = [escape_html(response.answer)]
 
             if response.sources:
                 parts.append("\n---")
                 for s in response.sources[:3]:
                     emoji = "📚" if s.get("type") == "rag" else "🌐"
-                    title = _escape_html(s.get("title", "")[:40])
+                    title = escape_html(s.get("title", "")[:40])
                     parts.append(f"{emoji} {title}")
 
             parts.append(
@@ -239,13 +232,13 @@ async def handle_chat_message(
             await session.commit()
 
         # Format response
-        parts = [_escape_html(response.answer)]
+        parts = [escape_html(response.answer)]
 
         if response.sources:
             parts.append("\n---")
             for s in response.sources[:3]:
                 emoji = "📚" if s.get("type") == "rag" else "🌐"
-                title = _escape_html(s.get("title", "")[:40])
+                title = escape_html(s.get("title", "")[:40])
                 parts.append(f"{emoji} {title}")
 
         parts.append(

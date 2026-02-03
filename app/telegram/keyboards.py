@@ -240,11 +240,11 @@ def get_review_keyboard(receipt_id: str) -> InlineKeyboardMarkup:
     """Get keyboard for receipt review (human-in-the-loop)."""
     keyboard = [
         [
-            InlineKeyboardButton("Zatwierdź", callback_data=f"review_approve_{receipt_id}"),
-            InlineKeyboardButton("Popraw sumę", callback_data=f"review_edit_{receipt_id}"),
+            InlineKeyboardButton("Zatwierdź", callback_data=f"review:approve:{receipt_id}"),
+            InlineKeyboardButton("Popraw sumę", callback_data=f"review:edit:{receipt_id}"),
         ],
         [
-            InlineKeyboardButton("Odrzuć", callback_data=f"review_reject_{receipt_id}"),
+            InlineKeyboardButton("Odrzuć", callback_data=f"review:reject:{receipt_id}"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -256,14 +256,14 @@ def get_total_correction_keyboard(receipt_id: str, calculated_total: float) -> I
         [
             InlineKeyboardButton(
                 f"Użyj sumy produktów ({calculated_total:.2f} zł)",
-                callback_data=f"review_use_calculated_{receipt_id}"
+                callback_data=f"review:use_calculated:{receipt_id}"
             ),
         ],
         [
-            InlineKeyboardButton("Wpisz ręcznie", callback_data=f"review_manual_{receipt_id}"),
+            InlineKeyboardButton("Wpisz ręcznie", callback_data=f"review:manual:{receipt_id}"),
         ],
         [
-            InlineKeyboardButton("Anuluj", callback_data=f"review_cancel_{receipt_id}"),
+            InlineKeyboardButton("Anuluj", callback_data=f"review:cancel:{receipt_id}"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

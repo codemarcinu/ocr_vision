@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 from app.config import settings
 from app.db.connection import get_session
 from app.rag import answerer
+from app.telegram.formatters import escape_html
 from app.telegram.middleware import authorized_only
 
 logger = logging.getLogger(__name__)
@@ -59,13 +60,13 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
 
         # Format response
-        parts = [f"🧠 <b>Odpowiedź:</b>\n\n{_escape_html(result.answer)}"]
+        parts = [f"🧠 <b>Odpowiedź:</b>\n\n{escape_html(result.answer)}"]
 
         if result.sources:
             parts.append("\n\n📚 <b>Źródła:</b>")
             for source in result.sources[:5]:
                 emoji = _format_source_emoji(source.content_type)
-                parts.append(f"  {emoji} {_escape_html(source.label)}")
+                parts.append(f"  {emoji} {escape_html(source.label)}")
 
         parts.append(
             f"\n\n<i>⏱️ {result.processing_time_sec}s | "
@@ -87,12 +88,3 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         logger.error(f"Error in /ask: {e}", exc_info=True)
         await status_msg.edit_text(f"❌ Błąd: {e}")
-
-
-def _escape_html(text: str) -> str:
-    """Escape HTML special characters."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )

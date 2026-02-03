@@ -13,6 +13,7 @@ from app.search_api import (
     _search_bookmarks,
     _search_transcriptions,
 )
+from app.telegram.formatters import escape_html
 from app.telegram.middleware import authorized_only
 
 logger = logging.getLogger(__name__)
@@ -77,12 +78,12 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         if not total:
             await status_msg.edit_text(
-                f"\U0001f50d Brak wyników dla: <b>{_escape(query)}</b>",
+                f"\U0001f50d Brak wyników dla: <b>{escape_html(query)}</b>",
                 parse_mode="HTML",
             )
             return
 
-        parts = [f"\U0001f50d Wyniki dla: <b>{_escape(query)}</b> ({total})\n"]
+        parts = [f"\U0001f50d Wyniki dla: <b>{escape_html(query)}</b> ({total})\n"]
 
         order = ["receipt", "article", "note", "bookmark", "transcription"]
         for type_name in order:
@@ -114,7 +115,7 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 def _format_item(type_name: str, item: dict) -> str:
     """Format a search result item for Telegram."""
     if type_name == "receipt":
-        name = _escape(item.get("name", ""))
+        name = escape_html(item.get("name", ""))
         price = item.get("price", 0)
         store = item.get("store", "")
         date = item.get("date", "")
@@ -122,31 +123,22 @@ def _format_item(type_name: str, item: dict) -> str:
         return f"{name} — {price:.2f} zł{meta}"
 
     elif type_name == "article":
-        title = _escape(item.get("title", ""))
+        title = escape_html(item.get("title", ""))
         return title
 
     elif type_name == "note":
-        title = _escape(item.get("title", ""))
+        title = escape_html(item.get("title", ""))
         cat = item.get("category", "")
         return f"{title}" + (f" [{cat}]" if cat else "")
 
     elif type_name == "bookmark":
-        title = _escape(item.get("title", item.get("url", "")))
+        title = escape_html(item.get("title", item.get("url", "")))
         status = item.get("status", "")
         icon = "✅" if status == "read" else "⏳"
         return f"{icon} {title}"
 
     elif type_name == "transcription":
-        title = _escape(item.get("title", "Transkrypcja"))
+        title = escape_html(item.get("title", "Transkrypcja"))
         return title
 
-    return _escape(str(item))
-
-
-def _escape(text: str) -> str:
-    """Escape HTML special characters."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return escape_html(str(item))

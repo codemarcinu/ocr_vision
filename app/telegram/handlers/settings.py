@@ -95,11 +95,10 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def handle_settings_callback(
-    query: CallbackQuery, data: str, context: ContextTypes.DEFAULT_TYPE
+    query: CallbackQuery, action: str, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handle settings: callback queries."""
+    """Handle settings:* callbacks."""
     s = _get_settings(context)
-    action = data.replace("settings:", "")
 
     if action == "hour":
         await query.edit_message_text(
