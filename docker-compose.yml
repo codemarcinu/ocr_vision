@@ -64,6 +64,7 @@ services:
       - BOOKMARKS_OUTPUT_DIR=/data/bookmarks
       # Chat AI
       - CHAT_ENABLED=true
+      - CHAT_MODEL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M
       - SEARXNG_URL=http://searxng:8080
       # Web UI - disable Obsidian for receipts/pantry (data in PostgreSQL)
       - GENERATE_OBSIDIAN_FILES=false
