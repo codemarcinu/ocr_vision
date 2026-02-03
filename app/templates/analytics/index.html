@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Analityka - Second Brain{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Analityka</h4>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'spending' %}active{% endif %}"
+           href="/app/analityka/?tab=spending">Wydatki</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'stores' %}active{% endif %}"
+           href="/app/analityka/?tab=stores">Sklepy</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'categories' %}active{% endif %}"
+           href="/app/analityka/?tab=categories">Kategorie</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'trends' %}active{% endif %}"
+           href="/app/analityka/?tab=trends">Trendy cenowe</a>
+    </li>
+</ul>
+
+{% if tab == "spending" %}
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Wydatki miesieczne</h6></div>
+            <div class="card-body" style="height:350px">
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
+    </div>
+    {% if data.by_category %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Wydatki wg kategorii</h6></div>
+            <div class="card-body" style="height:300px">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif tab == "stores" %}
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Wydatki wg sklepu</h6></div>
+            <div class="card-body" style="height:350px">
+                <canvas id="storeChart"></canvas>
+            </div>
+        </div>
+    </div>
+    {% if data.by_store %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead><tr><th>Sklep</th><th class="text-end">Wydatki</th><th class="text-end">Paragony</th></tr></thead>
+                    <tbody>
+                        {% for s in data.by_store %}
+                        <tr>
+                            <td>{{ store_emoji(s.store_name if s.store_name is defined else s.get("store_name", "")) }} {{ s.store_name if s.store_name is defined else s.get("store_name", "-") }}</td>
+                            <td class="text-end fw-bold">{{ "%.2f"|format(s.total_spent if s.total_spent is defined else s.get("total_spent", 0)|float) }} zl</td>
+                            <td class="text-end">{{ s.receipt_count if s.receipt_count is defined else s.get("receipt_count", 0) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif tab == "categories" %}
+<div class="row g-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Wydatki wg kategorii</h6></div>
+            <div class="card-body" style="height:400px">
+                <canvas id="categoryDoughnut"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif tab == "trends" %}
+<div class="card">
+    <div class="card-header"><h6 class="mb-0">Trendy cenowe</h6></div>
+    <div class="card-body">
+        {% if data.top_products %}
+        <p class="text-muted mb-3">Kliknij produkt aby zobaczyc trend cenowy:</p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            {% for p in data.top_products %}
+            <button class="btn btn-sm btn-outline-primary"
+                    hx-get="/app/analityka/trends/{{ p.product_id if p.product_id is defined else p.get('product_id', 0) }}"
+                    hx-target="#trend-chart-container">
+                {{ p.product_name if p.product_name is defined else p.get("product_name", "?") }}
+            </button>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">Brak danych o produktach</p>
+        {% endif %}
+        <div id="trend-chart-container"></div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/charts.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var data = {{ data_json|safe }};
+
+    {% if tab == "spending" %}
+    if (data.monthly && data.monthly.length) {
+        var labels = data.monthly.map(function(m) { return m.month || m.period || ''; });
+        var values = data.monthly.map(function(m) { return m.total || m.total_spent || 0; });
+        createBarChart('monthlyChart', labels, [{ label: 'Wydatki (zl)', data: values }]);
+    }
+    if (data.by_category && data.by_category.length) {
+        var cats = data.by_category.map(function(c) { return c.category_name || c.category || ''; });
+        var vals = data.by_category.map(function(c) { return c.total_spent || c.total || 0; });
+        createDoughnutChart('categoryChart', cats, vals);
+    }
+
+    {% elif tab == "stores" %}
+    if (data.by_store && data.by_store.length) {
+        var labels = data.by_store.map(function(s) { return s.store_name || ''; });
+        var values = data.by_store.map(function(s) { return s.total_spent || 0; });
+        createBarChart('storeChart', labels, [{ label: 'Wydatki (zl)', data: values }]);
+    }
+
+    {% elif tab == "categories" %}
+    if (data.by_category && data.by_category.length) {
+        var labels = data.by_category.map(function(c) { return c.category_name || c.category || ''; });
+        var values = data.by_category.map(function(c) { return c.total_spent || c.total || 0; });
+        createDoughnutChart('categoryDoughnut', labels, values);
+    }
+    {% endif %}
+});
+</script>
+{% endblock %}

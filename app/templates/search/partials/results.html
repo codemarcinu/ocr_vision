@@ -1,0 +1,75 @@
+{% if q %}
+<p class="text-muted mb-3">Znaleziono {{ total }} wynikow dla "{{ q }}"</p>
+
+{% set type_icons = {"receipt": "bi-receipt", "article": "bi-newspaper", "note": "bi-journal-text", "bookmark": "bi-bookmark", "transcription": "bi-mic"} %}
+{% set type_labels = {"receipt": "Paragony", "article": "Artykuly", "note": "Notatki", "bookmark": "Zakladki", "transcription": "Transkrypcje"} %}
+
+{% for type_name, items in results.items() %}
+<div class="mb-4">
+    <h6>
+        <i class="bi {{ type_icons.get(type_name, 'bi-file') }} me-1"></i>
+        {{ type_labels.get(type_name, type_name) }}
+        <span class="badge bg-secondary">{{ items|length }}</span>
+    </h6>
+
+    {% for item in items %}
+    <div class="card mb-2">
+        <div class="card-body py-2">
+            {% if type_name == "receipt" %}
+            <div class="d-flex justify-content-between">
+                <div>
+                    <a href="/app/paragony/{{ item.receipt_id }}" class="text-decoration-none fw-medium">
+                        {{ item.name or item.name_raw }}
+                    </a>
+                    {% if item.name_raw and item.name != item.name_raw %}
+                    <small class="text-muted ms-1">({{ item.name_raw }})</small>
+                    {% endif %}
+                </div>
+                <div class="text-end">
+                    <span class="fw-bold">{{ "%.2f"|format(item.price) }} zl</span>
+                    {% if item.store %}<small class="text-muted ms-1">{{ item.store }}</small>{% endif %}
+                    {% if item.date %}<small class="text-muted ms-1">{{ item.date }}</small>{% endif %}
+                </div>
+            </div>
+
+            {% elif type_name == "article" %}
+            <div class="fw-medium">
+                {% if item.url %}<a href="{{ item.url }}" target="_blank" class="text-decoration-none">{{ item.title }}</a>
+                {% else %}{{ item.title }}{% endif %}
+            </div>
+            <small class="text-muted">{{ item.published_date or "" }}</small>
+
+            {% elif type_name == "note" %}
+            <a href="/app/notatki/" class="text-decoration-none fw-medium">{{ item.title }}</a>
+            {% if item.snippet %}<div class="small text-muted mt-1">{{ item.snippet }}</div>{% endif %}
+
+            {% elif type_name == "bookmark" %}
+            <div class="fw-medium">
+                <a href="{{ item.url }}" target="_blank" class="text-decoration-none">{{ item.title or item.url }}</a>
+            </div>
+            <span class="badge bg-{{ 'success' if item.status == 'read' else 'warning' }}">{{ item.status }}</span>
+
+            {% elif type_name == "transcription" %}
+            <a href="/app/transkrypcje/{{ item.id }}" class="text-decoration-none fw-medium">{{ item.title }}</a>
+            <small class="text-muted ms-1">{{ item.source_type }}</small>
+            <span class="badge bg-{{ 'success' if item.status == 'completed' else 'secondary' }}">{{ item.status }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+
+{% if not results %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-search"></i></div>
+    <p>Brak wynikow dla "{{ q }}"</p>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-search"></i></div>
+    <p>Wpisz co najmniej 2 znaki aby wyszukac</p>
+</div>
+{% endif %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Artykuly - Second Brain{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Artykuly
+    {% if unread_count %}<span class="badge bg-warning">{{ unread_count }} nowych</span>{% endif %}
+</h4>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'articles' %}active{% endif %}"
+           href="/app/artykuly/?tab=articles">Artykuly</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'feeds' %}active{% endif %}"
+           href="/app/artykuly/?tab=feeds">Feedy RSS</a>
+    </li>
+</ul>
+
+{% if tab == "articles" %}
+<!-- Summarize URL -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form hx-post="/app/artykuly/summarize" hx-target="#summarize-result" hx-indicator="#sum-loading">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
+                <input type="url" name="url" class="form-control" placeholder="Wklej URL do podsumowania..." required>
+                <button class="btn btn-primary" type="submit">Podsumuj</button>
+                <span id="sum-loading" class="htmx-indicator input-group-text">
+                    <span class="spinner-border spinner-border-sm"></span>
+                </span>
+            </div>
+        </form>
+    </div>
+</div>
+<div id="summarize-result"></div>
+
+<!-- Refresh button -->
+<div class="d-flex justify-content-end mb-3">
+    <button class="btn btn-sm btn-outline-primary"
+            hx-post="/app/artykuly/refresh" hx-target="#article-list" hx-indicator="#refresh-loading">
+        <i class="bi bi-arrow-clockwise me-1"></i> Odswiez feedy
+        <span id="refresh-loading" class="htmx-indicator">
+            <span class="spinner-border spinner-border-sm"></span>
+        </span>
+    </button>
+</div>
+
+<!-- Article list -->
+<div id="article-list">
+    {% include "articles/partials/article_list.html" %}
+</div>
+
+{% elif tab == "feeds" %}
+<!-- Add feed form -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form hx-post="/app/artykuly/feeds/add" hx-target="#feed-list" hx-indicator="#feed-loading">
+            <div class="row g-2">
+                <div class="col">
+                    <input type="url" name="url" class="form-control form-control-sm" placeholder="URL kanalu RSS/Atom..." required>
+                </div>
+                <div class="col-auto">
+                    <input type="text" name="name" class="form-control form-control-sm" placeholder="Nazwa (opcjonalna)">
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-sm btn-primary" type="submit">
+                        <i class="bi bi-plus-lg me-1"></i> Dodaj
+                    </button>
+                    <span id="feed-loading" class="htmx-indicator">
+                        <span class="spinner-border spinner-border-sm"></span>
+                    </span>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Feed list -->
+<div id="feed-list">
+    {% include "articles/partials/feed_list.html" %}
+</div>
+{% endif %}
+{% endblock %}

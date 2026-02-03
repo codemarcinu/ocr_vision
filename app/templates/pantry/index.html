@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Spizarnia - Second Brain{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">Spizarnia</h4>
+    <button class="btn btn-primary btn-sm"
+            hx-get="/app/spizarnia/partials/add-form" hx-target="#modal-content"
+            data-bs-toggle="modal" data-bs-target="#globalModal">
+        <i class="bi bi-plus-lg me-1"></i> Dodaj produkt
+    </button>
+</div>
+
+<!-- Stats -->
+{% if stats %}
+<div class="row row-cols-2 row-cols-md-4 g-2 mb-4">
+    <div class="col">
+        <div class="card metric-card">
+            <div class="card-body py-2 text-center">
+                <div class="metric-value fs-4 text-primary">{{ stats.get("active_items", 0) }}</div>
+                <div class="metric-label">Aktywne</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card metric-card">
+            <div class="card-body py-2 text-center">
+                <div class="metric-value fs-4 text-success">{{ stats.get("consumed_items", 0) }}</div>
+                <div class="metric-label">Zuzytkowane</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card metric-card">
+            <div class="card-body py-2 text-center">
+                <div class="metric-value fs-4 text-info">{{ stats.get("categories", 0) }}</div>
+                <div class="metric-label">Kategorie</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card metric-card">
+            <div class="card-body py-2 text-center">
+                <div class="metric-value fs-4 text-warning">{{ stats.get("expiring_soon", 0) }}</div>
+                <div class="metric-label">Wygasajace</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Search -->
+<div class="mb-3">
+    <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="search" class="form-control" placeholder="Szukaj produktu..."
+               name="q" value="{{ q }}"
+               hx-get="/app/spizarnia/" hx-target="#pantry-items"
+               hx-trigger="keyup changed delay:500ms" hx-indicator="#pantry-loading">
+        <span id="pantry-loading" class="htmx-indicator input-group-text">
+            <span class="spinner-border spinner-border-sm"></span>
+        </span>
+    </div>
+</div>
+
+<!-- Batch consume -->
+<form hx-post="/app/spizarnia/consume" hx-target="#pantry-items" hx-indicator="#pantry-loading">
+    <input type="hidden" name="item_ids" id="consume-ids" value="">
+
+    <div class="d-flex gap-2 mb-3" id="batch-actions" style="display:none!important">
+        <button type="submit" class="btn btn-sm btn-warning" id="consume-btn" style="display:none">
+            <i class="bi bi-check2-square me-1"></i> Zuzij zaznaczone (<span id="consume-count">0</span>)
+        </button>
+    </div>
+
+    <div id="pantry-items">
+        {% include "pantry/partials/items_grouped.html" %}
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('pantry-check')) {
+        var checked = document.querySelectorAll('.pantry-check:checked');
+        var ids = Array.from(checked).map(function(cb) { return cb.value; });
+        document.getElementById('consume-ids').value = ids.join(',');
+        var btn = document.getElementById('consume-btn');
+        var count = document.getElementById('consume-count');
+        if (ids.length > 0) {
+            btn.style.display = '';
+            count.textContent = ids.length;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+});
+</script>
+{% endblock %}

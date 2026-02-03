@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Zapytaj AI - Second Brain{% endblock %}
+
+{% block content %}
+<div class="ask-container">
+    <h4 class="mb-4">Zapytaj AI</h4>
+
+    <p class="text-muted mb-4">
+        Zadaj pytanie w jezyk naturalnym - AI przeszuka cala baze wiedzy
+        (artykuly, transkrypcje, paragony, notatki, zakladki) i odpowie z cytowaniami zrodel.
+    </p>
+
+    <!-- Answer area -->
+    <div id="ask-answers"></div>
+
+    <!-- Question form -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <form hx-post="/app/zapytaj/" hx-target="#ask-answers" hx-swap="afterbegin"
+                  hx-indicator="#ask-loading">
+                <div class="input-group">
+                    <input type="text" name="question" class="form-control"
+                           placeholder="Np. ile wydalem w Biedronce w styczniu?" required autofocus>
+                    <button class="btn btn-primary" type="submit">
+                        <i class="bi bi-send me-1"></i> Zapytaj
+                    </button>
+                </div>
+            </form>
+            <div id="ask-loading" class="htmx-indicator text-center mt-3">
+                <span class="spinner-border spinner-border-sm"></span> Przeszukiwanie bazy wiedzy...
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,19 @@
+<div class="card mt-3">
+    <div class="card-body" style="height:300px">
+        <canvas id="trendLineChart"></canvas>
+    </div>
+</div>
+<script>
+(function() {
+    var data = {{ trends_json|safe }};
+    if (data && data.length) {
+        var labels = data.map(function(t) { return t.date || t.purchase_date || ''; });
+        var values = data.map(function(t) { return t.price || t.avg_price || 0; });
+        createLineChart('trendLineChart', labels, [{
+            label: 'Cena (zl)',
+            data: values,
+            fill: true,
+        }]);
+    }
+})();
+</script>

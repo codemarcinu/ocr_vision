@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Transkrypcje - Second Brain{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Transkrypcje</h4>
+
+<!-- New transcription form -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form hx-post="/app/transkrypcje/new" hx-target="#job-list" hx-indicator="#tr-loading">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text"><i class="bi bi-youtube"></i></span>
+                <input type="url" name="url" class="form-control" placeholder="URL YouTube lub audio..." required>
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-mic me-1"></i> Transkrybuj
+                </button>
+                <span id="tr-loading" class="htmx-indicator input-group-text">
+                    <span class="spinner-border spinner-border-sm"></span>
+                </span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="job-list">
+    {% include "transcriptions/partials/job_list.html" %}
+</div>
+{% endblock %}

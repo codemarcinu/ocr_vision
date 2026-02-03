@@ -1,0 +1,29 @@
+{% for r in receipts %}
+<tr onclick="window.location='/app/paragony/{{ r.id }}'" style="cursor:pointer">
+    <td>{{ r.receipt_date.strftime("%d.%m.%Y") if r.receipt_date else "-" }}</td>
+    <td>
+        <span class="store-icon">{{ store_emoji(r.store.name if r.store else r.store_raw) }}</span>
+        {{ r.store.name if r.store else r.store_raw or "-" }}
+    </td>
+    <td class="text-end fw-bold">{{ "%.2f"|format(r.total_final|float) if r.total_final else "-" }} zl</td>
+    <td class="text-center">{{ r.items|length if r.items else "-" }}</td>
+    <td>
+        {% if r.needs_review %}
+        <span class="badge badge-review"><i class="bi bi-exclamation-triangle"></i> Przeglad</span>
+        {% else %}
+        <span class="badge badge-ok">OK</span>
+        {% endif %}
+    </td>
+    <td>
+        <a href="/app/paragony/{{ r.id }}" class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation()">
+            <i class="bi bi-eye"></i>
+        </a>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="6" class="text-center text-muted py-4">
+        Brak paragonow
+    </td>
+</tr>
+{% endfor %}

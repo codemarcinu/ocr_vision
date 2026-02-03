@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Notatki - Second Brain{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">Notatki</h4>
+</div>
+
+<div class="row g-4">
+    <!-- Note list -->
+    <div class="col-md-5">
+        <!-- Search -->
+        <div class="input-group input-group-sm mb-3">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" class="form-control" placeholder="Szukaj notatek..."
+                   value="{{ search }}"
+                   hx-get="/app/notatki/" hx-target="#note-list"
+                   hx-trigger="keyup changed delay:500ms"
+                   name="search">
+        </div>
+
+        <!-- Create note -->
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <form hx-post="/app/notatki/create" hx-target="#note-list">
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="title" class="form-control" placeholder="Nowa notatka..." required>
+                        <button class="btn btn-primary" type="submit"><i class="bi bi-plus-lg"></i></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="note-list">
+            {% include "notes/partials/note_list.html" %}
+        </div>
+    </div>
+
+    <!-- Note detail -->
+    <div class="col-md-7">
+        <div id="note-detail">
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="bi bi-journal-text"></i></div>
+                <p>Wybierz notatke z listy</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

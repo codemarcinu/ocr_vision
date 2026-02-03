@@ -1,0 +1,32 @@
+{% if feeds %}
+<div class="table-responsive">
+    <table class="table table-sm">
+        <thead>
+            <tr><th>Nazwa</th><th>URL</th><th>Typ</th><th>Ostatnie pobranie</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for f in feeds %}
+            <tr>
+                <td class="fw-medium">{{ f.name }}</td>
+                <td><small class="text-muted">{{ f.feed_url[:50] }}{% if f.feed_url|length > 50 %}...{% endif %}</small></td>
+                <td><span class="badge bg-light text-dark">{{ f.feed_type or "?" }}</span></td>
+                <td><small>{{ f.last_fetched.strftime("%d.%m %H:%M") if f.last_fetched else "Nigdy" }}</small></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger"
+                            hx-post="/app/artykuly/feeds/{{ f.id }}/delete"
+                            hx-target="#feed-list"
+                            hx-confirm="Usunac feed {{ f.name }}?">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-rss"></i></div>
+    <p>Brak subskrypcji RSS</p>
+</div>
+{% endif %}

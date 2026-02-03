@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Paragony - Second Brain{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">Paragony</h4>
+    <a href="/app/paragony/upload" class="btn btn-primary btn-sm">
+        <i class="bi bi-upload me-1"></i> Upload
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form hx-get="/app/paragony/" hx-target="#receipt-table" hx-push-url="true" hx-indicator="#loading">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Sklep</label>
+                    <select name="store_id" class="form-select form-select-sm">
+                        <option value="">Wszystkie</option>
+                        {% for s in stores %}
+                        <option value="{{ s.id }}" {% if filters.store_id|string == s.id|string %}selected{% endif %}>
+                            {{ store_emoji(s.name) }} {{ s.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Od</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Do</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-funnel"></i> Filtruj
+                    </button>
+                </div>
+                <div class="col-auto">
+                    <span id="loading" class="htmx-indicator">
+                        <span class="spinner-border spinner-border-sm"></span>
+                    </span>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="card">
+    <div class="table-responsive" id="receipt-table">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Sklep</th>
+                    <th class="text-end">Suma</th>
+                    <th class="text-center">Produkty</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% include "receipts/partials/table_rows.html" %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+<nav class="d-flex justify-content-between align-items-center mt-3">
+    <span class="pagination-info">
+        Wyniki {{ offset + 1 }}-{{ [offset + limit, total]|min }} z {{ total }}
+    </span>
+    <div class="btn-group btn-group-sm">
+        {% if offset > 0 %}
+        <a href="/app/paragony/?offset={{ [offset - limit, 0]|max }}{% if filters.store_id %}&store_id={{ filters.store_id }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}"
+           class="btn btn-outline-secondary">
+            <i class="bi bi-chevron-left"></i> Poprzednia
+        </a>
+        {% endif %}
+        {% if offset + limit < total %}
+        <a href="/app/paragony/?offset={{ offset + limit }}{% if filters.store_id %}&store_id={{ filters.store_id }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}"
+           class="btn btn-outline-secondary">
+            Nastepna <i class="bi bi-chevron-right"></i>
+        </a>
+        {% endif %}
+    </div>
+</nav>
+{% endblock %}

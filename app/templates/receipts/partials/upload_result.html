@@ -1,0 +1,20 @@
+{% if success %}
+<div class="alert alert-success">
+    <i class="bi bi-check-circle me-1"></i> <strong>Paragon przetworzony!</strong>
+    {% if result and result.receipt %}
+    <div class="mt-2">
+        <div>Sklep: <strong>{{ result.receipt.sklep or "?" }}</strong></div>
+        <div>Produkty: <strong>{{ result.receipt.products|length }}</strong></div>
+        <div>Suma: <strong>{{ "%.2f"|format(result.receipt.suma|float) if result.receipt.suma else "?" }} zl</strong></div>
+    </div>
+    {% endif %}
+    <div class="mt-2">
+        <a href="/app/paragony/" class="btn btn-sm btn-outline-success">Zobacz paragony</a>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle me-1"></i> <strong>Blad przetwarzania</strong>
+    <div class="mt-1">{{ error }}</div>
+</div>
+{% endif %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Slownik - Second Brain{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Slownik produktow</h4>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'unmatched' %}active{% endif %}"
+           href="/app/slownik/?tab=unmatched">
+            Niedopasowane
+            {% if unmatched %}<span class="badge bg-danger">{{ unmatched|length }}</span>{% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'dictionary' %}active{% endif %}"
+           href="/app/slownik/?tab=dictionary">Slownik</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if tab == 'shortcuts' %}active{% endif %}"
+           href="/app/slownik/?tab=shortcuts">Skroty</a>
+    </li>
+</ul>
+
+{% if tab == "unmatched" %}
+<div id="unmatched-list">
+    {% include "dictionary/partials/unmatched_list.html" %}
+</div>
+
+{% elif tab == "dictionary" %}
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted">Przegladanie slownika produktow - zaladuj z API <code>/dictionary/products</code></p>
+        <a href="/dictionary/products" target="_blank" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-up-right me-1"></i> Otworz API
+        </a>
+    </div>
+</div>
+
+{% elif tab == "shortcuts" %}
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted">Skroty produktowe - zaladuj z API <code>/dictionary/shortcuts</code></p>
+        <a href="/dictionary/shortcuts" target="_blank" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-up-right me-1"></i> Otworz API
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

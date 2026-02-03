@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Szukaj - Second Brain{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Szukaj</h4>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- Search form -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" class="form-control form-control-lg" placeholder="Szukaj w calej bazie wiedzy..."
+                           name="q" value="{{ q }}"
+                           hx-get="/app/szukaj/" hx-target="#search-results"
+                           hx-trigger="keyup changed delay:500ms"
+                           hx-indicator="#search-loading"
+                           autofocus>
+                    <span id="search-loading" class="htmx-indicator input-group-text">
+                        <span class="spinner-border spinner-border-sm"></span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="search-results">
+            {% include "search/partials/results.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Zakladki - Second Brain{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Zakladki</h4>
+
+<!-- Add bookmark -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form hx-post="/app/zakladki/add" hx-target="#bookmark-list" hx-indicator="#bk-loading">
+            <div class="row g-2">
+                <div class="col">
+                    <input type="url" name="url" class="form-control form-control-sm" placeholder="https://..." required>
+                </div>
+                <div class="col-auto">
+                    <input type="text" name="title" class="form-control form-control-sm" placeholder="Tytul (opcjonalny)">
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-sm btn-primary" type="submit">
+                        <i class="bi bi-bookmark-plus me-1"></i> Zapisz
+                    </button>
+                    <span id="bk-loading" class="htmx-indicator"><span class="spinner-border spinner-border-sm"></span></span>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Status filter tabs -->
+<ul class="nav nav-pills mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if status == 'all' %}active{% endif %}"
+           hx-get="/app/zakladki/?status=" hx-target="#bookmark-list" hx-push-url="true">Wszystkie</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status == 'pending' %}active{% endif %}"
+           hx-get="/app/zakladki/?status=pending" hx-target="#bookmark-list" hx-push-url="true">Oczekujace</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status == 'read' %}active{% endif %}"
+           hx-get="/app/zakladki/?status=read" hx-target="#bookmark-list" hx-push-url="true">Przeczytane</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status == 'archived' %}active{% endif %}"
+           hx-get="/app/zakladki/?status=archived" hx-target="#bookmark-list" hx-push-url="true">Zarchiwizowane</a>
+    </li>
+</ul>
+
+<div id="bookmark-list">
+    {% include "bookmarks/partials/bookmark_list.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% if jobs %}
+{% for j in jobs %}
+<div class="card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-2">
+            <div class="flex-grow-1">
+                <a href="/app/transkrypcje/{{ j.id }}" class="fw-medium text-decoration-none">
+                    {{ j.title or j.source_url or "Transkrypcja" }}
+                </a>
+                <div class="d-flex gap-2 mt-1">
+                    <small class="text-muted">
+                        <i class="bi bi-{% if j.source_type == 'youtube' %}youtube{% else %}file-earmark-music{% endif %}"></i>
+                        {{ j.source_type }}
+                    </small>
+                    {% if j.duration_seconds %}
+                    <small class="text-muted">
+                        {{ "%d:%02d"|format(j.duration_seconds // 60, j.duration_seconds % 60) }}
+                    </small>
+                    {% endif %}
+                    <small class="text-muted">{{ j.created_at.strftime("%d.%m.%Y %H:%M") if j.created_at else "" }}</small>
+                </div>
+            </div>
+            <div>
+                {% set status_colors = {"pending": "secondary", "downloading": "info", "transcribing": "warning", "extracting": "info", "completed": "success", "failed": "danger"} %}
+                <span class="badge bg-{{ status_colors.get(j.status, 'secondary') }}">
+                    {{ j.status }}
+                </span>
+                {% if j.progress_percent is not none and j.status not in ["completed", "failed"] %}
+                <small class="text-muted">{{ j.progress_percent }}%</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-mic"></i></div>
+    <p>Brak transkrypcji</p>
+</div>
+{% endif %}

@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Paragon - {{ receipt.store.name if receipt.store else receipt.store_raw }} - Second Brain{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/app/paragony/" class="text-muted text-decoration-none small">
+            <i class="bi bi-arrow-left"></i> Paragony
+        </a>
+        <h4 class="mb-0 mt-1">
+            {{ store_emoji(receipt.store.name if receipt.store else receipt.store_raw) }}
+            {{ receipt.store.name if receipt.store else receipt.store_raw or "Paragon" }}
+        </h4>
+    </div>
+    <form hx-post="/app/paragony/{{ receipt.id }}/delete" hx-confirm="Na pewno usunac ten paragon?">
+        <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash"></i> Usun
+        </button>
+    </form>
+</div>
+
+<div class="row g-4">
+    <!-- Meta info -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Informacje</h6></div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted">Sklep</td>
+                        <td class="fw-medium">{{ receipt.store.name if receipt.store else receipt.store_raw or "-" }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Data</td>
+                        <td>{{ receipt.receipt_date.strftime("%d.%m.%Y") if receipt.receipt_date else "-" }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Suma OCR</td>
+                        <td>{{ "%.2f"|format(receipt.total_ocr|float) if receipt.total_ocr else "-" }} zl</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Suma obliczona</td>
+                        <td>{{ "%.2f"|format(receipt.total_calculated|float) if receipt.total_calculated else "-" }} zl</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Suma koncowa</td>
+                        <td class="fw-bold fs-5">{{ "%.2f"|format(receipt.total_final|float) if receipt.total_final else "-" }} zl</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Plik</td>
+                        <td><small>{{ receipt.source_file or "-" }}</small></td>
+                    </tr>
+                </table>
+
+                {% if receipt.needs_review %}
+                <div class="alert alert-warning py-2 mt-2 mb-0">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>Wymaga przegladu</strong>
+                    {% for reason in receipt.review_reasons or [] %}
+                    <div class="small">{{ reason }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Edit form -->
+        <div class="card mt-3">
+            <div class="card-header"><h6 class="mb-0">Edytuj</h6></div>
+            <div class="card-body">
+                <form hx-post="/app/paragony/{{ receipt.id }}/update" hx-target="body">
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Sklep</label>
+                        <input type="text" name="store_raw" class="form-control form-control-sm"
+                               value="{{ receipt.store_raw or '' }}">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Data</label>
+                        <input type="date" name="receipt_date" class="form-control form-control-sm"
+                               value="{{ receipt.receipt_date.isoformat() if receipt.receipt_date else '' }}">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label form-label-sm">Suma koncowa</label>
+                        <input type="number" step="0.01" name="total_final" class="form-control form-control-sm"
+                               value="{{ receipt.total_final|float if receipt.total_final else '' }}">
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">Zapisz</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items table -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Produkty ({{ receipt.items|length if receipt.items else 0 }})</h6>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nazwa oryginalna</th>
+                            <th>Nazwa znormalizowana</th>
+                            <th class="text-end">Cena</th>
+                            <th class="text-end">Rabat</th>
+                            <th>Kategoria</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in receipt.items or [] %}
+                        <tr>
+                            <td>
+                                <small class="text-muted">{{ item.name_raw or "-" }}</small>
+                            </td>
+                            <td class="fw-medium">
+                                {{ item.name_normalized or item.name_raw or "-" }}
+                            </td>
+                            <td class="text-end">
+                                {% if item.price_original and item.discount_amount %}
+                                <small class="text-decoration-line-through text-muted">{{ "%.2f"|format(item.price_original|float) }}</small>
+                                {% endif %}
+                                <span class="fw-bold">{{ "%.2f"|format(item.price_final|float) if item.price_final else "0.00" }}</span>
+                            </td>
+                            <td class="text-end">
+                                {% if item.discount_amount %}
+                                <span class="text-danger">-{{ "%.2f"|format(item.discount_amount|float) }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.category %}
+                                <span class="badge bg-light text-dark">
+                                    {{ category_emoji(item.category.name) }} {{ item.category.name }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light">
+                            <td colspan="2" class="fw-bold">Razem</td>
+                            <td class="text-end fw-bold">
+                                {{ "%.2f"|format(receipt.total_final|float) if receipt.total_final else "0.00" }} zl
+                            </td>
+                            <td class="text-end text-danger">
+                                {% set total_discount = namespace(val=0) %}
+                                {% for item in receipt.items or [] %}
+                                    {% if item.discount_amount %}
+                                        {% set total_discount.val = total_discount.val + item.discount_amount|float %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% if total_discount.val > 0 %}
+                                -{{ "%.2f"|format(total_discount.val) }}
+                                {% endif %}
+                            </td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

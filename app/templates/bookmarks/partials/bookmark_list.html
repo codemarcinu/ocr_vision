@@ -1,0 +1,49 @@
+{% if bookmarks %}
+{% for b in bookmarks %}
+<div class="card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-start gap-2">
+            <div class="flex-grow-1">
+                <div class="fw-medium">
+                    <a href="{{ b.url }}" target="_blank" class="text-decoration-none">
+                        {{ b.title or b.url }}
+                    </a>
+                </div>
+                <small class="text-muted">{{ b.url[:60] }}{% if b.url|length > 60 %}...{% endif %}</small>
+                <div class="mt-1">
+                    {% if b.tags %}
+                    {% for tag in b.tags %}<span class="badge bg-light text-dark" style="font-size:0.7rem">{{ tag }}</span> {% endfor %}
+                    {% endif %}
+                    <small class="text-muted">{{ b.created_at.strftime("%d.%m.%Y") if b.created_at else "" }}</small>
+                </div>
+            </div>
+            <div class="d-flex gap-1 align-items-center">
+                {% set status_colors = {"pending": "warning", "read": "success", "archived": "secondary"} %}
+                <span class="badge bg-{{ status_colors.get(b.status, 'secondary') }}">{{ b.status }}</span>
+
+                {% if b.status != "read" %}
+                <form hx-post="/app/zakladki/{{ b.id }}/status" hx-target="#bookmark-list" style="display:inline">
+                    <input type="hidden" name="status" value="read">
+                    <button class="btn btn-sm btn-outline-success" title="Oznacz jako przeczytane">
+                        <i class="bi bi-check"></i>
+                    </button>
+                </form>
+                {% endif %}
+
+                <button class="btn btn-sm btn-outline-danger"
+                        hx-post="/app/zakladki/{{ b.id }}/delete"
+                        hx-target="#bookmark-list"
+                        hx-confirm="Usunac zakladke?">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-bookmark"></i></div>
+    <p>Brak zakladek</p>
+</div>
+{% endif %}

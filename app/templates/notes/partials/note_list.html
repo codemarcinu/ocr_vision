@@ -1,0 +1,20 @@
+<div class="list-group">
+    {% for n in notes %}
+    <a class="list-group-item list-group-item-action"
+       hx-get="/app/notatki/{{ n.id }}/detail" hx-target="#note-detail"
+       style="cursor:pointer">
+        <div class="fw-medium">{{ n.title }}</div>
+        <div class="d-flex gap-2 mt-1">
+            {% if n.category %}<small class="badge bg-light text-dark">{{ n.category }}</small>{% endif %}
+            <small class="text-muted">{{ n.created_at.strftime("%d.%m.%Y") if n.created_at else "" }}</small>
+        </div>
+        {% if n.tags %}
+        <div class="mt-1">
+            {% for tag in n.tags[:3] %}<span class="badge bg-light text-dark" style="font-size:0.7rem">{{ tag }}</span> {% endfor %}
+        </div>
+        {% endif %}
+    </a>
+    {% else %}
+    <div class="text-center text-muted py-3">Brak notatek</div>
+    {% endfor %}
+</div>

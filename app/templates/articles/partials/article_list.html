@@ -1,0 +1,42 @@
+{% if articles %}
+{% for a in articles %}
+<div class="card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-start gap-2">
+            <div class="flex-grow-1">
+                <div class="fw-medium">
+                    {% if a.url %}<a href="{{ a.url }}" target="_blank" class="text-decoration-none">{{ a.title }}</a>
+                    {% else %}{{ a.title }}{% endif %}
+                </div>
+                <div class="d-flex gap-2 mt-1">
+                    {% if a.feed %}
+                    <small class="text-muted"><i class="bi bi-rss"></i> {{ a.feed.name }}</small>
+                    {% endif %}
+                    <small class="text-muted">{{ a.created_at.strftime("%d.%m.%Y") if a.created_at else "" }}</small>
+                </div>
+                {% if a.summaries and a.summaries|length > 0 %}
+                <details class="mt-2">
+                    <summary class="small text-primary" style="cursor:pointer">Podsumowanie</summary>
+                    <div class="small mt-1 text-muted">{{ a.summaries[0].summary_text[:500] }}</div>
+                </details>
+                {% endif %}
+            </div>
+            <div>
+                {% if a.is_summarized %}
+                <span class="badge bg-success">Podsumowany</span>
+                {% elif a.is_read %}
+                <span class="badge bg-secondary">Przeczytany</span>
+                {% else %}
+                <span class="badge bg-primary">Nowy</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="bi bi-newspaper"></i></div>
+    <p>Brak artykulow</p>
+</div>
+{% endif %}

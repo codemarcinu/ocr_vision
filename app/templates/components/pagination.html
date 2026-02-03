@@ -1,0 +1,25 @@
+<nav class="d-flex justify-content-between align-items-center mt-3">
+    <span class="pagination-info">
+        {% if total is defined %}
+        Wyniki {{ offset + 1 }}-{{ [offset + limit, total]|min }} z {{ total }}
+        {% endif %}
+    </span>
+    <div class="btn-group btn-group-sm">
+        {% if offset > 0 %}
+        <button class="btn btn-outline-secondary"
+                hx-get="{{ url }}?offset={{ [offset - limit, 0]|max }}{% for k, v in filters.items() if v %}&{{ k }}={{ v }}{% endfor %}"
+                hx-target="{{ target }}"
+                hx-indicator="{{ indicator|default('#loading') }}">
+            <i class="bi bi-chevron-left"></i> Poprzednia
+        </button>
+        {% endif %}
+        {% if offset + limit < total %}
+        <button class="btn btn-outline-secondary"
+                hx-get="{{ url }}?offset={{ offset + limit }}{% for k, v in filters.items() if v %}&{{ k }}={{ v }}{% endfor %}"
+                hx-target="{{ target }}"
+                hx-indicator="{{ indicator|default('#loading') }}">
+            Nastepna <i class="bi bi-chevron-right"></i>
+        </button>
+        {% endif %}
+    </div>
+</nav>

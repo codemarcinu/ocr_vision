@@ -1,0 +1,14 @@
+{# Usage: {% with value="42", label="Paragony", icon="bi-receipt", color="primary" %}{% include "components/metric_card.html" %}{% endwith %} #}
+<div class="col">
+    <div class="card metric-card h-100">
+        <div class="card-body d-flex align-items-center justify-content-between">
+            <div>
+                <div class="metric-value text-{{ color|default('primary') }}">{{ value }}</div>
+                <div class="metric-label">{{ label }}</div>
+            </div>
+            <div class="metric-icon text-{{ color|default('primary') }}">
+                <i class="bi {{ icon }}"></i>
+            </div>
+        </div>
+    </div>
+</div>

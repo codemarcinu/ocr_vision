@@ -1,0 +1,44 @@
+{% if grouped %}
+<div class="accordion" id="pantry-accordion">
+    {% for category, items in grouped.items() %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#cat-{{ loop.index }}">
+                {{ category_emoji(category) }} {{ category }}
+                <span class="badge bg-secondary ms-2">{{ items|length }}</span>
+            </button>
+        </h2>
+        <div id="cat-{{ loop.index }}" class="accordion-collapse collapse show">
+            <div class="accordion-body p-0">
+                <div class="list-group list-group-flush">
+                    {% for item in items %}
+                    <label class="list-group-item d-flex align-items-center gap-2 {% if item.is_consumed %}text-decoration-line-through text-muted{% endif %}">
+                        {% if not item.is_consumed %}
+                        <input type="checkbox" class="form-check-input pantry-check" value="{{ item.id }}">
+                        {% else %}
+                        <i class="bi bi-check-circle text-success"></i>
+                        {% endif %}
+                        <div class="flex-grow-1">
+                            <span class="fw-medium">{{ item.name }}</span>
+                            {% if item.store %}
+                            <small class="text-muted ms-1">{{ store_emoji(item.store.name) }} {{ item.store.name }}</small>
+                            {% endif %}
+                        </div>
+                        <small class="text-muted">
+                            {{ item.purchase_date.strftime("%d.%m") if item.purchase_date else "" }}
+                        </small>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">📦</div>
+    <p>Spizarnia jest pusta</p>
+</div>
+{% endif %}

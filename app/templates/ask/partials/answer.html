@@ -1,0 +1,42 @@
+{% if error %}
+<div class="alert alert-danger mb-3">
+    <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
+</div>
+{% else %}
+<div class="card mb-3">
+    <div class="card-body">
+        {% if question %}
+        <div class="mb-2">
+            <strong><i class="bi bi-person me-1"></i></strong> {{ question }}
+        </div>
+        <hr>
+        {% endif %}
+
+        <div class="ask-answer mb-3">
+            <div style="white-space:pre-wrap">{{ answer }}</div>
+        </div>
+
+        {% if sources %}
+        <div class="ask-sources">
+            <h6 class="mb-2"><i class="bi bi-link-45deg me-1"></i> Zrodla</h6>
+            {% set type_labels = {"article": "Artykul", "transcription": "Transkrypcja", "receipt": "Paragon", "note": "Notatka", "bookmark": "Zakladka"} %}
+            <ul class="list-unstyled mb-0">
+                {% for s in sources %}
+                <li class="mb-1">
+                    <span class="badge bg-light text-dark">{{ type_labels.get(s.content_type, s.content_type) }}</span>
+                    <span>{{ s.title }}</span>
+                    <small class="text-muted">({{ "%.0f"|format(s.score * 100) }}%)</small>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="text-muted small mt-2">
+            Model: {{ model_used }} |
+            Czas: {{ "%.1f"|format(processing_time) }}s |
+            Chunki: {{ chunks_found }}
+        </div>
+    </div>
+</div>
+{% endif %}
