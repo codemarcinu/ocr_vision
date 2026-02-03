@@ -62,10 +62,18 @@ class ChatResponse:
 def _detect_language(text: str) -> str:
     """Simple Polish vs English detection."""
     polish_chars = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
-    polish_words = [" i ", " w ", " się ", " na ", " do ", " z ", " co ", " jak ", " ile "]
+
+    # Pad with spaces for word boundary matching at start/end
+    padded = f" {text.lower()} "
+    polish_words = [
+        " i ", " w ", " się ", " na ", " do ", " z ", " co ", " jak ", " ile ",
+        " czy ", " jest ", " to ", " mi ", " mam ", " nie ", " tak ", " ze ",
+        " jaki ", " jaka ", " jakie ", " gdzie ", " kiedy ", " dlaczego ",
+        " ostatni ", " wydal ", " kupil ", " opowiedz ", " powiedz ",
+    ]
 
     indicators = sum(1 for c in text if c in polish_chars)
-    indicators += sum(1 for w in polish_words if w in text.lower())
+    indicators += sum(1 for w in polish_words if w in padded)
 
     return "pl" if indicators >= 2 else "en"
 
