@@ -3,7 +3,7 @@
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -165,6 +165,12 @@ class ChatRepository(BaseRepository[ChatSession]):
                 await self.session.flush()
             return title
         return None
+
+    async def delete_all_sessions(self) -> int:
+        """Delete all chat sessions (messages cascade)."""
+        stmt = delete(ChatSession)
+        result = await self.session.execute(stmt)
+        return result.rowcount
 
     async def get_message_count(self, session_id: UUID) -> int:
         """Get the number of messages in a session."""

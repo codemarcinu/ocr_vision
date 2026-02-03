@@ -137,8 +137,11 @@
     <!-- Sessions sidebar -->
     <div class="chat-sidebar-panel" id="chat-sidebar">
         <div class="chat-sidebar-header">
-            <button class="btn btn-primary btn-sm w-100" id="new-chat-btn" onclick="startNewChat(); closeSidebar();">
+            <button class="btn btn-primary btn-sm w-100 mb-1" id="new-chat-btn" onclick="startNewChat(); closeSidebar();">
                 <i class="bi bi-plus-lg me-1"></i> Nowy czat
+            </button>
+            <button class="btn btn-outline-danger btn-sm w-100" onclick="deleteAllSessions()">
+                <i class="bi bi-trash me-1"></i> Wyczysc wszystko
             </button>
         </div>
         <div class="chat-session-list" id="session-list"
@@ -259,13 +262,57 @@ function copyMessage(btn) {
     });
 }
 
-function deleteSession(sessionId) {
-    if (!confirm('Usunac te rozmowe?')) return;
-    htmx.ajax('DELETE', '/app/czat/sessions/' + sessionId, {target: '#session-list', swap: 'innerHTML'});
-    // If deleting the active session, reset to new chat
-    if (document.getElementById('session-id').value === sessionId) {
-        startNewChat();
+function _doDelete(url, onSuccess) {
+    console.log('[chat] DELETE', url);
+    var xhr = new XMLHttpRequest();
+    xhr.open('DELETE', url, true);
+    xhr.onload = function() {
+        console.log('[chat] DELETE response:', xhr.status);
+        if (xhr.status >= 200 && xhr.status < 300) {
+            onSuccess(xhr.responseText);
+        } else {
+            console.error('[chat] DELETE failed:', xhr.status, xhr.responseText);
+        }
+    };
+    xhr.onerror = function() {
+        console.error('[chat] DELETE network error');
+    };
+    xhr.send();
+}
+
+var _deleteConfirmTimer = null;
+
+function deleteAllSessions() {
+    var btn = event.currentTarget;
+    // Two-click confirmation
+    if (btn.dataset.confirm !== '1') {
+        btn.dataset.confirm = '1';
+        btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Na pewno?';
+        btn.classList.replace('btn-outline-danger', 'btn-danger');
+        clearTimeout(_deleteConfirmTimer);
+        _deleteConfirmTimer = setTimeout(function() { _resetDeleteAllBtn(btn); }, 3000);
+        return;
     }
+    _resetDeleteAllBtn(btn);
+    _doDelete('/app/czat/sessions', function(html) {
+        document.getElementById('session-list').innerHTML = html;
+        startNewChat();
+    });
+}
+
+function _resetDeleteAllBtn(btn) {
+    btn.dataset.confirm = '';
+    btn.innerHTML = '<i class="bi bi-trash me-1"></i> Wyczysc wszystko';
+    btn.classList.replace('btn-danger', 'btn-outline-danger');
+}
+
+function deleteSession(sessionId) {
+    _doDelete('/app/czat/sessions/' + sessionId, function(html) {
+        document.getElementById('session-list').innerHTML = html;
+        if (document.getElementById('session-id').value === sessionId) {
+            startNewChat();
+        }
+    });
 }
 
 function toggleSidebar() {

@@ -984,6 +984,19 @@ async def chat_load_session(request: Request, session_id: UUID, chat_repo: ChatR
     return resp
 
 
+@router.delete("/app/czat/sessions", response_class=HTMLResponse)
+async def chat_delete_all_sessions(
+    request: Request,
+    session: DbSession,
+    chat_repo: ChatRepoDep,
+):
+    await chat_repo.delete_all_sessions()
+    await session.commit()
+    return templates.TemplateResponse("chat/partials/session_list.html", {
+        "request": request, "sessions": [], "active_session_id": "",
+    })
+
+
 @router.delete("/app/czat/sessions/{session_id}", response_class=HTMLResponse)
 async def chat_delete_session(
     request: Request,
