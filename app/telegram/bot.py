@@ -18,6 +18,7 @@ from app.config import settings
 from app.feedback_logger import log_review_correction
 from app.telegram.callback_router import CallbackRouter
 from app.telegram.handlers import (
+    ask_command,
     articles_command,
     categories_command,
     clearerrors_command,
@@ -136,6 +137,7 @@ class PantryBot:
         # Primary commands (shown in /help)
         self.application.add_handler(CommandHandler("start", self._start_command))
         self.application.add_handler(CommandHandler("help", self._help_command))
+        self.application.add_handler(CommandHandler("ask", ask_command))
         self.application.add_handler(CommandHandler("q", self._quick_search_command))
         self.application.add_handler(CommandHandler("n", self._quick_note_command))
 
@@ -216,6 +218,7 @@ class PantryBot:
             "<b>🧠 Second Brain</b>\n\n"
             "<b>Komendy:</b>\n"
             "• <code>/start</code> — menu główne\n"
+            "• <code>/ask &lt;pytanie&gt;</code> — zapytaj bazę wiedzy (RAG)\n"
             "• <code>/n &lt;tekst&gt;</code> — szybka notatka\n"
             "• <code>/q &lt;fraza&gt;</code> — szukaj wszędzie\n"
             "• <code>/help</code> — ta pomoc\n\n"

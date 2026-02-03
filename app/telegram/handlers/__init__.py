@@ -1,5 +1,8 @@
 """Telegram bot handlers."""
 
+from app.telegram.handlers.ask import (
+    ask_command,
+)
 from app.telegram.handlers.receipts import (
     handle_document,
     handle_photo,
@@ -42,6 +45,7 @@ from app.telegram.handlers.transcription import (
 )
 
 __all__ = [
+    "ask_command",
     "handle_document",
     "handle_photo",
     "recent_command",
