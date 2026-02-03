@@ -52,8 +52,8 @@ services:
       # Transcription Agent
       - TRANSCRIPTION_ENABLED=true
       - WHISPER_MODEL=medium
-      - WHISPER_DEVICE=cpu
-      - WHISPER_COMPUTE_TYPE=int8
+      - WHISPER_DEVICE=cuda
+      - WHISPER_COMPUTE_TYPE=float16
       - WHISPER_UNLOAD_AFTER_USE=true
       - TRANSCRIPTION_AUTO_GENERATE_NOTE=true
       - TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions
@@ -68,6 +68,13 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     labels:
       - "logging=promtail"
 
