@@ -52,15 +52,19 @@ Receipt (photo/PDF) → OCR → Validation → [Review?] → Categorization → 
 
 1. **`app/main.py`** - FastAPI endpoints receive image/PDF uploads, parallel PDF processing
 2. **`app/pdf_converter.py`** - Converts PDF to PNG images (one per page) using pdf2image
-3. **`app/ocr.py`** / **`app/paddle_ocr.py`** / **`app/deepseek_ocr.py`** - OCR extraction backends
+3. **`app/ocr.py`** / **`app/paddle_ocr.py`** / **`app/deepseek_ocr.py`** / **`app/google_vision_ocr.py`** - OCR extraction backends
 4. **`app/ollama_client.py`** - Shared HTTP client with connection pooling for all Ollama API calls
 5. **`app/store_prompts.py`** - Store-specific LLM prompts for accurate extraction
 6. **`app/price_fixer.py`** - Post-processor: detects suspicious prices (unit price vs final)
-7. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
-8. **`app/db/`** - PostgreSQL database layer with SQLAlchemy async ORM
-9. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
-10. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
-11. **`app/services/obsidian_sync.py`** - Regenerates vault from database
+7. **`app/confidence_scoring.py`** - Multi-factor confidence scoring for extraction quality
+8. **`app/image_preprocessing.py`** - Optional image quality analysis and preprocessing
+9. **`app/dictionaries/`** - Product/store name normalization using fuzzy matching (Levenshtein distance)
+10. **`app/db/`** - PostgreSQL database layer with SQLAlchemy async ORM
+11. **`app/classifier.py`** - Calls `qwen2.5:7b` via Ollama to categorize products
+12. **`app/obsidian_writer.py`** - Generates markdown files for Obsidian vault
+13. **`app/services/obsidian_sync.py`** - Regenerates vault from database
+14. **`app/web_routes.py`** - Full web UI with Jinja2 + HTMX (dashboard, receipts, pantry, analytics, etc.)
+15. **`app/notes_api.py`** / **`app/bookmarks_api.py`** / **`app/search_api.py`** - Notes, bookmarks, unified search modules
 
 Data flow: `paragony/inbox/` → OCR → **Store Detection** → **Store-specific Prompt** → LLM → **Price Fixer** → validation → normalization → categorization → **PostgreSQL** + `vault/`
 
@@ -262,6 +266,9 @@ class Product(BaseModel):
 - **`bot.py`** - Main bot orchestrator with `PantryBot` class, starts/stops with FastAPI lifespan
   - `_handle_review_callback()` - Human-in-the-loop review actions
   - `_handle_text_input()` - Manual total entry handler
+- **`callback_router.py`** - Prefix-based callback query router (replaces monolithic if/elif chain)
+  - Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`)
+  - Modular design for easy addition of new callback handlers
 - **`middleware.py`** - Authorization decorator (`@authorized_only`) checks `TELEGRAM_CHAT_ID`
 - **`keyboards.py`** - Inline keyboard builders for UI
   - `get_review_keyboard()` - Approve/Edit/Reject buttons
@@ -277,6 +284,13 @@ class Product(BaseModel):
   - `stats.py` - `/stats`, `/stores`, `/categories`, `/rabaty` (alias: `/discounts`)
   - `errors.py` - `/errors`, `/clearerrors`
   - `json_import.py` - Import receipts from JSON text (paste structured JSON into chat)
+  - `settings.py` - `/settings` - Notification preferences (digest time, anomaly detection, weekly comparison)
+  - `menu_receipts.py` - Inline menu for receipt operations
+  - `menu_articles.py` - Article management menu
+  - `menu_notes.py` - Notes menu
+  - `menu_bookmarks.py` - Bookmarks menu
+  - `menu_transcriptions.py` - Transcription job tracking menu
+  - `menu_stats.py` - Statistics submenu
 
 **All Telegram commands:**
 | Command | Description |
@@ -306,6 +320,7 @@ class Product(BaseModel):
 | `/transcriptions` | List recent transcriptions |
 | `/note <ID>` | Generate note from transcription |
 | `/ask <question>` | Query RAG knowledge base |
+| `/settings` | Notification preferences (digest time, toggles) |
 
 ### JSON Import via Telegram
 
@@ -330,12 +345,145 @@ Send JSON directly to the bot to import pre-structured receipts:
 }
 ```
 
-### Web UI (`app/web/`)
+### Web UI (`app/web_routes.py`, `app/templates/`)
 
-- **`dictionary.html`** - Single-page web app for dictionary management
-  - Access via: `http://localhost:8000/web/dictionary`
-  - Tabs: Unmatched products, Dictionary browser, Shortcuts management
-  - Features: Learn products, add shortcuts, browse by category
+Modern interactive web application built with **Jinja2 templates + HTMX** for seamless AJAX updates without page reloads.
+
+**Access:** `http://localhost:8000/app/`
+
+**Routes:**
+| Route | Description |
+|-------|-------------|
+| `/app/` | Dashboard with real-time stats |
+| `/app/paragony/` | Receipts list with store/date filtering |
+| `/app/paragony/upload` | Receipt file upload |
+| `/app/paragony/{id}` | Receipt detail with inline editing |
+| `/app/spizarnia/` | Pantry management with search/consume |
+| `/app/analityka/` | Analytics dashboard (spending, trends, top products) |
+| `/app/artykuly/` | Articles management with feed controls |
+| `/app/transkrypcje/` | Transcription job tracking |
+| `/app/notatki/` | Personal notes with search |
+| `/app/zakladki/` | Bookmarks manager with status tracking |
+| `/app/slownik/` | Dictionary and unmatched products learning |
+| `/app/szukaj/` | Unified search across all content types |
+| `/app/zapytaj/` | RAG query interface |
+
+**Template structure:** (`app/templates/`)
+- `components/` - Reusable UI components (navbar, metric cards, pagination)
+- Feature directories (`dashboard/`, `receipts/`, `pantry/`, etc.) with `partials/` subdirectories for HTMX-compatible partial templates
+
+**Key features:**
+- HTMX integration for live updates without page reloads
+- Responsive design with emoji-based store and category icons
+- Toast notifications via HX-Trigger headers
+- Pagination and infinite scroll patterns
+- Real-time search and filtering
+- Inline form editing (HTMX POST)
+
+**Legacy redirects (301):**
+- `/web/dictionary` → `/app/slownik/`
+- `/web/pantry` → `/app/spizarnia/`
+- `/web/receipts` → `/app/paragony/`
+- `/web/search` → `/app/szukaj/`
+
+### Personal Notes (`app/notes_api.py`, `app/notes_writer.py`)
+
+CRUD module for personal notes with categories, tags, and full-text search.
+
+**API endpoints (`/notes/*`):**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/notes/` | GET | List notes (search, tag filtering) |
+| `/notes/` | POST | Create note |
+| `/notes/{id}` | GET | Get note details |
+| `/notes/{id}` | PUT | Update note |
+| `/notes/{id}` | DELETE | Delete note |
+
+**Features:**
+- Full-text search across title and content
+- Category and tag filtering
+- Obsidian markdown export (`NOTES_OUTPUT_DIR`)
+- Auto-indexed for RAG on creation
+
+**Configuration:**
+```bash
+NOTES_ENABLED=true                          # Enable/disable notes
+NOTES_OUTPUT_DIR=/data/notes                # Output directory
+```
+
+### Bookmarks / Read Later (`app/bookmarks_api.py`, `app/bookmarks_writer.py`)
+
+URL bookmarking with status tracking and priority levels.
+
+**API endpoints (`/bookmarks/*`):**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/bookmarks/` | GET | List bookmarks (status filtering) |
+| `/bookmarks/` | POST | Create bookmark |
+| `/bookmarks/stats` | GET | Bookmark statistics |
+| `/bookmarks/{id}` | GET | Get bookmark |
+| `/bookmarks/{id}` | PUT | Update bookmark |
+| `/bookmarks/{id}` | DELETE | Delete bookmark |
+
+**Features:**
+- Status tracking: `pending`, `read`, `archived`
+- Duplicate URL detection
+- Links to articles/transcriptions
+- Auto-indexed for RAG on creation
+
+**Configuration:**
+```bash
+BOOKMARKS_ENABLED=true                      # Enable/disable bookmarks
+BOOKMARKS_OUTPUT_DIR=/data/bookmarks        # Output directory
+```
+
+### Unified Search (`app/search_api.py`)
+
+Cross-content-type search across all modules.
+
+**API endpoint:**
+```
+GET /search?q=<query>&types=receipt,article,note,bookmark,transcription&limit=5
+```
+
+Returns results grouped by type with relevant metadata. Minimum query length: 2 characters. Max limit: 20 per type.
+
+### Confidence Scoring (`app/confidence_scoring.py`)
+
+Multi-factor confidence scoring system for receipt extraction quality assessment.
+
+**Score components (weighted):**
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Total match | 40% | Agreement of product sum vs declared total |
+| Product quality | 30% | Name/price validation, suspicious pattern detection |
+| Completeness | 20% | Metadata present (store, date, total) |
+| Discount consistency | 10% | Rabat logic checks |
+
+**Thresholds:**
+- `>= 0.8`: Auto-save without review
+- `0.5 - 0.8`: Review recommended
+- `< 0.5`: Review required
+
+**Usage:**
+```python
+from app.confidence_scoring import calculate_confidence, should_auto_save
+report = calculate_confidence(receipt)
+if should_auto_save(receipt):
+    # Auto-save without review
+```
+
+### Image Preprocessing (`app/image_preprocessing.py`)
+
+Optional image preprocessing for poor-quality receipt images. Requires OpenCV.
+
+**Features:**
+- Image quality analysis (brightness, contrast, sharpness)
+- Bilateral denoising, CLAHE adaptive contrast, adaptive thresholding
+- Auto-rotation detection (landscape → portrait)
+- PaddleOCR-specific preprocessing
+
+**When to use:** Only for dark/blurry images or PaddleOCR backend. Vision models (DeepSeek-OCR, qwen2.5vl) work better on raw images.
 
 ### RSS/Web Summarizer (`app/rss_*.py`, `app/summarizer.py`)
 
@@ -704,7 +852,7 @@ Question (/ask or POST /ask)
 ```bash
 OLLAMA_BASE_URL=http://host.docker.internal:11434  # Ollama API
 OCR_MODEL=deepseek-ocr                              # Vision model for OCR (deepseek-ocr recommended)
-OCR_BACKEND=deepseek                                # "deepseek" (recommended), "vision", or "paddle"
+OCR_BACKEND=deepseek                                # "deepseek" (recommended), "vision", "paddle", or "google"
 OCR_FALLBACK_MODEL=qwen2.5vl:7b                     # Fallback vision model when DeepSeek-OCR fails
 STRUCTURING_MODEL=qwen2.5:7b                        # LLM for JSON structuring (deepseek backend)
 CLASSIFIER_MODEL=qwen2.5:7b                         # Categorization model (primary)
@@ -771,6 +919,14 @@ RAG_CHUNK_SIZE=1500                                 # Chunk size for indexing (c
 RAG_CHUNK_OVERLAP=200                               # Overlap between chunks (chars)
 RAG_MIN_SCORE=0.3                                   # Min cosine similarity threshold
 RAG_AUTO_INDEX=true                                 # Auto-index new content
+
+# Personal Notes
+NOTES_ENABLED=true                                  # Enable/disable notes module
+NOTES_OUTPUT_DIR=/data/notes                        # Output directory for Obsidian notes
+
+# Bookmarks / Read Later
+BOOKMARKS_ENABLED=true                              # Enable/disable bookmarks module
+BOOKMARKS_OUTPUT_DIR=/data/bookmarks                # Output directory for bookmark exports
 ```
 
 ## Ollama Models Required
@@ -800,14 +956,20 @@ Models stay loaded in VRAM for faster subsequent requests (vision: 10m, text: 30
 | **`deepseek`** (DeepSeek-OCR + LLM) | **~15s** | **Best** | **Recommended.** Fast + accurate. Combined structuring + categorization. Has fallback if loops |
 | `vision` (qwen2.5vl:7b) | ~4 min | Best | Single model, slower but accurate |
 | `paddle` (PaddleOCR + LLM) | ~11s | Good | Fastest but less accurate for complex receipts |
+| `google` (Google Cloud Vision + LLM) | ~5s | Best | Cloud-based OCR, requires API key. Cost: ~$1.50/1000 images |
 
-Set via `OCR_BACKEND=deepseek` (recommended), `OCR_BACKEND=vision`, or `OCR_BACKEND=paddle` in docker-compose.yml.
+Set via `OCR_BACKEND=deepseek` (recommended), `OCR_BACKEND=vision`, `OCR_BACKEND=paddle`, or `OCR_BACKEND=google` in docker-compose.yml.
 
-### Google Cloud Vision (Ultimate Fallback)
+### Google Cloud Vision (`OCR_BACKEND=google` or fallback)
 
-When ALL local Ollama models fail (DeepSeek-OCR, qwen2.5vl:7b, etc.), the system can fall back to Google Cloud Vision API as a last resort.
+Google Cloud Vision API can be used as a **primary OCR backend** (`OCR_BACKEND=google`) or as an **ultimate fallback** when all local Ollama models fail.
 
-**Fallback chain:**
+**As primary backend:**
+```
+Receipt → Google Vision API → Raw Text → qwen2.5:7b → JSON + Categories
+```
+
+**As fallback chain:**
 ```
 Receipt → DeepSeek-OCR → [fail] → qwen2.5vl:7b → [fail] → Google Vision → LLM structuring
 ```
@@ -818,14 +980,20 @@ Receipt → DeepSeek-OCR → [fail] → qwen2.5vl:7b → [fail] → Google Visio
 3. Download the JSON key file
 4. Place it at `./credentials/gcp-service-account.json`
 5. Set `GOOGLE_VISION_ENABLED=true` in `.env` or docker-compose.yml
+6. Optionally set `OCR_BACKEND=google` to use as primary
 
 **Cost:** ~$1.50 per 1000 images (Document Text Detection)
 
 **Configuration:**
 ```bash
-GOOGLE_VISION_ENABLED=true                          # Enable fallback
+GOOGLE_VISION_ENABLED=true                          # Enable Google Vision
 GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/gcp-service-account.json
+OCR_BACKEND=google                                  # Optional: use as primary backend
 ```
+
+**Key files:**
+- `app/google_vision_ocr.py` - Google Vision API wrapper (DOCUMENT_TEXT_DETECTION)
+- `app/google_ocr_backend.py` - Integration with main OCR pipeline
 
 **Note:** Google Vision only extracts text - structuring is still done by local LLM (qwen2.5:7b). This keeps costs down while ensuring reliable OCR.
 
@@ -919,6 +1087,9 @@ curl http://localhost:8000/reports/classifier-ab
 - `vault/paragony/ERROR_*.md` - Per-receipt error files
 - `SUMMARIES_DIR/*.md` - Article summaries with YAML frontmatter (default: `/data/summaries/`)
 - `SUMMARIES_DIR/index.md` - Auto-generated index of recent summaries
+- `TRANSCRIPTION_OUTPUT_DIR/*.md` - Transcription notes (default: `/data/transcriptions/`)
+- `NOTES_OUTPUT_DIR/*.md` - Personal notes (default: `/data/notes/`)
+- `BOOKMARKS_OUTPUT_DIR/*.md` - Bookmark exports (default: `/data/bookmarks/`)
 
 ## Additional API Endpoints
 
@@ -965,11 +1136,30 @@ curl http://localhost:8000/reports/classifier-ab
 - `GET /db/pantry/stats` - Pantry statistics
 - `GET /db/feedback/stats` - Unmatched products and corrections stats
 
+### Notes (`/notes/*`)
+- `GET /notes/?search=&tag=&limit=20` - List notes with filtering
+- `POST /notes/` - Create note
+- `GET /notes/{id}` - Get note details
+- `PUT /notes/{id}` - Update note
+- `DELETE /notes/{id}` - Delete note
+
+### Bookmarks (`/bookmarks/*`)
+- `GET /bookmarks/?status=&limit=20` - List bookmarks
+- `POST /bookmarks/` - Create bookmark
+- `GET /bookmarks/stats` - Bookmark statistics
+- `GET /bookmarks/{id}` - Get bookmark
+- `PUT /bookmarks/{id}` - Update bookmark
+- `DELETE /bookmarks/{id}` - Delete bookmark
+
+### Unified Search
+- `GET /search?q=<query>&types=receipt,article,note,bookmark,transcription&limit=5` - Cross-content search
+
 ### Metrics
 - `GET /metrics` - Prometheus metrics (via `prometheus_fastapi_instrumentator`)
 
 ### Web Interface
-- `GET /web/dictionary` - Dictionary management UI (HTML page)
+- `GET /app/` - Full web UI (dashboard, receipts, pantry, analytics, articles, transcriptions, notes, bookmarks, dictionary, search, RAG)
+- `GET /web/dictionary` - Legacy redirect → `/app/slownik/`
 
 ## Monitoring Stack
 
@@ -1019,6 +1209,11 @@ Key tables:
 - `pantry_items` - Current pantry state
 - `price_history` - Price tracking for analytics
 - `unmatched_products`, `review_corrections` - Feedback loop
+- `rss_feeds`, `articles`, `article_summaries` - RSS/web summarization
+- `transcription_jobs`, `transcriptions`, `transcription_notes` - Audio/video transcription
+- `notes` - Personal notes (UUID PK, title, content, category, tags, is_archived)
+- `bookmarks` - URL bookmarks (UUID PK, url, title, status, priority, tags, linked article/transcription)
+- `document_embeddings` - RAG vector index (content_type, text_chunk, embedding Vector(768), metadata JSONB)
 
 Files:
 - `scripts/init-db.sql` - Initial schema
@@ -1092,6 +1287,23 @@ curl http://localhost:8000/analytics/price-trends/1?months=3
 
 # Test Obsidian sync
 curl -X POST http://localhost:8000/obsidian/sync/all
+
+# Test notes
+curl -X POST http://localhost:8000/notes/ -H "Content-Type: application/json" -d '{"title":"Test","content":"Hello"}'
+curl http://localhost:8000/notes/?search=test
+
+# Test bookmarks
+curl -X POST http://localhost:8000/bookmarks/ -H "Content-Type: application/json" -d '{"url":"https://example.com","title":"Example"}'
+curl http://localhost:8000/bookmarks/?status=pending
+
+# Test unified search
+curl "http://localhost:8000/search?q=mleko&types=receipt,note&limit=5"
+
+# Test web UI
+open http://localhost:8000/app/
+
+# Test RAG
+curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question":"Ile wydałem w Biedronce?"}'
 ```
 
 ## Troubleshooting
