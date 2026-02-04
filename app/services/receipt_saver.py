@@ -3,6 +3,7 @@
 import logging
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
@@ -166,3 +167,52 @@ async def save_receipt_to_db(
     except Exception as e:
         logger.error(f"Failed to save receipt to DB: {e}", exc_info=True)
         return None
+
+
+def write_receipt_to_obsidian(
+    receipt: Receipt,
+    categorized: List[CategorizedProduct],
+    filename: str,
+) -> Optional[Path]:
+    """Write receipt markdown and update pantry file in Obsidian vault.
+
+    Returns:
+        Path to the created receipt file, or None if disabled/failed.
+    """
+    from app.config import settings
+
+    if not settings.GENERATE_OBSIDIAN_FILES:
+        return None
+
+    try:
+        from app.obsidian_writer import write_receipt_file, update_pantry_file
+
+        receipt_path = write_receipt_file(receipt, categorized, filename)
+        update_pantry_file(categorized, receipt)
+        return receipt_path
+    except Exception as e:
+        logger.error(f"Failed to write Obsidian files for {filename}: {e}", exc_info=True)
+        return None
+
+
+async def index_receipt_in_rag(
+    db_receipt_id: UUID,
+) -> None:
+    """Index a receipt in RAG for /ask searchability."""
+    from app.config import settings
+
+    if not settings.RAG_ENABLED or not settings.RAG_AUTO_INDEX:
+        return
+
+    try:
+        from app.rag.hooks import index_receipt_hook
+        from app.db.repositories.receipts import ReceiptRepository
+
+        async with get_session_context() as session:
+            repo = ReceiptRepository(session)
+            db_receipt = await repo.get_with_items(db_receipt_id)
+            if db_receipt:
+                await index_receipt_hook(db_receipt, db_receipt.items, session)
+                await session.commit()
+    except Exception as e:
+        logger.warning(f"RAG indexing failed for receipt {db_receipt_id}: {e}")

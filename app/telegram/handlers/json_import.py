@@ -8,7 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, ValidationError
 
 from app.models import CategorizedProduct, Receipt, Product
-from app.services.receipt_saver import save_receipt_to_db
+from app.services.receipt_saver import save_receipt_to_db, write_receipt_to_obsidian, index_receipt_in_rag
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +233,10 @@ async def process_json_import(text: str) -> tuple[bool, str, Optional[str]]:
         db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
         if not db_receipt_id:
             return False, "Błąd zapisu do bazy danych", None
+
+        # Write Obsidian markdown + RAG indexing
+        write_receipt_to_obsidian(receipt, categorized, filename)
+        await index_receipt_in_rag(db_receipt_id)
 
         summary = format_import_summary(receipt, categorized, filename)
         return True, summary, filename

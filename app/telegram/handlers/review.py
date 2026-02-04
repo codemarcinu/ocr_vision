@@ -110,11 +110,15 @@ async def handle_manual_total_input(
     filename = review_data["filename"]
 
     try:
-        from app.services.receipt_saver import save_receipt_to_db
+        from app.services.receipt_saver import save_receipt_to_db, write_receipt_to_obsidian, index_receipt_in_rag
 
         db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
         if not db_receipt_id:
             raise Exception("Failed to save receipt to database")
+
+        # Write Obsidian markdown + RAG indexing
+        write_receipt_to_obsidian(receipt, categorized, filename)
+        await index_receipt_in_rag(db_receipt_id)
 
         inbox_path = Path(review_data.get("inbox_path", settings.INBOX_DIR / filename))
         if inbox_path.exists():
@@ -144,7 +148,7 @@ async def handle_manual_total_input(
 
 async def _approve_receipt(query, context, review_data, receipt_id, pending_key):
     """Save approved receipt to database."""
-    from app.services.receipt_saver import save_receipt_to_db
+    from app.services.receipt_saver import save_receipt_to_db, write_receipt_to_obsidian, index_receipt_in_rag
 
     receipt = review_data["receipt"]
     categorized = review_data["categorized"]
@@ -154,6 +158,10 @@ async def _approve_receipt(query, context, review_data, receipt_id, pending_key)
         db_receipt_id = await save_receipt_to_db(receipt, categorized, filename)
         if not db_receipt_id:
             raise Exception("Failed to save receipt to database")
+
+        # Write Obsidian markdown + RAG indexing
+        write_receipt_to_obsidian(receipt, categorized, filename)
+        await index_receipt_in_rag(db_receipt_id)
 
         log_review_correction(
             receipt_id=receipt_id,

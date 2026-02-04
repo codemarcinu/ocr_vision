@@ -14,7 +14,7 @@ from app.classifier import categorize_products
 from app.config import settings
 from app.models import CategorizedProduct, Receipt
 from app.obsidian_writer import log_error, write_error_file
-from app.services.receipt_saver import save_receipt_to_db
+from app.services.receipt_saver import save_receipt_to_db, write_receipt_to_obsidian, index_receipt_in_rag
 from app.ocr import extract_products_from_image as extract_vision, unload_model
 from app.pdf_converter import convert_pdf_to_images
 from app.telegram.formatters import (
@@ -399,6 +399,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await status_msg.edit_text(f"Błąd zapisu do bazy danych")
             return
 
+        # Write Obsidian markdown + RAG indexing
+        write_receipt_to_obsidian(combined_receipt, categorized, pdf_filename)
+        await index_receipt_in_rag(db_receipt_id)
+
         # Move PDF to processed
         try:
             processed_path = settings.PROCESSED_DIR / pdf_filename
@@ -555,6 +559,10 @@ async def _process_pdf_with_progress(
             log_error(filename, error_msg)
             return {"success": False, "error": error_msg}
 
+        # Write Obsidian markdown + RAG indexing
+        receipt_path = write_receipt_to_obsidian(combined_receipt, categorized, filename)
+        await index_receipt_in_rag(db_receipt_id)
+
         # Move to processed
         try:
             processed_path = settings.PROCESSED_DIR / filename
@@ -568,7 +576,7 @@ async def _process_pdf_with_progress(
             "needs_review": False,
             "receipt": combined_receipt,
             "categorized": categorized,
-            "output_file": str(receipt_file)
+            "output_file": str(receipt_path)
         }
 
     finally:
@@ -671,6 +679,10 @@ async def _process_receipt_with_progress(
         log_error(filename, error_msg)
         return {"success": False, "error": error_msg}
 
+    # Write Obsidian markdown + RAG indexing
+    receipt_path = write_receipt_to_obsidian(receipt, categorized, filename)
+    await index_receipt_in_rag(db_receipt_id)
+
     # Move to processed
     try:
         processed_path = settings.PROCESSED_DIR / filename
@@ -684,7 +696,7 @@ async def _process_receipt_with_progress(
         "needs_review": False,
         "receipt": receipt,
         "categorized": categorized,
-        "output_file": str(receipt_file)
+        "output_file": str(receipt_path)
     }
 
 
