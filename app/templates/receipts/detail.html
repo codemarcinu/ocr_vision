@@ -12,9 +12,9 @@
             {{ receipt.store.name if receipt.store else receipt.store_raw or "Paragon" }}
         </h4>
     </div>
-    <form hx-post="/app/paragony/{{ receipt.id }}/delete" hx-confirm="Na pewno usunac ten paragon?">
+    <form hx-post="/app/paragony/{{ receipt.id }}/delete" hx-confirm="Na pewno usunąć ten paragon?">
         <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-trash"></i> Usun
+            <i class="bi bi-trash"></i> Usuń
         </button>
     </form>
 </div>

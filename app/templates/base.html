@@ -23,7 +23,7 @@
     <div class="main-content">
         <!-- Top bar -->
         <header class="topbar">
-            <button class="sidebar-toggle" type="button" aria-label="Menu">
+            <button class="sidebar-toggle" type="button" aria-label="Menu" aria-expanded="false">
                 <i class="bi bi-list"></i>
             </button>
 
@@ -40,7 +40,7 @@
                 <a href="/app/paragony/upload" class="btn btn-sm btn-primary">
                     <i class="bi bi-upload me-1"></i>Upload
                 </a>
-                <button class="btn btn-sm btn-outline-secondary" id="dark-mode-toggle" type="button" title="Przelacz motyw">
+                <button class="btn btn-sm btn-outline-secondary" id="dark-mode-toggle" type="button" title="Przełącz motyw">
                     <i class="bi bi-moon-stars"></i>
                 </button>
             </div>
@@ -64,7 +64,7 @@
     </div>
 
     <!-- Toast container -->
-    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container"></div>
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

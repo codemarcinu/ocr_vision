@@ -141,7 +141,7 @@
                 <i class="bi bi-plus-lg me-1"></i> Nowy czat
             </button>
             <button class="btn btn-outline-danger btn-sm w-100" onclick="deleteAllSessions()">
-                <i class="bi bi-trash me-1"></i> Wyczysc wszystko
+                <i class="bi bi-trash me-1"></i> Wyczyść wszystko
             </button>
         </div>
         <div class="chat-session-list" id="session-list"
@@ -163,11 +163,11 @@
             <div class="chat-empty" id="chat-empty">
                 <div class="text-center">
                     <i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>
-                    <p class="mt-2 mb-3">Rozpocznij rozmowe - mam dostep do Twojej bazy wiedzy i internetu.</p>
+                    <p class="mt-2 mb-3">Rozpocznij rozmowę - mam dostęp do Twojej bazy wiedzy i internetu.</p>
                     <div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions">
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydalem w tym miesiacu?</button>
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuly</button>
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuje najczesciej?</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydałem w tym miesiącu?</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuły</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuję najczęściej?</button>
                         <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Co nowego w technologii?</button>
                     </div>
                 </div>
@@ -181,7 +181,7 @@
                 <input type="hidden" name="session_id" id="session-id" value="">
                 <div class="input-group align-items-end">
                     <textarea name="message" class="form-control"
-                              placeholder="Napisz wiadomosc... (Enter = wyslij, Shift+Enter = nowa linia)"
+                              placeholder="Napisz wiadomość... (Enter = wyślij, Shift+Enter = nowa linia)"
                               required autofocus rows="1"
                               id="chat-input" autocomplete="off"
                               style="resize: none; max-height: 150px; overflow-y: auto;"></textarea>
@@ -302,7 +302,7 @@ function deleteAllSessions() {
 
 function _resetDeleteAllBtn(btn) {
     btn.dataset.confirm = '';
-    btn.innerHTML = '<i class="bi bi-trash me-1"></i> Wyczysc wszystko';
+    btn.innerHTML = '<i class="bi bi-trash me-1"></i> Wyczyść wszystko';
     btn.classList.replace('btn-danger', 'btn-outline-danger');
 }
 
@@ -335,11 +335,11 @@ function startNewChat() {
     document.getElementById('chat-messages').innerHTML =
         '<div class="chat-empty" id="chat-empty"><div class="text-center">' +
         '<i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>' +
-        '<p class="mt-2 mb-3">Rozpocznij rozmowe - mam dostep do Twojej bazy wiedzy i internetu.</p>' +
+        '<p class="mt-2 mb-3">Rozpocznij rozmowę - mam dostęp do Twojej bazy wiedzy i internetu.</p>' +
         '<div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions">' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydalem w tym miesiacu?</button>' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuly</button>' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuje najczesciej?</button>' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydałem w tym miesiącu?</button>' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuły</button>' +
+        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuję najczęściej?</button>' +
         '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Co nowego w technologii?</button>' +
         '</div></div></div>';
     document.getElementById('chat-input').focus();

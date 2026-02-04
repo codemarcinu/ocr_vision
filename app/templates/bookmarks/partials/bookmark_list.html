@@ -33,7 +33,7 @@
                 <button class="btn btn-sm btn-outline-danger"
                         hx-post="/app/zakladki/{{ b.id }}/delete"
                         hx-target="#bookmark-list"
-                        hx-confirm="Usunac zakladke?">
+                        hx-confirm="Usunąć zakładkę?">
                     <i class="bi bi-trash"></i>
                 </button>
             </div>
@@ -44,6 +44,6 @@
 {% else %}
 <div class="empty-state">
     <div class="empty-state-icon"><i class="bi bi-bookmark"></i></div>
-    <p>Brak zakladek</p>
+    <p>Brak zakładek. Dodaj pierwszą zakładkę powyżej lub wyślij URL przez Telegram.</p>
 </div>
 {% endif %}
