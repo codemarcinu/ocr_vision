@@ -152,14 +152,14 @@ class Settings:
     VAULT_DIR: Path = BASE_DIR / "vault"
     RECEIPTS_DIR: Path = VAULT_DIR / "paragony"
     LOGS_DIR: Path = VAULT_DIR / "logs"
-    # Summaries can be in a separate location (configurable via env or volume mount)
-    SUMMARIES_DIR: Path = Path(os.getenv("SUMMARIES_DIR", str(BASE_DIR / "summaries")))
+    # Summaries (inside vault for Obsidian visibility)
+    SUMMARIES_DIR: Path = Path(os.getenv("SUMMARIES_DIR", str(VAULT_DIR / "summaries")))
     PANTRY_FILE: Path = VAULT_DIR / "spiżarnia.md"
     ERROR_LOG_FILE: Path = LOGS_DIR / "ocr-errors.md"
 
     # Transcription paths
     TRANSCRIPTION_OUTPUT_DIR: Path = Path(os.getenv(
-        "TRANSCRIPTION_OUTPUT_DIR", str(BASE_DIR / "transcriptions")
+        "TRANSCRIPTION_OUTPUT_DIR", str(VAULT_DIR / "transcriptions")
     ))
     TRANSCRIPTION_TEMP_DIR: Path = Path(os.getenv(
         "TRANSCRIPTION_TEMP_DIR", "/tmp/transcriptions"
@@ -170,7 +170,7 @@ class Settings:
     # ==========================================================================
     NOTES_ENABLED: bool = os.getenv("NOTES_ENABLED", "true").lower() == "true"
     NOTES_OUTPUT_DIR: Path = Path(os.getenv(
-        "NOTES_OUTPUT_DIR", str(BASE_DIR / "notes")
+        "NOTES_OUTPUT_DIR", str(VAULT_DIR / "notes")
     ))
     DAILY_OUTPUT_DIR: Path = Path(os.getenv(
         "DAILY_OUTPUT_DIR", str(VAULT_DIR / "daily")
@@ -181,7 +181,7 @@ class Settings:
     # ==========================================================================
     BOOKMARKS_ENABLED: bool = os.getenv("BOOKMARKS_ENABLED", "true").lower() == "true"
     BOOKMARKS_OUTPUT_DIR: Path = Path(os.getenv(
-        "BOOKMARKS_OUTPUT_DIR", str(BASE_DIR / "bookmarks")
+        "BOOKMARKS_OUTPUT_DIR", str(VAULT_DIR / "bookmarks")
     ))
 
     # ==========================================================================

@@ -123,12 +123,9 @@ Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), 
 Local paths map to `/data/` inside the container:
 ```
 ./paragony    → /data/paragony    (receipt inbox/processed)
-./vault       → /data/vault       (Obsidian output)
-./transcriptions → /data/transcriptions
-./notes       → /data/notes
-./bookmarks   → /data/bookmarks
+./vault       → /data/vault       (Obsidian output: paragony, notes, bookmarks, transcriptions, summaries, logs, daily)
 ```
-All `*_OUTPUT_DIR` settings in `config.py` use `/data/` prefixed paths.
+All `*_OUTPUT_DIR` settings in `config.py` default to subdirectories of `/data/vault/` so that all generated markdown is visible in Obsidian.
 
 ### Key Design Patterns
 
@@ -234,10 +231,15 @@ HTMX + Jinja2 templates at `http://localhost:8000/app/`. Templates in `app/templ
 
 ## Output Files
 
+All output goes to `vault/` (Obsidian vault):
 - `vault/paragony/*.md` - Receipt markdown with YAML frontmatter
 - `vault/spiżarnia.md` - Aggregated pantry view
 - `vault/logs/` - Error log, unmatched products JSON, corrections JSON
-- Feature-specific output dirs configured via `*_OUTPUT_DIR` env vars
+- `vault/notes/*.md` - Personal notes + index
+- `vault/bookmarks/index.md` - Bookmarks index
+- `vault/transcriptions/*.md` - Transcription notes + index
+- `vault/summaries/*.md` - RSS article summaries + index
+- `vault/daily/*.md` - Daily summaries
 
 ## Database
 

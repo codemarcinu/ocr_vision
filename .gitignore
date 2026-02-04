@@ -42,7 +42,12 @@ vault/*.md
 !paragony/inbox/.gitkeep
 !paragony/processed/.gitkeep
 
-# Generated output data (root-level directories only)
+# Generated output data (inside vault for Obsidian)
+vault/notes/
+vault/transcriptions/
+vault/summaries/
+vault/bookmarks/
+# Legacy root-level directories (may still exist after migration)
 /notes/
 /transcriptions/
 /summaries/

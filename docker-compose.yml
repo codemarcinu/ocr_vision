@@ -26,9 +26,6 @@ services:
     volumes:
       - ./paragony:/data/paragony
       - ./vault:/data/vault
-      - ./transcriptions:/data/transcriptions
-      - ./notes:/data/notes
-      - ./bookmarks:/data/bookmarks
       - paddleocr_cache:/root/.paddleocr
       - ./credentials:/data/credentials:ro
       - whisper_models:/tmp/transcriptions/models
@@ -58,12 +55,9 @@ services:
       - WHISPER_COMPUTE_TYPE=float16
       - WHISPER_UNLOAD_AFTER_USE=true
       - TRANSCRIPTION_AUTO_GENERATE_NOTE=true
-      - TRANSCRIPTION_OUTPUT_DIR=/data/transcriptions
       # Notes & Bookmarks
       - NOTES_ENABLED=true
-      - NOTES_OUTPUT_DIR=/data/notes
       - BOOKMARKS_ENABLED=true
-      - BOOKMARKS_OUTPUT_DIR=/data/bookmarks
       # Chat AI
       - CHAT_ENABLED=true
       - CHAT_MODEL=SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M
