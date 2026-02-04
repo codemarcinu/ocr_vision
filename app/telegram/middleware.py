@@ -39,8 +39,12 @@ def authorized_only(func: Callable[P, T]) -> Callable[P, T]:
         chat_id = update.effective_chat.id
 
         if settings.TELEGRAM_CHAT_ID == 0:
-            logger.warning("TELEGRAM_CHAT_ID not configured, allowing all users")
-            return await func(*args, **kwargs)
+            logger.error("TELEGRAM_CHAT_ID not configured - denying access")
+            if update.message:
+                await update.message.reply_text(
+                    "Bot nie skonfigurowany. Ustaw zmienną TELEGRAM_CHAT_ID."
+                )
+            return None
 
         if chat_id != settings.TELEGRAM_CHAT_ID:
             logger.warning(f"Unauthorized access attempt from chat_id: {chat_id}")
@@ -58,5 +62,5 @@ def authorized_only(func: Callable[P, T]) -> Callable[P, T]:
 def is_authorized(chat_id: int) -> bool:
     """Check if chat_id is authorized."""
     if settings.TELEGRAM_CHAT_ID == 0:
-        return True
+        return False
     return chat_id == settings.TELEGRAM_CHAT_ID

@@ -8,11 +8,8 @@ import os
 class Settings:
     """Application settings."""
 
-    # Database configuration
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://pantry:pantry123@localhost:5432/pantry"
-    )
+    # Database configuration (no default credentials - must be set via env)
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "5"))
     DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "10"))
 
@@ -216,6 +213,12 @@ class Settings:
 
     # Supported image formats (including PDF)
     SUPPORTED_FORMATS: tuple = (".png", ".jpg", ".jpeg", ".webp", ".pdf")
+
+    # Authentication (set to enable auth on API and Web UI)
+    AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "")
+
+    # Base URL for links in notifications (e.g., Telegram)
+    BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
     # Telegram Bot configuration
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

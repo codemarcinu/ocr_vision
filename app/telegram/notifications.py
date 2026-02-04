@@ -248,7 +248,7 @@ async def send_daily_digest(bot: Bot, chat_id: int, notification_settings: dict 
 
     if unmatched:
         keyboard.append([
-            InlineKeyboardButton("🔍 Mapuj produkty", url=f"http://localhost:8000/web/dictionary"),
+            InlineKeyboardButton("🔍 Mapuj produkty", url=f"{settings.BASE_URL}/web/dictionary"),
         ])
 
     keyboard.append([

@@ -165,11 +165,17 @@ async def receipt_upload(request: Request, file: UploadFile = File(...)):
     if suffix not in settings.SUPPORTED_FORMATS:
         return templates.TemplateResponse("receipts/partials/upload_result.html", {
             "request": request, "success": False,
-            "error": f"Nieobslugiwany format. Dozwolone: {', '.join(settings.SUPPORTED_FORMATS)}",
+            "error": f"Nieobsługiwany format. Dozwolone: {', '.join(settings.SUPPORTED_FORMATS)}",
         })
 
     settings.ensure_directories()
-    inbox_path = settings.INBOX_DIR / file.filename
+    from pathlib import PurePosixPath
+    safe_name = PurePosixPath(file.filename).name
+    if not safe_name or safe_name.startswith('.'):
+        return templates.TemplateResponse("receipts/partials/upload_result.html", {
+            "request": request, "success": False, "error": "Nieprawidłowa nazwa pliku",
+        })
+    inbox_path = settings.INBOX_DIR / safe_name
     with open(inbox_path, "wb") as f:
         content = await file.read()
         f.write(content)
@@ -302,7 +308,7 @@ async def pantry_consume(request: Request, repo: PantryRepoDep, item_ids: str = 
     response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
         "request": request, "grouped": grouped, "stats": stats, "q": "",
     })
-    response.headers.update(_htmx_trigger(f"Zuzytych produktow: {len(ids)}"))
+    response.headers.update(_htmx_trigger(f"Zużytych produktów: {len(ids)}"))
     return response
 
 
@@ -355,7 +361,7 @@ async def pantry_consume_single(request: Request, item_id: int, repo: PantryRepo
     response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
         "request": request, "grouped": grouped, "stats": stats, "q": "",
     })
-    response.headers.update(_htmx_trigger("Produkt zuzytowany"))
+    response.headers.update(_htmx_trigger("Produkt zużytowany"))
     return response
 
 
@@ -412,7 +418,7 @@ async def pantry_delete_item(request: Request, item_id: int, repo: PantryRepoDep
     response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
         "request": request, "grouped": grouped, "stats": stats, "q": "",
     })
-    response.headers.update(_htmx_trigger("Produkt usuniety"))
+    response.headers.update(_htmx_trigger("Produkt usunięty"))
     return response
 
 
@@ -526,7 +532,7 @@ async def delete_feed(request: Request, feed_id: int, feed_repo: FeedRepoDep):
     response = templates.TemplateResponse("articles/partials/feed_list.html", {
         "request": request, "feeds": feeds,
     })
-    response.headers.update(_htmx_trigger("Feed usuniety"))
+    response.headers.update(_htmx_trigger("Feed usunięty"))
     return response
 
 
@@ -565,7 +571,7 @@ async def refresh_feeds(request: Request, article_repo: ArticleRepoDep, feed_rep
     response = templates.TemplateResponse("articles/partials/article_list.html", {
         "request": request, "articles": articles,
     })
-    response.headers.update(_htmx_trigger(f"Odswiezono - {new_count} nowych artykulow"))
+    response.headers.update(_htmx_trigger(f"Odświeżono - {new_count} nowych artykułów"))
     return response
 
 
@@ -579,22 +585,23 @@ async def summarize_url(request: Request, url: str = Form(...)):
         if not scraped or not scraped.content:
             return templates.TemplateResponse("articles/partials/summarize_result.html", {
                 "request": request, "success": False,
-                "error": scrape_error or "Nie udalo sie pobrac tresci",
+                "error": scrape_error or "Nie udało się pobrać treści",
             })
 
         result, sum_error = await summarize_content(scraped.content)
         if not result:
             return templates.TemplateResponse("articles/partials/summarize_result.html", {
                 "request": request, "success": False,
-                "error": sum_error or "Podsumowanie nie powiodlo sie",
+                "error": sum_error or "Podsumowanie nie powiodło się",
             })
         return templates.TemplateResponse("articles/partials/summarize_result.html", {
             "request": request, "success": True, "result": result,
             "title": scraped.title or url, "url": url,
         })
     except Exception as e:
+        logger.error(f"Summarize URL failed: {e}")
         return templates.TemplateResponse("articles/partials/summarize_result.html", {
-            "request": request, "success": False, "error": str(e),
+            "request": request, "success": False, "error": "Wystąpił błąd podczas podsumowywania",
         })
 
 
@@ -739,7 +746,7 @@ async def note_delete(request: Request, note_id: UUID, repo: NoteRepoDep):
     response = templates.TemplateResponse("notes/partials/note_list.html", {
         "request": request, "notes": notes,
     })
-    response.headers.update(_htmx_trigger("Notatka usunieta"))
+    response.headers.update(_htmx_trigger("Notatka usunięta"))
     return response
 
 
@@ -820,7 +827,7 @@ async def bookmark_delete(request: Request, bookmark_id: UUID, repo: BookmarkRep
     response = templates.TemplateResponse("bookmarks/partials/bookmark_list.html", {
         "request": request, "bookmarks": bookmarks, "status": "all",
     })
-    response.headers.update(_htmx_trigger("Zakladka usunieta"))
+    response.headers.update(_htmx_trigger("Zakładka usunięta"))
     return response
 
 
@@ -1080,7 +1087,7 @@ async def ask_submit(request: Request, question: str = Form(...)):
     except Exception as e:
         logger.error(f"Ask error: {e}")
         return templates.TemplateResponse("ask/partials/answer.html", {
-            "request": request, "question": question, "error": str(e),
+            "request": request, "question": question, "error": "Wystąpił błąd podczas przetwarzania pytania",
         })
 
 
@@ -1180,7 +1187,7 @@ async def chat_send(
     except Exception as e:
         logger.error(f"Chat error: {e}")
         return templates.TemplateResponse("chat/partials/message.html", {
-            "request": request, "user_message": message, "error": str(e),
+            "request": request, "user_message": message, "error": "Wystąpił błąd podczas przetwarzania wiadomości",
         })
 
 

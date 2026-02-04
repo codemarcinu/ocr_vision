@@ -41,6 +41,13 @@ async def fetch_feed(feed_url: str) -> Tuple[Optional[FeedInfo], Optional[str]]:
         Tuple of (FeedInfo or None, error message or None)
     """
     try:
+        # Validate URL to prevent SSRF
+        from app.url_validator import validate_url
+        try:
+            validate_url(feed_url)
+        except ValueError as e:
+            return None, str(e)
+
         # Fetch feed content
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(

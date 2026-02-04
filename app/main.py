@@ -10,9 +10,12 @@ from typing import Optional
 from uuid import UUID
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+import secrets
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from app.classifier import categorize_products
 from app.config import settings
@@ -38,7 +41,11 @@ from app.reports import router as reports_router
 from app.services.obsidian_sync import obsidian_sync
 from app import ollama_client
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.telegram.bot import bot
+from app.auth import web_auth_middleware, create_session, destroy_session
 
 # Import alternative OCR backends if configured
 if settings.OCR_BACKEND == "paddle":
@@ -56,11 +63,66 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="Second Brain",
     description="Personal knowledge management system",
     version="1.0.0"
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Security headers middleware
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+# Authentication middleware
+app.middleware("http")(web_auth_middleware)
+
+# Templates for login page
+_auth_templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Show login form."""
+    return _auth_templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/login")
+async def login_submit(request: Request, token: str = Form(...)):
+    """Validate token and set session cookie."""
+    if not secrets.compare_digest(token, settings.AUTH_TOKEN):
+        return _auth_templates.TemplateResponse("login.html", {
+            "request": request, "error": "Nieprawidłowy token",
+        })
+    session_token = create_session()
+    response = RedirectResponse(url="/app/", status_code=303)
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        max_age=86400 * 30,  # 30 days
+    )
+    return response
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    """Destroy session and redirect to login."""
+    session_token = request.cookies.get("session_token", "")
+    destroy_session(session_token)
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("session_token")
+    return response
+
 
 # Register API routers
 app.include_router(dictionary_router)
@@ -177,7 +239,8 @@ async def health_check():
 
 
 @app.post("/process-receipt", response_model=ProcessingResult)
-async def process_receipt(file: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def process_receipt(request: Request, file: UploadFile = File(...)):
     """
     Process a receipt image.
 
@@ -200,15 +263,20 @@ async def process_receipt(file: UploadFile = File(...)):
 
     settings.ensure_directories()
 
-    # Save to inbox
-    inbox_path = settings.INBOX_DIR / file.filename
+    # Save to inbox (sanitize filename to prevent path traversal)
+    from pathlib import PurePosixPath
+    safe_name = PurePosixPath(file.filename).name
+    if not safe_name or safe_name.startswith('.'):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku")
+    inbox_path = settings.INBOX_DIR / safe_name
     try:
         with open(inbox_path, "wb") as f:
             content = await file.read()
             f.write(content)
         logger.info(f"Saved file to inbox: {inbox_path}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+        logger.error(f"Failed to save file: {e}")
+        raise HTTPException(status_code=500, detail="Nie udało się zapisać pliku")
 
     return await _process_file(inbox_path)
 

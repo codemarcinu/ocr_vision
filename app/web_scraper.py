@@ -38,6 +38,13 @@ async def scrape_url(url: str) -> Tuple[Optional[ScrapedContent], Optional[str]]
         Tuple of (ScrapedContent or None, error message or None)
     """
     try:
+        # Validate URL to prevent SSRF
+        from app.url_validator import validate_url
+        try:
+            validate_url(url)
+        except ValueError as e:
+            return None, str(e)
+
         # Fetch page
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
