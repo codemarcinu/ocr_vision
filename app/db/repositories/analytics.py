@@ -28,10 +28,10 @@ class AnalyticsRepository(BaseRepository[PriceHistory]):
             FROM price_history ph
             LEFT JOIN stores s ON ph.store_id = s.id
             WHERE ph.product_id = :product_id
-              AND ph.recorded_date > CURRENT_DATE - INTERVAL ':months months'
+              AND ph.recorded_date > CURRENT_DATE - :months * INTERVAL '1 month'
             ORDER BY ph.recorded_date
-        """.replace(":months", str(months)))
-        result = await self.session.execute(stmt, {"product_id": product_id})
+        """)
+        result = await self.session.execute(stmt, {"product_id": product_id, "months": months})
         return [
             {
                 "date": row.recorded_date.isoformat(),
@@ -181,11 +181,11 @@ class AnalyticsRepository(BaseRepository[PriceHistory]):
             JOIN receipts r ON ri.receipt_id = r.id
             LEFT JOIN stores s ON r.store_id = s.id
             LEFT JOIN categories c ON ri.category_id = c.id
-            WHERE r.receipt_date > CURRENT_DATE - INTERVAL ':months months'
+            WHERE r.receipt_date > CURRENT_DATE - :months * INTERVAL '1 month'
             GROUP BY DATE_TRUNC('month', r.receipt_date), s.name, c.name
             ORDER BY month DESC, total DESC
-        """.replace(":months", str(months)))
-        result = await self.session.execute(stmt)
+        """)
+        result = await self.session.execute(stmt, {"months": months})
         return [
             {
                 "month": row.month.isoformat() if row.month else None,

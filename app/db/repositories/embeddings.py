@@ -32,9 +32,10 @@ class EmbeddingRepository(BaseRepository[DocumentEmbedding]):
         embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
 
         where_clause = ""
+        params = {"query_embedding": embedding_str, "limit": limit}
         if content_types:
-            types_str = ",".join(f"'{t}'" for t in content_types)
-            where_clause = f"WHERE content_type IN ({types_str})"
+            where_clause = "WHERE content_type = ANY(:types)"
+            params["types"] = content_types
 
         query = text(f"""
             SELECT
@@ -51,10 +52,7 @@ class EmbeddingRepository(BaseRepository[DocumentEmbedding]):
             LIMIT :limit
         """)
 
-        result = await self.session.execute(
-            query,
-            {"query_embedding": embedding_str, "limit": limit},
-        )
+        result = await self.session.execute(query, params)
 
         rows = result.fetchall()
         return [
@@ -78,10 +76,11 @@ class EmbeddingRepository(BaseRepository[DocumentEmbedding]):
         content_types: Optional[list[str]] = None,
     ) -> list[dict]:
         """Fallback keyword search using pg_trgm similarity."""
-        where_clause = ""
+        extra_clause = ""
+        params = {"query": query, "pattern": f"%{query}%", "limit": limit}
         if content_types:
-            types_str = ",".join(f"'{t}'" for t in content_types)
-            where_clause = f"AND content_type IN ({types_str})"
+            extra_clause = "AND content_type = ANY(:types)"
+            params["types"] = content_types
 
         sql = text(f"""
             SELECT
@@ -93,15 +92,12 @@ class EmbeddingRepository(BaseRepository[DocumentEmbedding]):
                 metadata,
                 similarity(text_chunk, :query) AS sim_score
             FROM document_embeddings
-            WHERE text_chunk ILIKE :pattern {where_clause}
+            WHERE text_chunk ILIKE :pattern {extra_clause}
             ORDER BY sim_score DESC
             LIMIT :limit
         """)
 
-        result = await self.session.execute(
-            sql,
-            {"query": query, "pattern": f"%{query}%", "limit": limit},
-        )
+        result = await self.session.execute(sql, params)
 
         rows = result.fetchall()
         return [
