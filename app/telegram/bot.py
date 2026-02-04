@@ -49,6 +49,7 @@ from app.telegram.handlers import (
     chat_command,
     endchat_command,
     handle_chat_message,
+    daily_command,
 )
 from app.telegram.handlers.menu_articles import handle_articles_callback
 from app.telegram.handlers.menu_bookmarks import handle_bookmarks_callback
@@ -152,6 +153,7 @@ class PantryBot:
         self.application.add_handler(CommandHandler("endchat", endchat_command))
         self.application.add_handler(CommandHandler("q", self._quick_search_command))
         self.application.add_handler(CommandHandler("n", self._quick_note_command))
+        self.application.add_handler(CommandHandler("daily", daily_command))
 
         # Media handlers
         self.application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -216,6 +218,7 @@ class PantryBot:
             "<b>🧠 Second Brain</b>\n\n"
             "Wybierz moduł lub wyślij:\n"
             "• 📸 zdjęcie paragonu\n"
+            "• 🎤 wiadomość głosowa → notatka\n"
             "• 🔗 link do artykułu/wideo\n"
             "• 🎵 plik audio\n",
             parse_mode="HTML",
@@ -234,6 +237,7 @@ class PantryBot:
             "• <code>/start</code> — menu główne\n"
             "• <code>/ask &lt;pytanie&gt;</code> — zapytaj bazę wiedzy (RAG)\n"
             "• <code>/n &lt;tekst&gt;</code> — szybka notatka\n"
+            "• <code>/daily</code> — podsumowanie dnia\n"
             "• <code>/q &lt;fraza&gt;</code> — szukaj wszędzie\n"
             "• <code>/find &lt;fraza&gt;</code> — szukaj w bazie\n"
             "• <code>/settings</code> — ustawienia powiadomień\n"
@@ -241,6 +245,7 @@ class PantryBot:
             "<b>Wyślij wiadomość:</b>\n"
             "• 📸 Zdjęcie → przetwarzanie paragonu\n"
             "• 📄 PDF → przetwarzanie paragonu\n"
+            "• 🎤 Głosówka → notatka głosowa\n"
             "• 🎵 Audio → transkrypcja\n"
             "• 🔗 Link → wybór akcji (zapisz / podsumuj / transkrybuj)\n"
             "• 📋 JSON → import paragonu\n\n"
@@ -364,10 +369,23 @@ class PantryBot:
 
     @authorized_only
     async def _handle_audio_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle audio file uploads - route to transcription."""
+        """Handle audio file uploads - route voice to notes, others to transcription."""
         if not update.message:
             return
 
+        # Voice messages → quick notes
+        if update.message.voice:
+            if not settings.NOTES_ENABLED:
+                await update.message.reply_text("❌ Notatki są wyłączone")
+                return
+            if not settings.TRANSCRIPTION_ENABLED:
+                await update.message.reply_text("❌ Transkrypcja jest wyłączona")
+                return
+            from app.telegram.handlers.voice_notes import handle_voice_note
+            await handle_voice_note(update, context)
+            return
+
+        # Other audio files → full transcription pipeline
         if not settings.TRANSCRIPTION_ENABLED:
             await update.message.reply_text("❌ Transkrypcja jest wyłączona")
             return

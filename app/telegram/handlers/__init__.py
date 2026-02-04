@@ -54,6 +54,12 @@ from app.telegram.handlers.chat import (
     endchat_command,
     handle_chat_message,
 )
+from app.telegram.handlers.voice_notes import (
+    handle_voice_note,
+)
+from app.telegram.handlers.daily import (
+    daily_command,
+)
 
 __all__ = [
     "ask_command",
@@ -88,4 +94,6 @@ __all__ = [
     "chat_command",
     "endchat_command",
     "handle_chat_message",
+    "handle_voice_note",
+    "daily_command",
 ]

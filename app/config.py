@@ -172,6 +172,9 @@ class Settings:
     NOTES_OUTPUT_DIR: Path = Path(os.getenv(
         "NOTES_OUTPUT_DIR", str(BASE_DIR / "notes")
     ))
+    DAILY_OUTPUT_DIR: Path = Path(os.getenv(
+        "DAILY_OUTPUT_DIR", str(VAULT_DIR / "daily")
+    ))
 
     # ==========================================================================
     # Bookmarks / Read Later
@@ -297,6 +300,7 @@ class Settings:
             cls.TRANSCRIPTION_OUTPUT_DIR,
             cls.TRANSCRIPTION_TEMP_DIR,
             cls.NOTES_OUTPUT_DIR,
+            cls.DAILY_OUTPUT_DIR,
             cls.BOOKMARKS_OUTPUT_DIR,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
