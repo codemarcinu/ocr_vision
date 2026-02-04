@@ -88,6 +88,15 @@ async def create_bookmark(bookmark: BookmarkCreate, repo: BookmarkRepoDep):
         except Exception:
             pass
 
+    # Update Obsidian bookmarks index
+    if settings.GENERATE_OBSIDIAN_FILES:
+        try:
+            all_bookmarks = await repo.get_all(limit=1000)
+            from app.bookmarks_writer import write_bookmarks_index
+            write_bookmarks_index(all_bookmarks)
+        except Exception:
+            pass
+
     return {"id": str(b.id), "url": b.url}
 
 
