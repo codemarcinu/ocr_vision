@@ -1,7 +1,8 @@
 """SearXNG web search client."""
 
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import httpx
@@ -33,6 +34,8 @@ class SearchResult:
     url: str
     snippet: str
     engine: str
+    score: float = 0.0
+    content: Optional[str] = None
 
 
 async def search(
@@ -92,7 +95,11 @@ async def search(
                 url=url,
                 snippet=snippet,
                 engine=item.get("engine", ""),
+                score=float(item.get("score", 0.0)),
             ))
+
+        # Sort by SearXNG relevance score (higher = better)
+        results.sort(key=lambda r: r.score, reverse=True)
 
         return results, None
 
@@ -105,3 +112,31 @@ async def search(
     except Exception as e:
         logger.error(f"SearXNG error: {e}")
         return [], f"Błąd wyszukiwania: {e}"
+
+
+async def search_expanded(
+    query: str,
+    num_results: int = 6,
+    language: str = "pl",
+) -> tuple[list[SearchResult], Optional[str]]:
+    """Search both 'general' and 'news' categories, merge and deduplicate."""
+    general_task = search(query, num_results=num_results, language=language, categories="general")
+    news_task = search(query, num_results=3, language=language, categories="news")
+
+    (general_results, general_err), (news_results, news_err) = await asyncio.gather(
+        general_task, news_task,
+    )
+
+    # Merge, deduplicate by URL
+    seen_urls: set[str] = set()
+    merged: list[SearchResult] = []
+    for r in general_results + news_results:
+        if r.url not in seen_urls:
+            merged.append(r)
+            seen_urls.add(r.url)
+
+    # Sort by score
+    merged.sort(key=lambda r: r.score, reverse=True)
+
+    error = general_err if not general_results else None
+    return merged[:num_results], error

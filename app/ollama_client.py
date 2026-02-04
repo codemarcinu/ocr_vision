@@ -65,6 +65,7 @@ async def post_generate(
     options: Optional[dict] = None,
     timeout: float = 180.0,
     keep_alive: Optional[str] = None,
+    format: Optional[str] = None,
 ) -> tuple[str, Optional[str]]:
     """Call Ollama /api/generate endpoint.
 
@@ -84,6 +85,9 @@ async def post_generate(
 
     if keep_alive:
         payload["keep_alive"] = keep_alive
+
+    if format:
+        payload["format"] = format
 
     try:
         response = await client.post(
@@ -106,6 +110,7 @@ async def post_chat(
     options: Optional[dict] = None,
     timeout: float = 120.0,
     keep_alive: Optional[str] = None,
+    format: Optional[str] = None,
 ) -> tuple[str, Optional[str]]:
     """Call Ollama /api/chat endpoint.
 
@@ -125,6 +130,9 @@ async def post_chat(
 
     if keep_alive:
         payload["keep_alive"] = keep_alive
+
+    if format:
+        payload["format"] = format
 
     try:
         response = await client.post(

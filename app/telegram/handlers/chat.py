@@ -20,11 +20,15 @@ def _search_type_label(search_type: str) -> str:
     """Get label for search type."""
     return {
         "rag": "📚 Baza wiedzy",
+        "rag→web": "📚→🌐 Baza → Internet",
         "web": "🌐 Internet",
+        "web→rag": "🌐→📚 Internet → Baza",
         "both": "📚🌐 Baza + Internet",
+        "spending": "💰 Wydatki",
+        "inventory": "🥫 Spiżarnia",
         "weather": "⛅ Pogoda",
         "direct": "💬 Bezpośrednio",
-    }.get(search_type, "")
+    }.get(search_type, search_type)
 
 
 @authorized_only

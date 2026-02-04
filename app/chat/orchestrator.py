@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import ollama_client
-from app.chat import intent_classifier, searxng_client, weather_client
+from app.chat import content_fetcher, history_manager, intent_classifier, searxng_client, weather_client
 from app.config import settings
 from app.db.repositories.chat import ChatRepository
 from app.rag import retriever
@@ -59,11 +59,27 @@ class ChatResponse:
     processing_time_sec: float = 0.0
 
 
+@dataclass
+class SearchResults:
+    """Aggregated search results from all sources."""
+
+    rag_results: list[retriever.SearchResult] = field(default_factory=list)
+    web_results: list[searxng_client.SearchResult] = field(default_factory=list)
+    weather_data: Optional[dict] = None
+    forecast_data: Optional[list[dict]] = None
+    final_intent: str = "direct"
+    tool_context: Optional[str] = None
+
+
+# Minimum relevance score for RAG results to be included in context.
+# nomic-embed-text returns ~0.7 for unrelated content, so 0.75 filters noise.
+CHAT_RAG_MIN_SCORE = 0.75
+
+
 def _detect_language(text: str) -> str:
     """Simple Polish vs English detection."""
     polish_chars = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
 
-    # Pad with spaces for word boundary matching at start/end
     padded = f" {text.lower()} "
     polish_words = [
         " i ", " w ", " się ", " na ", " do ", " z ", " co ", " jak ", " ile ",
@@ -140,10 +156,16 @@ def _format_weather_context(
 
 
 def _format_web_context(results: list[searxng_client.SearchResult]) -> str:
-    """Format web search results into context text."""
+    """Format web search results into context text, using full content when available."""
     parts = []
-    for r in results:
-        parts.append(f"[Web: {r.title}]\nURL: {r.url}\n{r.snippet}")
+    for i, r in enumerate(results, 1):
+        text = r.content if r.content else r.snippet
+        source_type = "pełna treść" if r.content else "fragment"
+        parts.append(
+            f"[Źródło {i}: {r.title}] ({source_type})\n"
+            f"URL: {r.url}\n"
+            f"{text}"
+        )
     return "\n\n---\n\n".join(parts)
 
 
@@ -183,6 +205,123 @@ def _extract_sources(
     return sources
 
 
+def _filter_rag_results(
+    rag_results: list[retriever.SearchResult],
+) -> list[retriever.SearchResult]:
+    """Filter out low-relevance RAG results."""
+    if not rag_results:
+        return []
+
+    before = len(rag_results)
+    filtered = [r for r in rag_results if r.score >= CHAT_RAG_MIN_SCORE]
+    removed = before - len(filtered)
+    if removed:
+        logger.info(
+            f"Filtered {removed}/{before} low-relevance RAG results "
+            f"(min score: {CHAT_RAG_MIN_SCORE})"
+        )
+    return filtered
+
+
+async def _web_search(
+    query: str,
+    language: str = "pl",
+) -> tuple[list[searxng_client.SearchResult], str | None]:
+    """Run web search with optional query expansion."""
+    num = settings.WEB_SEARCH_NUM_RESULTS
+    if settings.WEB_SEARCH_EXPAND_NEWS:
+        return await searxng_client.search_expanded(query, num_results=num, language=language)
+    return await searxng_client.search(query, num_results=num, language=language)
+
+
+async def _execute_search(
+    intent: str,
+    search_query: str,
+    confidence: str,
+    db_session: AsyncSession,
+    language: str = "pl",
+) -> SearchResults:
+    """Execute search based on classified intent, with fallback chain.
+
+    Fallback logic:
+    - rag with no results + confidence != high → try web
+    - web with no results → try rag
+    """
+    result = SearchResults(final_intent=intent)
+
+    if intent == "rag":
+        result.rag_results = await retriever.search(
+            query=search_query, session=db_session, top_k=settings.RAG_TOP_K,
+        )
+        result.rag_results = _filter_rag_results(result.rag_results)
+
+        # Fallback: RAG empty + not high confidence → try web
+        if not result.rag_results and confidence != "high":
+            logger.info("RAG returned no results, falling back to web search")
+            result.web_results, web_err = await _web_search(search_query, language=language)
+            if web_err:
+                logger.warning(f"Web fallback error: {web_err}")
+            if result.web_results:
+                result.final_intent = "rag→web"
+
+    elif intent == "weather":
+        (result.weather_data, weather_err), (result.forecast_data, forecast_err) = (
+            await asyncio.gather(
+                weather_client.get_weather(),
+                weather_client.get_forecast(),
+            )
+        )
+        if weather_err:
+            logger.warning(f"Weather API error: {weather_err}")
+        if forecast_err:
+            logger.warning(f"Forecast API error: {forecast_err}")
+
+    elif intent == "web":
+        result.web_results, web_err = await _web_search(search_query, language=language)
+        if web_err:
+            logger.warning(f"Web search error: {web_err}")
+
+        # Fallback: web empty → try RAG
+        if not result.web_results:
+            logger.info("Web returned no results, falling back to RAG")
+            result.rag_results = await retriever.search(
+                query=search_query, session=db_session, top_k=settings.RAG_TOP_K,
+            )
+            result.rag_results = _filter_rag_results(result.rag_results)
+            if result.rag_results:
+                result.final_intent = "web→rag"
+
+    elif intent == "both":
+        rag_task = retriever.search(
+            query=search_query, session=db_session, top_k=settings.RAG_TOP_K,
+        )
+        web_task = _web_search(search_query, language=language)
+        result.rag_results, (result.web_results, web_err) = await asyncio.gather(
+            rag_task, web_task,
+        )
+        if web_err:
+            logger.warning(f"Web search error: {web_err}")
+        result.rag_results = _filter_rag_results(result.rag_results)
+
+    elif intent == "spending":
+        from app.chat import data_tools
+        result.tool_context = await data_tools.query_spending(search_query, db_session)
+        result.final_intent = "spending"
+
+    elif intent == "inventory":
+        from app.chat import data_tools
+        result.tool_context = await data_tools.query_inventory(search_query, db_session)
+        result.final_intent = "inventory"
+
+    # else: "direct" - no search
+
+    # Fetch full page content for web results
+    if result.web_results:
+        await content_fetcher.fetch_content_for_results(result.web_results)
+
+    return result
+
+
 async def process_message(
     message: str,
     session_id: UUID,
@@ -213,83 +352,63 @@ async def process_message(
         for msg in recent_messages
     ]
 
-    # 2. Classify intent
-    intent = await intent_classifier.classify_intent(message, history)
+    # Summarize older messages if history is long
+    history = await history_manager.prepare_history(history)
 
-    # 3. Execute search based on intent
-    rag_results: list[retriever.SearchResult] = []
-    web_results: list[searxng_client.SearchResult] = []
-    weather_data: Optional[dict] = None
-    forecast_data: Optional[list[dict]] = None
+    # 2. Classify intent (structured JSON output)
+    classified = await intent_classifier.classify_intent(message, history)
+    intent = classified.intent
+    search_query = classified.query or message
 
-    # Minimum relevance score for RAG results to be included in context.
-    # nomic-embed-text returns ~0.7 for unrelated content, so 0.75 filters noise.
-    CHAT_RAG_MIN_SCORE = 0.75
+    # Detect language early - needed for web search language and LLM prompt
+    lang = _detect_language(message)
 
-    if intent == "rag":
-        rag_results = await retriever.search(
-            query=message, session=db_session, top_k=settings.RAG_TOP_K,
-        )
-    elif intent == "weather":
-        (weather_data, weather_err), (forecast_data, forecast_err) = await asyncio.gather(
-            weather_client.get_weather(),
-            weather_client.get_forecast(),
-        )
-        if weather_err:
-            logger.warning(f"Weather API error: {weather_err}")
-        if forecast_err:
-            logger.warning(f"Forecast API error: {forecast_err}")
-    elif intent == "web":
-        web_results, web_err = await searxng_client.search(message)
-        if web_err:
-            logger.warning(f"Web search error: {web_err}")
-    elif intent == "both":
-        rag_task = retriever.search(
-            query=message, session=db_session, top_k=settings.RAG_TOP_K,
-        )
-        web_task = searxng_client.search(message)
-        rag_results, (web_results, web_err) = await asyncio.gather(
-            rag_task, web_task,
-        )
-        if web_err:
-            logger.warning(f"Web search error: {web_err}")
-    # else: "direct" - no search
-
-    # Filter out low-relevance RAG results to prevent hallucinations
-    if rag_results:
-        before = len(rag_results)
-        rag_results = [r for r in rag_results if r.score >= CHAT_RAG_MIN_SCORE]
-        filtered = before - len(rag_results)
-        if filtered:
-            logger.info(f"Filtered {filtered}/{before} low-relevance RAG results (min score: {CHAT_RAG_MIN_SCORE})")
+    # 3. Execute search with fallback chain
+    search = await _execute_search(
+        intent=intent,
+        search_query=search_query,
+        confidence=classified.confidence,
+        db_session=db_session,
+        language=lang,
+    )
 
     # 4. Build context from search results
     context_parts = []
-    if weather_data or forecast_data:
-        context_parts.append(_format_weather_context(weather_data, forecast_data))
-    if rag_results:
+
+    if search.tool_context:
+        context_parts.append(search.tool_context)
+
+    if search.weather_data or search.forecast_data:
         context_parts.append(
-            "=== OSOBISTA BAZA WIEDZY ===\n" + _format_rag_context(rag_results)
+            _format_weather_context(search.weather_data, search.forecast_data)
         )
-    if web_results:
+    if search.rag_results:
         context_parts.append(
-            "=== WYNIKI Z INTERNETU ===\n" + _format_web_context(web_results)
+            "=== OSOBISTA BAZA WIEDZY ===\n" + _format_rag_context(search.rag_results)
+        )
+    if search.web_results:
+        context_parts.append(
+            "=== WYNIKI Z INTERNETU ===\n" + _format_web_context(search.web_results)
         )
 
     context = "\n\n".join(context_parts)
 
     # If search was performed but returned no results, inform the LLM
-    if intent == "weather" and not weather_data and not forecast_data:
-        context = "BRAK DANYCH POGODOWYCH - nie udało się pobrać pogody z OpenWeatherMap."
-    elif intent in ("rag", "both") and not rag_results and not web_results:
-        context = "BRAK WYNIKÓW WYSZUKIWANIA - nie znaleziono pasujących danych w bazie wiedzy ani w internecie."
-    elif intent == "rag" and not rag_results:
-        context = "BRAK WYNIKÓW - nie znaleziono pasujących danych w osobistej bazie wiedzy."
-    elif intent == "web" and not web_results:
-        context = "BRAK WYNIKÓW - wyszukiwanie internetowe nie zwróciło wyników."
+    if not context and intent != "direct":
+        if intent == "weather":
+            context = "BRAK DANYCH POGODOWYCH - nie udało się pobrać pogody z OpenWeatherMap."
+        elif intent == "spending":
+            context = "BRAK DANYCH O WYDATKACH - nie znaleziono danych spełniających kryteria."
+        elif intent == "inventory":
+            context = "BRAK DANYCH O SPIŻARNI - spiżarnia jest pusta lub nie znaleziono pasujących produktów."
+        elif intent in ("rag", "both"):
+            context = "BRAK WYNIKÓW WYSZUKIWANIA - nie znaleziono pasujących danych w bazie wiedzy ani w internecie."
+        elif intent == "web":
+            context = "BRAK WYNIKÓW - wyszukiwanie internetowe nie zwróciło wyników."
+        else:
+            context = "BRAK WYNIKÓW - nie znaleziono pasujących danych."
 
     # 5. Build LLM message history
-    lang = _detect_language(message)
     system_prompt = CHAT_SYSTEM_PROMPT_PL if lang == "pl" else CHAT_SYSTEM_PROMPT_EN
 
     if context:
@@ -320,19 +439,19 @@ async def process_message(
         logger.error(f"Chat LLM error: {error}")
         return ChatResponse(
             answer=f"Błąd generowania odpowiedzi: {error}",
-            search_type=intent,
+            search_type=search.final_intent,
             model_used=model,
             processing_time_sec=round(time.time() - start_time, 2),
         )
 
     # 7. Extract sources
-    sources = _extract_sources(rag_results, web_results)
+    sources = _extract_sources(search.rag_results, search.web_results)
 
     return ChatResponse(
         answer=response.strip(),
         sources=sources,
-        search_type=intent,
-        search_query=message if intent != "direct" else None,
+        search_type=search.final_intent,
+        search_query=search_query if intent != "direct" else None,
         model_used=model,
         processing_time_sec=round(time.time() - start_time, 2),
     )

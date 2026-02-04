@@ -200,8 +200,17 @@ class Settings:
     CHAT_ENABLED: bool = os.getenv("CHAT_ENABLED", "true").lower() == "true"
     CHAT_MODEL: str = os.getenv("CHAT_MODEL", "")  # Empty = use CLASSIFIER_MODEL
     CHAT_MAX_HISTORY: int = int(os.getenv("CHAT_MAX_HISTORY", "10"))
+    CHAT_SUMMARIZE_AFTER: int = int(os.getenv("CHAT_SUMMARIZE_AFTER", "6"))
     SEARXNG_URL: str = os.getenv("SEARXNG_URL", "http://searxng:8080")
     SEARXNG_TIMEOUT: int = int(os.getenv("SEARXNG_TIMEOUT", "15"))
+
+    # Web search content fetching
+    WEB_FETCH_ENABLED: bool = os.getenv("WEB_FETCH_ENABLED", "true").lower() == "true"
+    WEB_FETCH_TOP_N: int = int(os.getenv("WEB_FETCH_TOP_N", "3"))
+    WEB_FETCH_MAX_CHARS: int = int(os.getenv("WEB_FETCH_MAX_CHARS", "2000"))
+    WEB_FETCH_TIMEOUT: int = int(os.getenv("WEB_FETCH_TIMEOUT", "10"))
+    WEB_SEARCH_EXPAND_NEWS: bool = os.getenv("WEB_SEARCH_EXPAND_NEWS", "false").lower() == "true"
+    WEB_SEARCH_NUM_RESULTS: int = int(os.getenv("WEB_SEARCH_NUM_RESULTS", "6"))
 
     # OpenWeatherMap API
     OPENWEATHER_API_KEY: str = os.getenv("OPENWEATHER_API_KEY", "")
