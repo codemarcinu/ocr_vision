@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from paddleocr import PaddleOCR
 
 from app.config import settings
@@ -151,30 +150,24 @@ async def structure_with_llm(raw_text: str, prompt: str) -> tuple[Optional[dict]
     if not raw_text.strip():
         return None, "No text to structure"
 
-    payload = {
-        "model": settings.CLASSIFIER_MODEL,
-        "prompt": prompt + raw_text,
-        "stream": False,
-        "options": {
+    from app import ollama_client
+
+    raw_response, error = await ollama_client.post_generate(
+        model=settings.CLASSIFIER_MODEL,
+        prompt=prompt + raw_text,
+        options={
             "temperature": 0.1,
             "num_predict": 2000,  # Increased for longer receipts
-        }
-    }
+        },
+        timeout=180.0,
+        keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
+    )
 
-    try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
-                json=payload
-            )
-            response.raise_for_status()
-            result = response.json()
-    except httpx.TimeoutException:
-        return None, "LLM timeout"
-    except httpx.HTTPError as e:
-        return None, f"LLM error: {e}"
+    if error:
+        return None, f"LLM error: {error}"
 
-    raw_response = result.get("response", "")
+    if not raw_response:
+        return None, "Empty LLM response"
 
     try:
         json_str = raw_response

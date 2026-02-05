@@ -9,7 +9,7 @@ Total: ~13-17s (optimized from ~20s by merging structuring and categorization).
 Optimizations applied:
 - Connection pooling via ollama_client module
 - Combined structuring + categorization in single LLM call
-- Reduced DeepSeek-OCR timeout to 45s (was 120s)
+- Configurable DeepSeek-OCR timeout via DEEPSEEK_OCR_TIMEOUT (default 90s)
 """
 
 import json
@@ -133,7 +133,7 @@ def _detect_repetition(text: str, ngram_size: int = 15, threshold: float = 0.3) 
     return repetition_ratio > threshold
 
 
-async def _call_deepseek_ocr(image_base64: str, timeout: float = 45.0) -> tuple[str, Optional[str]]:
+async def _call_deepseek_ocr(image_base64: str, timeout: float = None) -> tuple[str, Optional[str]]:
     """
     Call DeepSeek-OCR via Ollama chat API.
 
@@ -146,8 +146,10 @@ async def _call_deepseek_ocr(image_base64: str, timeout: float = 45.0) -> tuple[
     - Hard limit via num_predict
     - n-gram repetition detection
     - Pattern-based loop detection
-    - Timeout reduced to 45s (was 120s) - normal processing takes 6-15s
+    - Configurable timeout via DEEPSEEK_OCR_TIMEOUT (default 90s)
     """
+    if timeout is None:
+        timeout = float(settings.DEEPSEEK_OCR_TIMEOUT)
     messages = [
         {
             "role": "user",
