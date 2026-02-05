@@ -30,6 +30,7 @@ docker exec -it pantry-api python scripts/migrate_data.py
 
 # Test API
 curl http://localhost:8000/health
+curl http://localhost:8000/models/status   # VRAM usage and model states
 curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.png"
 
 # Database shell
@@ -101,6 +102,10 @@ Receipt (photo/PDF) → OCR Backend → Store Detection → Store-Specific Promp
 | `openai` | ~5s | Google Cloud Vision API → OpenAI GPT-4o-mini structuring. Requires `OPENAI_API_KEY` |
 | `vision` | ~4min | qwen2.5vl:7b single model for everything. Slowest but no dependencies |
 
+**Single-model mode** (`OCR_SINGLE_MODEL_MODE=true`): Vision model performs OCR + JSON structuring in one call, reducing model switches. Useful for 12GB VRAM systems where loading both vision and text models causes thrashing.
+
+**Category cache** (`CLASSIFIER_CACHE_TTL`): Caches product→category mappings to skip LLM calls for recently seen products. Set to 0 to disable.
+
 **Human-in-the-loop review** triggers when extracted total vs product sum differs by >5 PLN AND >10%. User approves, corrects total, or rejects via Telegram inline keyboard.
 
 **Multi-page PDF**: Pages processed in parallel (`PDF_MAX_PARALLEL_PAGES`), products combined, per-page verification skipped (would corrupt partial totals).
@@ -132,6 +137,11 @@ Analytics endpoints at `/reports/*`:
 - `/reports/summary` - Full overview with date range
 - `/reports/classifier-ab` - A/B test results for classifier models
 
+### Operational Endpoints
+
+- `/health` - Basic health check
+- `/models/status` - VRAM usage, loaded models, eviction metrics (when `MODEL_COORDINATION_ENABLED=true`)
+
 ### Docker Volume Mounts
 
 Local paths map to `/data/` inside the container:
@@ -159,6 +169,12 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 **Chat AI intent classification** (`app/chat/intent_classifier.py`): LLM classifies each message as `"rag"` (personal data), `"web"` (internet search via SearXNG), `"both"`, or `"direct"` (no search needed).
 
 **Language detection**: Multiple modules auto-detect Polish vs English based on Polish characters (ą,ć,ę...) and keyword matching. Polish → Bielik 11B model, English → qwen2.5:7b.
+
+**Model coordination** (`app/model_coordinator.py`): Centralized VRAM management to minimize thrashing from model switches. The coordinator tracks loaded models, enforces a VRAM budget, and uses LRU eviction when space is needed. Enable with `MODEL_COORDINATION_ENABLED=true`. Key features:
+- Per-model locking to prevent concurrent load/unload
+- VRAM budget tracking (default 12GB)
+- LRU eviction policy for automatic model unloading
+- Waiter counting to avoid unloading models with pending requests
 
 **OCR backend conditional imports** (`app/main.py`): Backend selection happens at import time via `settings.OCR_BACKEND`, loading the appropriate module (paddle_ocr, deepseek_ocr, google_ocr_backend, openai_ocr_backend, or default vision ocr).
 
@@ -190,19 +206,31 @@ Each store (Biedronka, Lidl, Kaufland, Żabka, etc.) has a tailored extraction p
 
 LLM-based natural language routing to system tools. User sends a message (text or voice transcription), LLM selects the appropriate tool and extracts arguments, then the tool is executed.
 
+**Chat Integration (`CHAT_AGENT_ENABLED=true`):**
+Agent is integrated with chat as a pre-processor. When user sends a message:
+1. Agent classifies: is this an ACTION or a SEARCH/CONVERSATION?
+2. **Action tools** (`create_note`, `create_bookmark`, `summarize_url`, `list_recent`) → execute immediately
+3. **Search tools** (`search_knowledge`, `search_web`, `get_weather`, `get_spending`, `get_inventory`, `answer_directly`) → fall through to orchestrator with conversation history
+
 ```
-User Input → SecurityValidator → LLM (qwen2.5:7b + format=json)
-    → ToolCall{tool, arguments} → Pydantic validation → Tool Executor → Result
+User: "Zanotuj: spotkanie jutro o 10"
+        ↓
+    [Agent] → create_note → "Utworzono notatkę: Spotkanie"
+
+User: "Co jadłem w tym tygodniu?"
+        ↓
+    [Agent] → get_spending → [Orchestrator] → "W tym tygodniu kupiłeś..."
 ```
 
 **Components:**
 - `tools.py` - Tool definitions (10 tools), Pydantic argument models, validation
 - `router.py` - AgentRouter class: LLM call with retry, tool dispatch, logging
 - `validator.py` - Input sanitization, prompt injection detection (low/medium/high risk)
+- `app/chat/agent_executor.py` - Tool executors connecting to notes/bookmarks/RSS APIs
 
 **Available tools:** `create_note`, `search_knowledge`, `search_web`, `get_spending`, `get_inventory`, `get_weather`, `summarize_url`, `list_recent`, `create_bookmark`, `answer_directly`
 
-**Usage:**
+**Usage (standalone):**
 ```python
 from app.agent.router import create_agent_router
 
@@ -246,6 +274,7 @@ USE_DB_RECEIPTS=true
 GENERATE_OBSIDIAN_FILES=true
 RAG_ENABLED=true
 CHAT_ENABLED=true
+CHAT_AGENT_ENABLED=true              # Agent tool-calling in chat (auto-detect actions)
 TRANSCRIPTION_ENABLED=true
 NOTES_ENABLED=true
 BOOKMARKS_ENABLED=true
@@ -265,6 +294,15 @@ TEXT_MODEL_KEEP_ALIVE=30m
 UNLOAD_MODELS_AFTER_USE=false         # Set true for low VRAM systems
 WHISPER_UNLOAD_AFTER_USE=true         # Free VRAM after transcription
 
+# Model coordination (VRAM management)
+MODEL_COORDINATION_ENABLED=true       # Enable centralized VRAM coordination
+MODEL_MAX_VRAM_MB=12000               # VRAM budget in MB
+MODEL_PRELOAD_ON_STARTUP=qwen2.5:7b   # Comma-separated models to preload
+MODEL_SWITCH_QUEUE_TIMEOUT=300        # Max wait for model load (seconds)
+OCR_SINGLE_MODEL_MODE=false           # Vision model does OCR+structuring (fewer switches)
+CLASSIFIER_CACHE_TTL=3600             # Category cache TTL (seconds, 0=disabled)
+DEEPSEEK_OCR_TIMEOUT=90               # DeepSeek timeout (increased for slow GPUs)
+
 # Web search (SearXNG)
 WEB_SEARCH_NUM_RESULTS=6              # Results per search query
 WEB_SEARCH_EXPAND_NEWS=false          # Expand news categories in search
@@ -273,12 +311,14 @@ WEB_SEARCH_EXPAND_NEWS=false          # Expand news categories in search
 ### Ollama Models Required
 
 ```bash
-ollama pull qwen2.5:7b        # Structuring + categorization (4.7GB)
-ollama pull qwen2.5vl:7b      # Vision OCR fallback (6GB)
-ollama pull nomic-embed-text   # RAG embeddings (274MB)
+ollama pull qwen2.5:7b        # Structuring + categorization (~4.7GB VRAM)
+ollama pull qwen2.5vl:7b      # Vision OCR (~6GB VRAM)
+ollama pull nomic-embed-text   # RAG embeddings (~274MB VRAM)
 # For Polish content:
-ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Chat + summaries (7GB)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M  # Chat + summaries (~7GB VRAM)
 ```
+
+VRAM estimates are used by the ModelCoordinator for intelligent model switching. The coordinator can fit ~2 large models (e.g., qwen2.5:7b + qwen2.5vl:7b) in 12GB VRAM.
 
 ## Web UI
 
