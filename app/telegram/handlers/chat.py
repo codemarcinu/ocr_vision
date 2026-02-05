@@ -229,60 +229,50 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await status_msg.edit_text(f"❌ Błąd: {e}")
 
     else:
-        # /chat without args - start/show session info
-        if active_session_id:
-            await update.message.reply_text(
-                "💬 <b>Tryb czatu aktywny</b>\n\n"
-                "Pisz wiadomości - będę odpowiadać z dostępem do bazy wiedzy i internetu.\n"
-                "Użyj /endchat aby zakończyć sesję.\n"
-                "Użyj /chat &lt;pytanie&gt; aby wysłać wiadomość.",
-                parse_mode="HTML",
-            )
-        else:
-            # Create new session
-            try:
-                async for session in get_session():
-                    chat_repo = ChatRepository(session)
-                    chat_session = await chat_repo.create_session(
-                        source="telegram", telegram_chat_id=chat_id,
-                    )
-                    await session.commit()
-
-                    if context.user_data is None:
-                        context.user_data = {}
-                    context.user_data["active_chat_session"] = str(chat_session.id)
-
-                await update.message.reply_text(
-                    "💬 <b>Rozpoczynam sesję czatu</b>\n\n"
-                    "Pisz wiadomości - będę odpowiadać z dostępem do Twojej bazy wiedzy i internetu.\n"
-                    "Użyj /endchat aby zakończyć sesję.",
-                    parse_mode="HTML",
-                )
-            except Exception as e:
-                logger.error(f"Failed to create chat session: {e}")
-                await update.message.reply_text(f"❌ Błąd tworzenia sesji: {e}")
+        # /chat without args - inform that chat works automatically
+        await update.message.reply_text(
+            "💬 <b>Chat działa automatycznie!</b>\n\n"
+            "Po prostu pisz wiadomości - odpowiem z dostępem do bazy wiedzy i internetu.\n\n"
+            "Możesz też użyć <code>/ask pytanie</code> dla szybkiego wyszukiwania RAG.",
+            parse_mode="HTML",
+        )
 
 
 @authorized_only
 async def endchat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /endchat command - end active chat session."""
+    """Handle /endchat command - end current session, start fresh."""
     if not update.message:
         return
 
-    session_id = context.user_data.pop("active_chat_session", None) if context.user_data else None
+    chat_id = update.effective_chat.id
+    old_session_id = context.user_data.pop("active_chat_session", None) if context.user_data else None
 
-    if session_id:
-        try:
-            async for session in get_session():
-                chat_repo = ChatRepository(session)
-                await chat_repo.end_session(UUID(session_id))
-                await session.commit()
-        except Exception as e:
-            logger.error(f"Failed to end chat session: {e}")
+    try:
+        async for session in get_session():
+            chat_repo = ChatRepository(session)
 
-        await update.message.reply_text("✅ Sesja czatu zakończona.")
-    else:
-        await update.message.reply_text("Brak aktywnej sesji czatu. Użyj /chat aby rozpocząć.")
+            # End old session if exists
+            if old_session_id:
+                await chat_repo.end_session(UUID(old_session_id))
+
+            # Create new session
+            chat_session = await chat_repo.create_session(
+                source="telegram", telegram_chat_id=chat_id,
+            )
+            await session.commit()
+
+            if context.user_data is None:
+                context.user_data = {}
+            context.user_data["active_chat_session"] = str(chat_session.id)
+
+        await update.message.reply_text(
+            "✅ <b>Nowa rozmowa rozpoczęta!</b>\n\n"
+            "Poprzednia sesja zapisana w historii.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"Failed to reset chat session: {e}")
+        await update.message.reply_text(f"❌ Błąd: {e}")
 
 
 async def handle_chat_message(

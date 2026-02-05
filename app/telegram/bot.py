@@ -15,6 +15,8 @@ from telegram.ext import (
 )
 
 from app.config import settings
+from app.db.connection import get_session
+from app.db.repositories.chat import ChatRepository
 from app.telegram.callback_router import CallbackRouter
 from app.telegram.handlers import (
     ask_command,
@@ -216,11 +218,12 @@ class PantryBot:
 
         await update.message.reply_text(
             "<b>🧠 Second Brain</b>\n\n"
-            "Wybierz moduł lub wyślij:\n"
+            "Po prostu pisz - odpowiem z dostępem do bazy wiedzy i internetu.\n\n"
+            "Możesz też wysłać:\n"
             "• 📸 zdjęcie paragonu\n"
-            "• 🎤 wiadomość głosowa → notatka\n"
-            "• 🔗 link do artykułu/wideo\n"
-            "• 🎵 plik audio\n",
+            "• 🎤 głosówkę → notatka\n"
+            "• 🔗 link → wybór akcji\n"
+            "• 🎵 audio → transkrypcja",
             parse_mode="HTML",
             reply_markup=get_main_keyboard(),
         )
@@ -235,22 +238,20 @@ class PantryBot:
             "<b>🧠 Second Brain</b>\n\n"
             "<b>Komendy:</b>\n"
             "• <code>/start</code> — menu główne\n"
-            "• <code>/ask &lt;pytanie&gt;</code> — zapytaj bazę wiedzy (RAG)\n"
-            "• <code>/n &lt;tekst&gt;</code> — szybka notatka\n"
+            "• <code>/ask pytanie</code> — szybkie RAG\n"
+            "• <code>/n tekst</code> — szybka notatka\n"
             "• <code>/daily</code> — podsumowanie dnia\n"
-            "• <code>/q &lt;fraza&gt;</code> — szukaj wszędzie\n"
-            "• <code>/find &lt;fraza&gt;</code> — szukaj w bazie\n"
-            "• <code>/settings</code> — ustawienia powiadomień\n"
+            "• <code>/find fraza</code> — szukaj w bazie\n"
+            "• <code>/settings</code> — ustawienia\n"
             "• <code>/help</code> — ta pomoc\n\n"
-            "<b>Wyślij wiadomość:</b>\n"
-            "• 📸 Zdjęcie → przetwarzanie paragonu\n"
-            "• 📄 PDF → przetwarzanie paragonu\n"
-            "• 🎤 Głosówka → notatka głosowa\n"
-            "• 🎵 Audio → transkrypcja\n"
-            "• 🔗 Link → wybór akcji (zapisz / podsumuj / transkrybuj)\n"
-            "• 📋 JSON → import paragonu\n\n"
+            "<b>Wyślij:</b>\n"
+            "• 💬 Tekst → chat AI\n"
+            "• 📸 Zdjęcie → paragon\n"
+            "• 🎤 Głosówka → notatka\n"
+            "• 🔗 Link → wybór akcji\n"
+            "• 🎵 Audio → transkrypcja\n\n"
             "<b>Nawigacja:</b>\n"
-            "Użyj przycisków w menu do nawigacji między modułami."
+            "Użyj przycisków w menu."
         )
 
         await update.message.reply_text(
@@ -365,6 +366,51 @@ class PantryBot:
             logger.error(f"Error saving quick note: {e}")
             await update.message.reply_text(f"❌ Błąd zapisu notatki: {e}")
 
+    # ── Session helpers ───────────────────────────────────────
+
+    async def _ensure_chat_session(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> bool:
+        """Ensure active chat session exists, create if needed.
+
+        Returns True if session is available, False if chat is disabled.
+        """
+        if context.user_data and context.user_data.get("active_chat_session"):
+            return True
+
+        if not settings.CHAT_ENABLED:
+            return False
+
+        chat_id = update.effective_chat.id
+
+        try:
+            async for session in get_session():
+                chat_repo = ChatRepository(session)
+
+                # Look for existing active session for this user
+                existing = await chat_repo.get_active_telegram_session(chat_id)
+                if existing:
+                    if context.user_data is None:
+                        context.user_data = {}
+                    context.user_data["active_chat_session"] = str(existing.id)
+                    return True
+
+                # Create new session
+                chat_session = await chat_repo.create_session(
+                    source="telegram", telegram_chat_id=chat_id
+                )
+                await session.commit()
+
+                if context.user_data is None:
+                    context.user_data = {}
+                context.user_data["active_chat_session"] = str(chat_session.id)
+                return True
+        except Exception as e:
+            logger.error(f"Failed to ensure chat session: {e}")
+            return False
+
+        return False
+
     # ── Message handlers ─────────────────────────────────────
 
     @authorized_only
@@ -421,12 +467,7 @@ class PantryBot:
             await handle_manual_total_input(update, context)
             return
 
-        # 3. Active chat session
-        if context.user_data and context.user_data.get("active_chat_session"):
-            await handle_chat_message(update, context)
-            return
-
-        # 4. URL - show action picker
+        # 3. URL - show action picker (priority over chat)
         if _URL_PATTERN.match(text):
             url = text
             url_key = hashlib.md5(url.encode()).hexdigest()[:8]
@@ -443,7 +484,7 @@ class PantryBot:
             )
             return
 
-        # 5. Note creation flow (title or content)
+        # 4. Note creation flow (title or content)
         if context.user_data and (
             context.user_data.get("awaiting_note_title")
             or context.user_data.get("awaiting_note_content")
@@ -456,6 +497,10 @@ class PantryBot:
                     reply_markup=get_main_keyboard() if "zapisana" in response else None,
                 )
                 return
+
+        # 5. Fallback: everything else goes to chat (auto-create session if needed)
+        if await self._ensure_chat_session(update, context):
+            await handle_chat_message(update, context)
 
     # ── Callback query handler ───────────────────────────────
 
