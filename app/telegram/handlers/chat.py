@@ -16,6 +16,75 @@ from app.telegram.middleware import authorized_only
 logger = logging.getLogger(__name__)
 
 
+# Keywords that suggest user wants an ACTION (not just a search/conversation)
+# Agent will only be invoked if message contains one of these patterns
+_ACTION_KEYWORDS = [
+    # Note creation
+    "zanotuj", "zapisz notatkę", "notatka:", "dodaj notatkę", "note:",
+    "zapamiętaj", "przypomnij mi",
+    # Bookmarks
+    "zapisz link", "dodaj zakładkę", "bookmark", "zachowaj link",
+    # Summarization (with URL)
+    "streść", "podsumuj", "streszczenie",
+    # List recent
+    "pokaż ostatnie", "ostatnie notatki", "ostatnie zakładki",
+    "ostatnie paragony", "ostatnie artykuły", "lista notatek",
+    "wyświetl ostatnie", "co ostatnio",
+]
+
+
+def _looks_like_action(message: str) -> bool:
+    """Check if message looks like an action command (heuristic pre-filter).
+
+    This avoids invoking the agent (and model switch) for regular questions.
+    """
+    msg_lower = message.lower()
+
+    # Check for action keywords
+    for keyword in _ACTION_KEYWORDS:
+        if keyword in msg_lower:
+            return True
+
+    # Check for URL + action verb (suggests summarize or bookmark)
+    has_url = "http://" in msg_lower or "https://" in msg_lower or "www." in msg_lower
+    if has_url:
+        action_verbs = ["zapisz", "dodaj", "streść", "podsumuj", "zachowaj"]
+        if any(verb in msg_lower for verb in action_verbs):
+            return True
+
+    return False
+
+
+async def _try_agent_action(message: str, db_session) -> tuple[bool, str | None]:
+    """Try to execute message as agent action.
+
+    Returns:
+        (executed, result_text) - executed=True if action was performed
+    """
+    if not settings.CHAT_AGENT_ENABLED:
+        return False, None
+
+    # Heuristic pre-filter: skip agent if message doesn't look like an action
+    # This avoids model switching for regular questions
+    if not _looks_like_action(message):
+        return False, None
+
+    try:
+        from app.chat.agent_executor import process_with_agent
+
+        result = await process_with_agent(message, db_session)
+
+        if result.executed:
+            return True, result.result_text
+        elif result.error:
+            logger.warning(f"Agent error (falling back to chat): {result.error}")
+
+        return False, None
+    except Exception as e:
+        logger.warning(f"Agent processing failed: {e}")
+        return False, None
+
+
 def _search_type_label(search_type: str) -> str:
     """Get label for search type."""
     return {
@@ -28,6 +97,7 @@ def _search_type_label(search_type: str) -> str:
         "inventory": "🥫 Spiżarnia",
         "weather": "⛅ Pogoda",
         "direct": "💬 Bezpośrednio",
+        "agent": "🤖 Agent",
     }.get(search_type, search_type)
 
 
@@ -69,13 +139,46 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     await session.commit()
                     context.user_data["active_chat_session"] = str(chat_session.id)
 
+                # Try agent action first (create_note, bookmark, summarize, list)
+                agent_executed, agent_result = await _try_agent_action(question, session)
+
+                if agent_executed and agent_result:
+                    # Save user message
+                    await chat_repo.add_message(
+                        session_id=chat_session.id, role="user", content=question,
+                    )
+                    # Save agent response
+                    await chat_repo.add_message(
+                        session_id=chat_session.id,
+                        role="assistant",
+                        content=agent_result,
+                        search_type="agent",
+                    )
+
+                    # Auto-generate title
+                    if not chat_session.title:
+                        await chat_repo.generate_title(chat_session.id)
+
+                    await session.commit()
+
+                    # Format and send response
+                    parts = [escape_html(agent_result)]
+                    parts.append("\n<i>🤖 Agent</i>")
+
+                    try:
+                        await status_msg.edit_text("\n".join(parts), parse_mode="HTML")
+                    except Exception:
+                        await status_msg.edit_text(agent_result[:4096])
+                    return
+
+                # Fall through to orchestrator
                 # Save user message
                 await chat_repo.add_message(
                     session_id=chat_session.id, role="user", content=question,
                 )
                 await session.commit()
 
-                # Process
+                # Process with orchestrator
                 response = await orchestrator.process_message(
                     message=question,
                     session_id=chat_session.id,
@@ -210,13 +313,41 @@ async def handle_chat_message(
                 )
                 return
 
+            # Try agent action first (create_note, bookmark, summarize, list)
+            agent_executed, agent_result = await _try_agent_action(message, session)
+
+            if agent_executed and agent_result:
+                # Save user message
+                await chat_repo.add_message(
+                    session_id=chat_session.id, role="user", content=message,
+                )
+                # Save agent response
+                await chat_repo.add_message(
+                    session_id=chat_session.id,
+                    role="assistant",
+                    content=agent_result,
+                    search_type="agent",
+                )
+                await session.commit()
+
+                # Format and send response
+                parts = [escape_html(agent_result)]
+                parts.append("\n<i>🤖 Agent</i>")
+
+                try:
+                    await status_msg.edit_text("\n".join(parts), parse_mode="HTML")
+                except Exception:
+                    await status_msg.edit_text(agent_result[:4096])
+                return
+
+            # Fall through to orchestrator for search/conversation
             # Save user message
             await chat_repo.add_message(
                 session_id=chat_session.id, role="user", content=message,
             )
             await session.commit()
 
-            # Process
+            # Process with orchestrator
             response = await orchestrator.process_message(
                 message=message,
                 session_id=chat_session.id,
