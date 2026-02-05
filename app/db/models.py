@@ -737,3 +737,55 @@ class DocumentEmbedding(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+
+# =============================================================================
+# Agent Tool-Calling Logs
+# =============================================================================
+
+
+class AgentCallLog(Base):
+    """Log entry for agent tool-calling requests."""
+
+    __tablename__ = "agent_call_logs"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+
+    # Input
+    user_input: Mapped[str] = mapped_column(Text, nullable=False)
+    sanitized_input: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # LLM
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    raw_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Parsed result
+    parsed_tool: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    parsed_arguments: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Validation
+    validation_success: Mapped[bool] = mapped_column(Boolean, default=False)
+    validation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Execution
+    execution_success: Mapped[bool] = mapped_column(Boolean, default=False)
+    execution_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Metadata
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_time_ms: Mapped[int] = mapped_column(Integer, default=0)
+    injection_risk: Mapped[str] = mapped_column(
+        String(10), default="none"
+    )  # 'none', 'low', 'medium', 'high'
+
+    # Source
+    source: Mapped[str] = mapped_column(
+        String(20), default="api"
+    )  # 'api', 'telegram', 'test'
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
