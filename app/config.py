@@ -140,6 +140,9 @@ class Settings:
     TRANSCRIPTION_MAX_CONCURRENT_JOBS: int = int(os.getenv("TRANSCRIPTION_MAX_CONCURRENT_JOBS", "1"))
     TRANSCRIPTION_CLEANUP_HOURS: int = int(os.getenv("TRANSCRIPTION_CLEANUP_HOURS", "24"))
 
+    # Voice note processing (queued to avoid VRAM conflicts with chat)
+    VOICE_NOTE_PROCESS_INTERVAL_MINUTES: int = int(os.getenv("VOICE_NOTE_PROCESS_INTERVAL_MINUTES", "30"))
+
     # Transcription categories for note extraction
     TRANSCRIPTION_CATEGORIES: list = [
         "Edukacja",

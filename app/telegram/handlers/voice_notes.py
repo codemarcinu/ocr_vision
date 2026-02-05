@@ -1,6 +1,12 @@
-"""Voice note handler - transcribe voice messages and save as notes."""
+"""Voice note handler - queue voice messages for batch transcription.
+
+Voice notes are queued and processed periodically (default: every 30 min)
+to avoid VRAM conflicts with chat models. The scheduler processes queued
+voice notes, transcribes them with Whisper, and saves as Notes.
+"""
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from telegram import Update
@@ -10,9 +16,12 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Directory for queued voice notes (persisted until processed)
+VOICE_QUEUE_DIR = settings.TRANSCRIPTION_TEMP_DIR / "voice_queue"
+
 
 async def handle_voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Transcribe a Telegram voice message and save as a quick note.
+    """Queue a Telegram voice message for batch transcription.
 
     Authorization is handled by the caller (_handle_audio_input in bot.py).
     """
@@ -20,93 +29,67 @@ async def handle_voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     if not settings.NOTES_ENABLED:
-        await update.message.reply_text("❌ Notatki są wyłączone")
+        await update.message.reply_text("Notatki są wyłączone")
         return
 
     if not settings.TRANSCRIPTION_ENABLED:
-        await update.message.reply_text("❌ Transkrypcja jest wyłączona")
+        await update.message.reply_text("Transkrypcja jest wyłączona")
         return
 
-    status_msg = await update.message.reply_text("🎙️ Transkrybuję notatkę głosową...")
-
     voice = update.message.voice
-    temp_path = settings.TRANSCRIPTION_TEMP_DIR / f"voice_{voice.file_unique_id}.ogg"
+
+    # Calculate next processing time
+    interval = settings.VOICE_NOTE_PROCESS_INTERVAL_MINUTES
+    next_process = f"~{interval} min"
+
+    status_msg = await update.message.reply_text(
+        f"Notatka głosowa dodana do kolejki.\n"
+        f"Zostanie przetworzona w ciągu {next_process}."
+    )
 
     try:
-        # Download voice file
-        settings.TRANSCRIPTION_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        # Ensure queue directory exists
+        VOICE_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Download voice file to queue directory (persistent)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"voice_{timestamp}_{voice.file_unique_id}.ogg"
+        audio_path = VOICE_QUEUE_DIR / filename
+
         tg_file = await voice.get_file()
-        await tg_file.download_to_drive(str(temp_path))
+        await tg_file.download_to_drive(str(audio_path))
 
-        # Transcribe with Whisper
-        from app.transcription.transcriber import TranscriberService
-
-        transcriber = TranscriberService()
-        full_text, segments, info = await transcriber.transcribe(str(temp_path))
-
-        if not full_text or not full_text.strip():
-            await status_msg.edit_text(
-                "❌ Nie udało się rozpoznać mowy w nagraniu"
-            )
-            return
-
-        full_text = full_text.strip()
-
-        # Generate title from first ~50 chars
-        if len(full_text) > 50:
-            title = full_text[:50].rsplit(" ", 1)[0]
-            if not title:
-                title = full_text[:50]
-        else:
-            title = full_text
-
-        # Save as Note
+        # Create transcription job in database queue
         from app.db.connection import get_session
-        from app.db.repositories.notes import NoteRepository
-        from app.telegram.formatters import escape_html
+        from app.db.repositories.transcription import TranscriptionJobRepository
 
         async for session in get_session():
-            repo = NoteRepository(session)
-            note = await repo.create(
-                title=title,
-                content=full_text,
-                tags=["voice"],
+            repo = TranscriptionJobRepository(session)
+            job = await repo.create_job(
+                source_type="voice",
+                source_filename=filename,
+                title=f"Notatka głosowa {timestamp}",
+                duration_seconds=voice.duration,
+                temp_audio_path=str(audio_path),
             )
             await session.commit()
 
-            # Write to Obsidian
-            if settings.GENERATE_OBSIDIAN_FILES:
-                from app.notes_writer import write_note_file
-                write_note_file(note)
-
-            # RAG indexing
-            if settings.RAG_ENABLED and settings.RAG_AUTO_INDEX:
-                try:
-                    from app.rag.hooks import index_note_hook
-                    await index_note_hook(note, session)
-                    await session.commit()
-                except Exception:
-                    pass
-
-            # Confirmation
-            text_preview = full_text[:200] + "..." if len(full_text) > 200 else full_text
-            word_count = info.get("word_count", len(full_text.split()))
+            logger.info(f"Voice note queued: {job.id} ({voice.duration}s)")
 
             await status_msg.edit_text(
-                f"✅ <b>Notatka głosowa zapisana!</b>\n\n"
-                f"📌 {escape_html(text_preview)}\n\n"
-                f"📝 {word_count} słów\n"
-                f"<code>ID: {str(note.id)[:8]}</code>",
+                f"Notatka głosowa ({voice.duration}s) dodana do kolejki.\n"
+                f"Zostanie przetworzona w ciągu {next_process}.\n\n"
+                f"<code>ID: {str(job.id)[:8]}</code>",
                 parse_mode="HTML",
             )
 
     except Exception as e:
-        logger.exception("Voice note processing failed")
-        await status_msg.edit_text(f"❌ Błąd przetwarzania notatki głosowej: {e}")
+        logger.exception("Failed to queue voice note")
+        await status_msg.edit_text(f"Błąd kolejkowania notatki głosowej: {e}")
 
-    finally:
-        # Cleanup temp file
+        # Cleanup on failure
         try:
-            temp_path.unlink(missing_ok=True)
+            if audio_path.exists():
+                audio_path.unlink()
         except Exception:
             pass

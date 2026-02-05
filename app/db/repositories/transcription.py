@@ -32,11 +32,29 @@ class TranscriptionJobRepository(BaseRepository[TranscriptionJob]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_pending_jobs(self, limit: int = 10) -> List[TranscriptionJob]:
-        """Get jobs in pending status."""
+    async def get_pending_jobs(
+        self,
+        limit: int = 10,
+        exclude_source_type: Optional[str] = None,
+        only_source_type: Optional[str] = None,
+    ) -> List[TranscriptionJob]:
+        """Get jobs in pending status.
+
+        Args:
+            limit: Maximum number of jobs to return
+            exclude_source_type: Exclude jobs of this source type (e.g., "voice")
+            only_source_type: Only include jobs of this source type
+        """
+        conditions = [TranscriptionJob.status == "pending"]
+
+        if exclude_source_type:
+            conditions.append(TranscriptionJob.source_type != exclude_source_type)
+        if only_source_type:
+            conditions.append(TranscriptionJob.source_type == only_source_type)
+
         stmt = (
             select(TranscriptionJob)
-            .where(TranscriptionJob.status == "pending")
+            .where(and_(*conditions))
             .order_by(TranscriptionJob.created_at)
             .limit(limit)
         )
@@ -115,6 +133,7 @@ class TranscriptionJobRepository(BaseRepository[TranscriptionJob]):
         thumbnail_url: Optional[str] = None,
         whisper_model: Optional[str] = None,
         language: Optional[str] = None,
+        temp_audio_path: Optional[str] = None,
     ) -> TranscriptionJob:
         """Create a new transcription job."""
         from app.config import settings
@@ -132,6 +151,7 @@ class TranscriptionJobRepository(BaseRepository[TranscriptionJob]):
             language=language,
             status="pending",
             progress_percent=0,
+            temp_audio_path=temp_audio_path,
         )
         self.session.add(job)
         await self.session.flush()
