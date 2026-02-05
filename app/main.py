@@ -182,6 +182,27 @@ async def startup_event():
         except Exception as e:
             logger.warning(f"RAG startup check failed: {e}")
 
+    # Model preloading: warm up frequently used models to reduce first-request latency
+    if settings.MODEL_PRELOAD_ON_STARTUP:
+        models = [m.strip() for m in settings.MODEL_PRELOAD_ON_STARTUP.split(",") if m.strip()]
+        if models:
+            logger.info(f"Preloading models: {models}")
+            for model in models:
+                try:
+                    # Send a minimal request to load the model into VRAM
+                    _, error = await ollama_client.post_generate(
+                        model=model,
+                        prompt="warmup",
+                        options={"num_predict": 1},
+                        timeout=120.0,
+                    )
+                    if error:
+                        logger.warning(f"Failed to preload model {model}: {error}")
+                    else:
+                        logger.info(f"Preloaded model: {model}")
+                except Exception as e:
+                    logger.warning(f"Failed to preload model {model}: {e}")
+
     # Start Telegram bot
     await bot.start()
 
@@ -236,6 +257,40 @@ async def health_check():
         inbox_path=str(settings.INBOX_DIR),
         vault_path=str(settings.VAULT_DIR)
     )
+
+
+@app.get("/models/status")
+async def model_coordinator_status():
+    """Get current status of Ollama model coordinator.
+
+    Shows which models are loaded, VRAM usage, and coordination metrics.
+    Useful for monitoring model switching overhead and VRAM pressure.
+    """
+    from app.model_coordinator import get_coordinator
+
+    coordinator = get_coordinator()
+    status = coordinator.get_status()
+
+    # Add Ollama's actual loaded models for comparison
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{settings.OLLAMA_BASE_URL}/api/ps")
+            if response.status_code == 200:
+                ollama_ps = response.json().get("models", [])
+                status["ollama_loaded"] = [
+                    {
+                        "name": m.get("name"),
+                        "size_vram": m.get("size_vram"),
+                        "digest": m.get("digest", "")[:12],
+                    }
+                    for m in ollama_ps
+                ]
+    except Exception as e:
+        status["ollama_loaded"] = f"Error fetching: {e}"
+
+    status["coordination_enabled"] = settings.MODEL_COORDINATION_ENABLED
+
+    return status
 
 
 @app.post("/process-receipt", response_model=ProcessingResult)

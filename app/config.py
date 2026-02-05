@@ -46,6 +46,10 @@ class Settings:
     # Uses qwen2.5vl:7b by default - qwen3-vl:8b has thinking mode issues
     OCR_FALLBACK_MODEL: str = os.getenv("OCR_FALLBACK_MODEL", "qwen2.5vl:7b")
 
+    # DeepSeek-OCR timeout (seconds) - increased from 45s to handle slower GPUs
+    # Normal processing takes 6-15s, but slow hardware may need more time
+    DEEPSEEK_OCR_TIMEOUT: int = int(os.getenv("DEEPSEEK_OCR_TIMEOUT", "90"))
+
     # Model keep-alive settings (how long to keep models loaded in memory)
     # Vision models use more VRAM, so shorter keep-alive
     VISION_MODEL_KEEP_ALIVE: str = os.getenv("VISION_MODEL_KEEP_ALIVE", "10m")
@@ -53,6 +57,29 @@ class Settings:
 
     # Whether to unload models after use (set to true for low VRAM systems)
     UNLOAD_MODELS_AFTER_USE: bool = os.getenv("UNLOAD_MODELS_AFTER_USE", "false").lower() == "true"
+
+    # ==========================================================================
+    # Model Coordination (minimize VRAM thrashing from model switching)
+    # ==========================================================================
+    MODEL_COORDINATION_ENABLED: bool = os.getenv("MODEL_COORDINATION_ENABLED", "true").lower() == "true"
+    MODEL_MAX_VRAM_MB: int = int(os.getenv("MODEL_MAX_VRAM_MB", "12000"))
+    MODEL_SWITCH_QUEUE_TIMEOUT: int = int(os.getenv("MODEL_SWITCH_QUEUE_TIMEOUT", "300"))
+    MODEL_PRELOAD_ON_STARTUP: str = os.getenv("MODEL_PRELOAD_ON_STARTUP", "")  # comma-separated model names
+
+    # Single-model OCR mode (vision model does OCR + structuring in one call)
+    # Reduces model switching but may be less accurate for complex receipts
+    OCR_SINGLE_MODEL_MODE: bool = os.getenv("OCR_SINGLE_MODEL_MODE", "false").lower() == "true"
+
+    # Receipt batch processing (group multiple receipts to minimize model switches)
+    RECEIPT_BATCH_ENABLED: bool = os.getenv("RECEIPT_BATCH_ENABLED", "false").lower() == "true"
+    RECEIPT_BATCH_MAX_WAIT_SEC: int = int(os.getenv("RECEIPT_BATCH_MAX_WAIT_SEC", "30"))
+    RECEIPT_BATCH_MAX_SIZE: int = int(os.getenv("RECEIPT_BATCH_MAX_SIZE", "5"))
+
+    # Classifier category cache TTL (seconds) - skip LLM for recently seen products
+    CLASSIFIER_CACHE_TTL: int = int(os.getenv("CLASSIFIER_CACHE_TTL", "3600"))
+
+    # Defer Polish model (Bielik) processing to avoid VRAM conflict with OCR
+    POLISH_MODEL_DEFERRED: bool = os.getenv("POLISH_MODEL_DEFERRED", "false").lower() == "true"
 
     # PDF parallel processing (number of pages to process concurrently)
     PDF_MAX_PARALLEL_PAGES: int = int(os.getenv("PDF_MAX_PARALLEL_PAGES", "2"))
@@ -206,6 +233,9 @@ class Settings:
     CHAT_SUMMARIZE_AFTER: int = int(os.getenv("CHAT_SUMMARIZE_AFTER", "6"))
     SEARXNG_URL: str = os.getenv("SEARXNG_URL", "http://searxng:8080")
     SEARXNG_TIMEOUT: int = int(os.getenv("SEARXNG_TIMEOUT", "15"))
+
+    # Agent tool-calling in chat (auto-detect actions like create_note, bookmark)
+    CHAT_AGENT_ENABLED: bool = os.getenv("CHAT_AGENT_ENABLED", "true").lower() == "true"
 
     # Web search content fetching
     WEB_FETCH_ENABLED: bool = os.getenv("WEB_FETCH_ENABLED", "true").lower() == "true"

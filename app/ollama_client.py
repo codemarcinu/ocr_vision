@@ -69,39 +69,57 @@ async def post_generate(
 ) -> tuple[str, Optional[str]]:
     """Call Ollama /api/generate endpoint.
 
+    Integrates with ModelCoordinator to manage VRAM and prevent thrashing.
+
     Returns:
         Tuple of (response text, error message or None)
     """
-    client = await get_client()
+    # Import here to avoid circular dependency
+    from app.model_coordinator import get_coordinator
 
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-    }
+    coordinator = get_coordinator()
 
-    if options:
-        payload["options"] = options
-
-    if keep_alive:
-        payload["keep_alive"] = keep_alive
-
-    if format:
-        payload["format"] = format
+    # Acquire model slot (may wait if VRAM insufficient)
+    if not await coordinator.acquire_model(model, timeout=timeout):
+        return "", "Model acquisition timeout - VRAM may be exhausted"
 
     try:
-        response = await client.post(
-            "/api/generate",
-            json=payload,
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        result = response.json()
-        return result.get("response", ""), None
-    except httpx.TimeoutException:
-        return "", f"Timeout after {timeout}s"
-    except httpx.HTTPError as e:
-        return "", f"HTTP error: {e}"
+        client = await get_client()
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+        }
+
+        if options:
+            payload["options"] = options
+
+        if keep_alive:
+            payload["keep_alive"] = keep_alive
+
+        if format:
+            payload["format"] = format
+
+        try:
+            response = await client.post(
+                "/api/generate",
+                json=payload,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            # Mark model as loaded on successful response
+            coordinator.mark_model_loaded(model)
+
+            return result.get("response", ""), None
+        except httpx.TimeoutException:
+            return "", f"Timeout after {timeout}s"
+        except httpx.HTTPError as e:
+            return "", f"HTTP error: {e}"
+    finally:
+        await coordinator.release_model(model)
 
 
 async def post_chat(
@@ -114,43 +132,65 @@ async def post_chat(
 ) -> tuple[str, Optional[str]]:
     """Call Ollama /api/chat endpoint.
 
+    Integrates with ModelCoordinator to manage VRAM and prevent thrashing.
+
     Returns:
         Tuple of (response content, error message or None)
     """
-    client = await get_client()
+    # Import here to avoid circular dependency
+    from app.model_coordinator import get_coordinator
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        "stream": False,
-    }
+    coordinator = get_coordinator()
 
-    if options:
-        payload["options"] = options
-
-    if keep_alive:
-        payload["keep_alive"] = keep_alive
-
-    if format:
-        payload["format"] = format
+    # Acquire model slot (may wait if VRAM insufficient)
+    if not await coordinator.acquire_model(model, timeout=timeout):
+        return "", "Model acquisition timeout - VRAM may be exhausted"
 
     try:
-        response = await client.post(
-            "/api/chat",
-            json=payload,
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        result = response.json()
-        return result.get("message", {}).get("content", ""), None
-    except httpx.TimeoutException:
-        return "", f"Timeout after {timeout}s"
-    except httpx.HTTPError as e:
-        return "", f"HTTP error: {e}"
+        client = await get_client()
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+
+        if options:
+            payload["options"] = options
+
+        if keep_alive:
+            payload["keep_alive"] = keep_alive
+
+        if format:
+            payload["format"] = format
+
+        try:
+            response = await client.post(
+                "/api/chat",
+                json=payload,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            # Mark model as loaded on successful response
+            coordinator.mark_model_loaded(model)
+
+            return result.get("message", {}).get("content", ""), None
+        except httpx.TimeoutException:
+            return "", f"Timeout after {timeout}s"
+        except httpx.HTTPError as e:
+            return "", f"HTTP error: {e}"
+    finally:
+        await coordinator.release_model(model)
 
 
 async def unload_model(model: str) -> None:
-    """Unload a model from memory by setting keep_alive to 0."""
+    """Unload a model from memory by setting keep_alive to 0.
+
+    Note: This is the low-level unload function. For coordinated unloading
+    that respects VRAM management, use coordinator.force_unload() instead.
+    """
     client = await get_client()
 
     try:
