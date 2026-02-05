@@ -168,6 +168,8 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 
 **Chat AI intent classification** (`app/chat/intent_classifier.py`): LLM classifies each message as `"rag"` (personal data), `"web"` (internet search via SearXNG), `"both"`, or `"direct"` (no search needed).
 
+**Telegram chat always-on** (`app/telegram/bot.py`): Chat sessions are created automatically when user sends a text message. No explicit `/chat` command needed—just type and the bot responds with RAG + web search context. Message routing priority: (1) manual total input, (2) URL → action picker, (3) note creation flow, (4) fallback to chat. The `_ensure_chat_session()` helper creates or retrieves active sessions on demand. `/endchat` resets the conversation (archives old session, creates new one) rather than disabling chat.
+
 **Language detection**: Multiple modules auto-detect Polish vs English based on Polish characters (ą,ć,ę...) and keyword matching. Polish → Bielik 11B model, English → qwen2.5:7b.
 
 **Model coordination** (`app/model_coordinator.py`): Centralized VRAM management to minimize thrashing from model switches. The coordinator tracks loaded models, enforces a VRAM budget, and uses LRU eviction when space is needed. Enable with `MODEL_COORDINATION_ENABLED=true`. Key features:
