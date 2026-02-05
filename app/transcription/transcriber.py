@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 _whisper_model = None
 _model_lock = asyncio.Lock()
 
+# Estimated VRAM usage per Whisper model (MB)
+WHISPER_VRAM_MB = {
+    "tiny": 1000,
+    "base": 1000,
+    "small": 2000,
+    "medium": 5000,
+    "large": 10000,
+    "large-v2": 10000,
+    "large-v3": 10000,
+}
+
 
 def _clear_gpu_memory():
     """Clear GPU memory after transcription."""
@@ -51,6 +62,18 @@ async def _get_whisper_model():
                 device = "cuda" if torch.cuda.is_available() else "cpu"
             except ImportError:
                 device = "cpu"
+
+        # Free VRAM from Ollama models before loading Whisper on GPU
+        if device == "cuda":
+            try:
+                from app.model_coordinator import get_coordinator
+                coordinator = get_coordinator()
+                needed_vram = WHISPER_VRAM_MB.get(model_size, 5000)
+                freed = await coordinator.free_vram_for_external(needed_vram)
+                if freed > 0:
+                    logger.info(f"Freed {freed}MB VRAM for Whisper")
+            except Exception as e:
+                logger.warning(f"Could not free VRAM for Whisper: {e}")
 
         logger.info(f"Loading Whisper model: {model_size} on {device} ({compute_type})")
 

@@ -71,7 +71,7 @@ class ModelCoordinator:
         "qwen2.5:7b": 4700,
         "qwen2.5:14b": 9000,
         # Polish models
-        "SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M": 7000,
+        "SpeakLeash/bielik-11b-v3.0-instruct:Q5_K_M": 9600,
         # Embedding models (small)
         "nomic-embed-text": 274,
         "mxbai-embed-large": 670,
@@ -257,6 +257,37 @@ class ModelCoordinator:
                 logger.warning(f"Failed to force unload {model}: {e}")
                 state.status = ModelStatus.LOADED
                 return False
+
+    async def free_vram_for_external(self, needed_mb: int) -> int:
+        """Free VRAM for an external model (e.g., Whisper, Torch).
+
+        Use this before loading non-Ollama models that need GPU memory.
+        Evicts Ollama models using LRU policy until enough VRAM is available.
+
+        Args:
+            needed_mb: Minimum VRAM to free in megabytes
+
+        Returns:
+            Total VRAM freed in megabytes
+        """
+        if not settings.MODEL_COORDINATION_ENABLED:
+            return 0
+
+        current_usage = self._current_vram_usage()
+        available = self.max_vram_mb - current_usage
+
+        if available >= needed_mb:
+            logger.debug(
+                f"Sufficient VRAM available ({available}MB >= {needed_mb}MB needed)"
+            )
+            return 0
+
+        to_free = needed_mb - available
+        logger.info(
+            f"Freeing {to_free}MB VRAM for external model "
+            f"(current: {current_usage}MB, need: {needed_mb}MB)"
+        )
+        return await self._free_vram(to_free)
 
     def get_status(self) -> dict:
         """Get current status of all tracked models.
