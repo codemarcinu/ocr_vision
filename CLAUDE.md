@@ -116,7 +116,21 @@ Each module follows a consistent pattern:
 - **Telegram handler** (`app/telegram/handlers/*.py`) - Bot commands
 - **Telegram menu** (`app/telegram/handlers/menu_*.py`) - Inline keyboard navigation
 
-Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, analytics, dictionary, search.
+Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, agent (tool-calling), analytics, dictionary, search, reports.
+
+### Unified Search (`app/search_api.py`)
+
+Cross-content search endpoint at `/search`. Searches receipts, articles, notes, bookmarks, and transcriptions concurrently. Filter by content type with `?types=receipt,note`. Returns results grouped by type with snippets.
+
+### Reports (`app/reports.py`)
+
+Analytics endpoints at `/reports/*`:
+- `/reports/discounts` - Discount analysis by store, category, month
+- `/reports/stores` - Spending per store with averages
+- `/reports/monthly` - Monthly trends with top categories
+- `/reports/categories` - Spending breakdown by category
+- `/reports/summary` - Full overview with date range
+- `/reports/classifier-ab` - A/B test results for classifier models
 
 ### Docker Volume Mounts
 
@@ -150,6 +164,12 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 
 **Error messages in Polish**: User-facing error text uses Polish (e.g., "Wystąpił błąd"). Keep this convention in Telegram handlers and web UI.
 
+**Authentication** (`app/auth.py`): Optional token-based auth controlled by `AUTH_TOKEN` env var. When set:
+- API endpoints require `Authorization: Bearer <token>` header
+- Web UI uses session cookies with `/login` and `/logout` routes
+- Telegram bot has separate `@authorized_only` decorator based on `TELEGRAM_CHAT_ID`
+- Public paths (`/health`, `/docs`, `/metrics`) bypass auth
+
 ### Product Normalization Chain (`app/dictionaries/`)
 
 1. **Exact match** → `products.json` raw_names
@@ -165,6 +185,34 @@ For transcriptions > 15k chars: split into 10k char chunks at sentence boundarie
 ### Store-Specific OCR Prompts (`app/store_prompts.py`)
 
 Each store (Biedronka, Lidl, Kaufland, Żabka, etc.) has a tailored extraction prompt matching its receipt format. See "Adding a New Store for OCR" below for extension instructions.
+
+### Agent Tool-Calling (`app/agent/`)
+
+LLM-based natural language routing to system tools. User sends a message (text or voice transcription), LLM selects the appropriate tool and extracts arguments, then the tool is executed.
+
+```
+User Input → SecurityValidator → LLM (qwen2.5:7b + format=json)
+    → ToolCall{tool, arguments} → Pydantic validation → Tool Executor → Result
+```
+
+**Components:**
+- `tools.py` - Tool definitions (10 tools), Pydantic argument models, validation
+- `router.py` - AgentRouter class: LLM call with retry, tool dispatch, logging
+- `validator.py` - Input sanitization, prompt injection detection (low/medium/high risk)
+
+**Available tools:** `create_note`, `search_knowledge`, `search_web`, `get_spending`, `get_inventory`, `get_weather`, `summarize_url`, `list_recent`, `create_bookmark`, `answer_directly`
+
+**Usage:**
+```python
+from app.agent.router import create_agent_router
+
+router = create_agent_router()
+router.register_executor("create_note", my_note_handler)
+response = await router.process("Zapisz notatkę: jutro spotkanie o 10")
+# response.tool = "create_note", response.arguments = {"title": "...", "content": "..."}
+```
+
+All agent calls are logged to `agent_call_logs` table (AgentCallLog model) for debugging and security monitoring.
 
 ## Key Configuration
 
@@ -188,6 +236,9 @@ DATABASE_URL=postgresql+asyncpg://pantry:pantry123@postgres:5432/pantry
 # Telegram
 TELEGRAM_BOT_TOKEN=xxx
 TELEGRAM_CHAT_ID=123456  # 0 = allow all users
+
+# Authentication (optional)
+AUTH_TOKEN=                           # Set to enable API/Web auth (empty = no auth)
 
 # Feature flags
 USE_DB_DICTIONARIES=true
@@ -213,6 +264,10 @@ VISION_MODEL_KEEP_ALIVE=10m
 TEXT_MODEL_KEEP_ALIVE=30m
 UNLOAD_MODELS_AFTER_USE=false         # Set true for low VRAM systems
 WHISPER_UNLOAD_AFTER_USE=true         # Free VRAM after transcription
+
+# Web search (SearXNG)
+WEB_SEARCH_NUM_RESULTS=6              # Results per search query
+WEB_SEARCH_EXPAND_NEWS=false          # Expand news categories in search
 ```
 
 ### Ollama Models Required
@@ -247,6 +302,20 @@ PostgreSQL 16 with `pg_trgm` (fuzzy text) and `pgvector` (embeddings) extensions
 
 Set all feature flags to `false` to revert to file-only mode (no database).
 
+## Security Considerations
+
+See `PROJECT_AUDIT.md` for full security audit. Key known issues:
+
+**Critical/High:**
+- **SEC-001**: No authentication on FastAPI/Web UI (Telegram bot has `@authorized_only`)
+- **SEC-002**: SQL injection via f-string in `app/db/repositories/embeddings.py` (use parameterized queries with `ANY(:types)`)
+- **SEC-003**: Path traversal in file uploads (sanitize with `PurePosixPath(filename).name`)
+- **SEC-005**: SSRF in web scraper/RSS fetcher (validate URLs, block private IP ranges)
+
+**Mitigating factor:** Docker Compose binds ports to `127.0.0.1` only, limiting exposure to localhost.
+
+When adding new endpoints: use FastAPI's parameterized queries, sanitize user-provided filenames, validate external URLs.
+
 ## Extending the Codebase
 
 ### Adding a New API Module
@@ -272,3 +341,13 @@ Documented in `app/store_prompts.py`:
 1. Add detection patterns to `STORE_PATTERNS`
 2. Create `PROMPT_STORENAME` with format-specific instructions
 3. Add to `STORE_PROMPTS` mapping
+
+### Adding a New Agent Tool
+
+1. Add tool name to `ToolName` enum in `app/agent/tools.py`
+2. Create Pydantic argument model (e.g., `MyToolArgs(BaseModel)`) with validators
+3. Add to `TOOL_ARG_MODELS` mapping
+4. Add tool definition to `TOOL_DEFINITIONS` list (name, description, parameters)
+5. Register executor in your router: `router.register_executor("my_tool", my_handler)`
+
+Tool arguments are validated with Pydantic before execution. Use `@field_validator` for input normalization (strip whitespace, normalize Polish variations like "notatka"/"notatki"→"notes").
