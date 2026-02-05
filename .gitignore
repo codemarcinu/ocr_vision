@@ -59,6 +59,10 @@ do testów/
 # Archive
 Archiwum/
 
+# Draft docs
+docs/PWA_IMPLEMENTATION_PLAN.md
+docs/raport_sec_bot.md
+
 # Misc
 nul
 *.log
