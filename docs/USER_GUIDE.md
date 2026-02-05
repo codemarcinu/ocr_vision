@@ -16,10 +16,11 @@
 8. [Transkrypcje audio/wideo](#transkrypcje-audiowideo)
 9. [Baza wiedzy (RAG)](#baza-wiedzy-rag)
 10. [Chat AI](#chat-ai)
-11. [Notatki osobiste](#notatki-osobiste)
-12. [Słownik produktów](#słownik-produktów)
-13. [Interfejs webowy](#interfejs-webowy)
-14. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
+11. [Agent - inteligentne akcje](#agent---inteligentne-akcje)
+12. [Notatki osobiste](#notatki-osobiste)
+13. [Słownik produktów](#słownik-produktów)
+14. [Interfejs webowy](#interfejs-webowy)
+15. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
 
 ---
 
@@ -38,6 +39,7 @@ Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
 | Transkrybuje | Zamienia nagrania audio/wideo na tekst i notatki |
 | Odpowiada na pytania | Przeszukuje całą bazę wiedzy i generuje odpowiedzi (RAG) |
 | Rozmawia | Wieloturowy Chat AI z dostępem do RAG i wyszukiwania internetowego |
+| Wykonuje akcje | Agent automatycznie rozpoznaje intencje i wykonuje akcje |
 | Notatki | Osobiste notatki z tagami i kategoriami |
 
 ### Jak to działa?
@@ -492,32 +494,42 @@ Baza wiedzy dostępna jest również przez REST API:
 
 System posiada **wieloturowego asystenta konwersacyjnego**, który łączy bazę wiedzy (RAG) z wyszukiwaniem internetowym (SearXNG).
 
+### Always-On Chat - po prostu pisz!
+
+Chat jest **zawsze aktywny**. Nie musisz używać żadnej komendy - wystarczy napisać wiadomość tekstową do bota:
+
+```
+Ty: Ile wydałem w Biedronce w tym miesiącu?
+Bot: Na podstawie Twoich paragonów, w tym miesiącu wydałeś...
+
+Ty: A jakie produkty kupuję najczęściej?
+Bot: Według danych z zakupów, najczęściej kupujesz...
+```
+
+System automatycznie utworzy sesję rozmowy i będzie pamiętać kontekst.
+
 ### Czym różni się od /ask?
 
-| Funkcja | `/ask` | `/chat` |
-|---------|--------|---------|
+| Funkcja | `/ask` | Chat (wiadomość tekstowa) |
+|---------|--------|---------------------------|
 | Typ rozmowy | Jednorazowe pytanie | Wieloturowa konwersacja |
 | Kontekst | Tylko aktualne pytanie | Pamięta historię rozmowy |
 | Źródła | Tylko baza wiedzy (RAG) | RAG + wyszukiwanie internetowe |
-| Sesje | Brak | Zarządzanie sesjami |
+| Akcje | Tylko odpowiedzi | Może wykonywać akcje (notatki, zakładki...) |
 
-### Jak używać?
+### Inteligentne akcje
 
-W Telegram wpisz:
+Chat automatycznie rozpoznaje, gdy chcesz coś zrobić, a nie tylko zapytać:
+
 ```
-/chat
+Ty: Zanotuj że jutro mam spotkanie o 10
+Bot: ✅ Utworzono notatkę: "Spotkanie o 10"
+
+Ty: Zapisz ten link https://example.com
+Bot: ✅ Dodano zakładkę: example.com
 ```
 
-Bot utworzy nową sesję rozmowy. Każda kolejna wiadomość trafia do tej sesji:
-```
-💬 Sesja utworzona. Możesz teraz rozmawiać.
-
-Ty: Co wiesz o moich wydatkach w styczniu?
-Bot: Na podstawie Twoich danych z paragonów...
-
-Ty: A jakie są najnowsze trendy w cenach mleka?
-Bot: [przeszukuje internet przez SearXNG]...
-```
+Więcej o automatycznych akcjach: [Agent - inteligentne akcje](#agent---inteligentne-akcje)
 
 ### Klasyfikacja intencji
 
@@ -534,10 +546,65 @@ System automatycznie rozpoznaje typ pytania:
 
 | Komenda | Co robi |
 |---------|---------|
-| `/chat` | Rozpocznij nową sesję rozmowy |
-| `/endchat` | Zakończ bieżącą sesję |
+| Dowolna wiadomość | Rozpoczyna rozmowę (automatyczna sesja) |
+| `/endchat` | Zresetuj sesję (zacznij od nowa) |
 
 Sesje dostępne również przez menu inline (przyciski w Telegram).
+
+---
+
+## Agent - inteligentne akcje
+
+System posiada **agenta AI**, który automatycznie rozpoznaje intencje w wiadomościach i wykonuje odpowiednie akcje.
+
+### Jak to działa?
+
+Gdy piszesz do bota, agent analizuje wiadomość:
+- **Pytanie o dane?** → Przeszukuje bazę wiedzy
+- **Polecenie akcji?** → Wykonuje natychmiast
+
+```
+📝 Wiadomość: "Zanotuj że jutro mam dentystę o 10"
+    ↓
+🤖 Agent rozpoznaje: create_note
+    ↓
+✅ Tworzy notatkę automatycznie
+```
+
+### Co potrafi agent?
+
+| Powiedz | Agent zrobi |
+|---------|-------------|
+| "Zanotuj: spotkanie jutro o 10" | 📝 Utworzy notatkę |
+| "Zapisz link https://..." | 🔖 Doda zakładkę |
+| "Podsumuj artykuł https://..." | 📰 Wygeneruje podsumowanie |
+| "Co mam w lodówce?" | 🥫 Pokaże stan spiżarni |
+| "Ile wydałem w Biedronce?" | 💰 Pokaże wydatki |
+| "Jaka jest pogoda?" | 🌤️ Sprawdzi pogodę |
+| "Pokaż ostatnie notatki" | 📋 Wyświetli listę |
+| "Wyszukaj w internecie..." | 🌐 Przeszuka internet |
+
+### Przykłady użycia w stylu "głosówki"
+
+Agent świetnie rozumie naturalny, potoczny język:
+
+```
+"Hej, zapisz mi że jutro mam dentystę o 10"
+→ Utworzy notatkę
+
+"Zanotuj: kupić mleko, chleb i masło"
+→ Utworzy listę zakupów
+
+"Przypomnij mi żeby zadzwonić do mamy"
+→ Utworzy notatkę-przypomnienie
+
+"Chcę zapisać tego linka do przeczytania https://..."
+→ Doda zakładkę
+```
+
+### Kiedy agent działa?
+
+Agent jest zintegrowany z Chat AI i działa automatycznie przy każdej wiadomości. Nie musisz używać żadnych specjalnych komend.
 
 ---
 
@@ -671,6 +738,22 @@ Jeśli `/ask` nie znajduje odpowiedzi:
 2. Jeśli indeks jest pusty, uruchom reindeksację: `curl -X POST http://localhost:8000/ask/reindex`
 3. Spróbuj zadać pytanie innymi słowami
 
+### Jak działa chat bez komendy /chat?
+
+Chat jest teraz **always-on**. Wystarczy napisać wiadomość do bota, a system automatycznie:
+1. Utworzy sesję rozmowy (jeśli nie istnieje)
+2. Przeanalizuje czy to pytanie czy polecenie akcji
+3. Odpowie lub wykona akcję
+
+Użyj `/endchat` aby zresetować rozmowę i zacząć od nowa.
+
+### Agent nie wykonuje akcji
+
+Jeśli agent nie rozpoznaje Twoich poleceń:
+1. Upewnij się, że `CHAT_AGENT_ENABLED=true` jest ustawione
+2. Spróbuj bardziej bezpośredniego polecenia: "Zanotuj: ..." zamiast "może warto by zapisać..."
+3. Sprawdź logi systemu czy nie ma błędów
+
 ---
 
 ## Wszystkie komendy Telegram
@@ -705,8 +788,8 @@ Jeśli `/ask` nie znajduje odpowiedzi:
 | `/n <tekst>` | Szybka notatka |
 | `/ask <pytanie>` | Zapytaj bazę wiedzy |
 | `/find <fraza>` | Szukaj w bazie wiedzy |
-| `/chat` | Rozpocznij sesję Chat AI |
-| `/endchat` | Zakończ sesję Chat AI |
+| Wiadomość tekstowa | Chat AI + Agent (always-on) |
+| `/endchat` | Zresetuj sesję Chat AI |
 | `/settings` | Ustawienia bota |
 
 ---

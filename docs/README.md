@@ -18,6 +18,7 @@
 
 | Dokument | Opis |
 |----------|------|
+| [agent_tool_calling_report.md](agent_tool_calling_report.md) | Testy Agent Tool-Calling (modele, benchmark) |
 | [reports/OPTIMIZATION_REPORT.md](reports/OPTIMIZATION_REPORT.md) | Raport optymalizacji OCR Vision |
 | [reports/ANALIZA_DOKLADNOSCI_OCR.md](reports/ANALIZA_DOKLADNOSCI_OCR.md) | Analiza dokładności OCR |
 
@@ -28,73 +29,48 @@ Folder `archive/` zawiera stare notatki i specyfikacje projektowe.
 ## Struktura projektu
 
 ```
-OCR_V2/
+ocr_vision/
 ├── app/                    # Kod aplikacji
 │   ├── db/                 # Warstwa bazy danych
-│   │   ├── models.py       # Modele SQLAlchemy (w tym DocumentEmbedding)
+│   │   ├── models.py       # Modele SQLAlchemy
 │   │   ├── connection.py   # Połączenie z bazą
-│   │   └── repositories/   # Repozytoria danych
-│   │       ├── receipts.py  # Paragony
-│   │       ├── products.py  # Produkty
-│   │       ├── rss.py       # RSS/artykuły
-│   │       ├── notes.py     # Notatki
-│   │       ├── bookmarks.py # Zakładki
-│   │       └── embeddings.py # Embeddingi RAG (pgvector)
+│   │   └── repositories/   # Repozytoria danych (16 plików)
 │   ├── rag/                # Baza wiedzy RAG
 │   │   ├── embedder.py     # Generowanie embeddingów (Ollama)
-│   │   ├── indexer.py      # Indeksowanie treści (chunking + embedding)
+│   │   ├── indexer.py      # Indeksowanie treści
 │   │   ├── retriever.py    # Wyszukiwanie (vector + keyword)
-│   │   ├── answerer.py     # Generowanie odpowiedzi (LLM)
+│   │   ├── answerer.py     # Generowanie odpowiedzi
 │   │   └── hooks.py        # Hooki auto-indeksowania
+│   ├── chat/               # Chat AI
+│   │   ├── intent_classifier.py  # Klasyfikacja intencji
+│   │   ├── orchestrator.py       # Orkiestracja rozmowy
+│   │   ├── agent_executor.py     # Wykonawcy narzędzi agenta
+│   │   └── searxng_client.py     # Klient SearXNG
+│   ├── agent/              # Agent Tool-Calling
+│   │   ├── tools.py        # Definicje narzędzi (10 narzędzi)
+│   │   ├── router.py       # Router LLM → tool dispatch
+│   │   └── validator.py    # Walidacja inputu
 │   ├── telegram/           # Bot Telegram
-│   │   ├── bot.py          # Główna klasa bota
-│   │   ├── handlers/       # Handlery komend
-│   │   │   ├── receipts.py # Zdjęcia/PDF + review flow
-│   │   │   ├── pantry.py   # Spiżarnia
-│   │   │   ├── stats.py    # Statystyki
-│   │   │   ├── feeds.py    # RSS/Summarizer
-│   │   │   ├── transcription.py # Transkrypcje
-│   │   │   ├── ask.py      # RAG: /ask
-│   │   │   └── errors.py   # Błędy
-│   │   ├── keyboards.py    # Klawiatury inline
-│   │   └── rss_scheduler.py # Scheduler auto-fetch RSS
+│   │   ├── bot.py          # Główna klasa bota (always-on chat)
+│   │   ├── callback_router.py  # Router callbacków
+│   │   ├── handlers/       # Handlery komend (19 plików)
+│   │   └── rss_scheduler.py
 │   ├── transcription/      # Transkrypcje audio/wideo
-│   │   ├── transcriber.py  # Faster-Whisper
-│   │   ├── downloader.py   # yt-dlp
-│   │   ├── extractor.py    # LLM knowledge extraction
-│   │   └── note_writer.py  # Obsidian output
 │   ├── services/           # Serwisy aplikacji
 │   ├── dictionaries/       # Słowniki produktów/sklepów
 │   ├── main.py             # FastAPI endpoints
-│   ├── ask_api.py          # RAG API (/ask)
-│   ├── notes_api.py        # Notatki API
-│   ├── bookmarks_api.py    # Zakładki API
-│   ├── rss_api.py          # RSS API
-│   ├── transcription_api.py # Transkrypcje API
-│   ├── ocr.py              # OCR Vision backend
-│   ├── deepseek_ocr.py     # OCR DeepSeek backend
-│   ├── classifier.py       # Kategoryzacja produktów
+│   ├── model_coordinator.py # Koordynacja VRAM
+│   ├── auth.py             # Uwierzytelnianie (opcjonalne)
 │   └── config.py           # Konfiguracja
 ├── alembic/                # Migracje bazy danych
-│   └── versions/           # Wersje migracji (w tym 004_add_rag_embeddings)
 ├── docs/                   # Dokumentacja (jesteś tutaj)
 │   ├── archive/            # Stare notatki
 │   └── reports/            # Raporty techniczne
-├── monitoring/             # Konfiguracja Prometheus/Loki/Grafana
-├── n8n-workflows/          # Workflow n8n
+├── monitoring/             # Prometheus/Loki/Grafana
 ├── paragony/               # Paragony do przetworzenia
-│   └── inbox/              # Wrzuć tutaj zdjęcia
 ├── scripts/                # Skrypty pomocnicze
-│   ├── init-db.sql         # Schemat bazy danych (z pgvector)
-│   ├── migrate_data.py     # Migracja danych do PostgreSQL
-│   └── quick_ocr.py        # Szybki test OCR
 ├── vault/                  # Wygenerowane pliki Obsidian
-│   ├── paragony/           # Historia paragonów
-│   ├── summaries/          # Podsumowania artykułów
-│   └── logs/               # Logi i feedback
-├── notes/                  # Notatki osobiste
-├── transcriptions/         # Notatki z transkrypcji
-├── docker-compose.yml      # Konfiguracja Docker (pgvector/pgvector:pg16)
+├── docker-compose.yml      # Konfiguracja Docker
 ├── Dockerfile              # Build aplikacji
 ├── CLAUDE.md               # Dokumentacja techniczna
 └── README.md               # Główny README

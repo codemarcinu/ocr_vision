@@ -91,17 +91,35 @@ Po przetworzeniu kilku paragonów lub artykułów, możesz zadawać pytania:
 
 | Komenda | Opis |
 |---------|------|
+| Wiadomość tekstowa | Chat AI - po prostu pisz! |
 | `/recent` | Ostatnie paragony |
 | `/stats` | Statystyki wydatków |
 | `/pantry` | Spiżarnia |
 | `/ask <pytanie>` | Zapytaj bazę wiedzy |
-| `/chat` | Rozpocznij rozmowę z Chat AI |
+| `/endchat` | Zresetuj rozmowę |
 | `/feeds` | Kanały RSS |
 | `/subscribe <URL>` | Dodaj kanał RSS |
 | `/transcribe <URL>` | Transkrybuj YouTube |
 | `/q <fraza>` | Szybkie wyszukiwanie |
 | `/n <tekst>` | Szybka notatka |
 | `/help` | Pomoc |
+
+---
+
+## 9. Chat AI i Agent - po prostu pisz!
+
+Nie musisz używać komend. Wystarczy napisać wiadomość:
+
+```
+"Ile wydałem w Biedronce?"
+→ Odpowiedź z danych
+
+"Zanotuj: spotkanie jutro o 10"
+→ Tworzy notatkę automatycznie
+
+"Co mam w lodówce?"
+→ Pokazuje spiżarnię
+```
 
 ---
 

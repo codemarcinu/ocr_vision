@@ -26,6 +26,7 @@ Moduły:
 🔖 Zakładki       → saved links
 🧠 RAG            → pytania do bazy wiedzy (/ask)
 💬 Chat AI        → wieloturowe rozmowy z RAG + web search
+🤖 Agent          → automatyczne akcje z języka naturalnego
 ```
 
 ## Wymagania
@@ -209,32 +210,42 @@ Nowe treści są automatycznie indeksowane w momencie tworzenia. Przy pierwszym 
 | `/n <tekst>` | Szybka notatka |
 | `/ask <pytanie>` | Zapytaj bazę wiedzy (RAG) |
 | `/find <fraza>` | Szukaj w bazie wiedzy |
-| `/chat` | Rozpocznij sesję Chat AI |
-| `/endchat` | Zakończ sesję Chat AI |
+| Wiadomość tekstowa | Chat AI (always-on, auto-sesja) |
+| `/endchat` | Zresetuj sesję Chat AI |
 | `/settings` | Ustawienia bota |
 
 ## Chat AI
 
 Wieloturowy asystent konwersacyjny z dostępem do bazy wiedzy (RAG) i wyszukiwania internetowego (SearXNG).
 
-### Jak to działa?
+### Always-On Chat
+
+Chat jest **zawsze aktywny** - wystarczy napisać wiadomość tekstową do bota, a system automatycznie utworzy sesję i odpowie. Nie trzeba używać komendy `/chat`.
+
+### Integracja z Agentem (Tool-Calling)
+
+Gdy `CHAT_AGENT_ENABLED=true`, chat automatycznie wykrywa intencje akcji:
 
 ```
 Wiadomość użytkownika
     ↓
-Klasyfikacja intencji (rag/web/both/direct)
+[Agent] Klasyfikacja: AKCJA czy ROZMOWA?
     ↓
-┌───────┴───────┐
-RAG search   Web search (SearXNG)
-└───────┬───────┘
-    ↓
-Odpowiedź LLM z kontekstem + historią rozmowy
+┌───────────────┴───────────────┐
+AKCJA                        ROZMOWA
+(create_note, bookmark...)   (rag/web/both/direct)
+    ↓                           ↓
+Natychmiastowe wykonanie    Orchestrator + LLM
 ```
+
+**Przykłady:**
+- "Zanotuj: spotkanie jutro o 10" → Agent tworzy notatkę
+- "Ile wydałem w Biedronce?" → Chat z RAG odpowiada
 
 ### Komendy Telegram
 
-- `/chat` - Rozpocznij nową sesję rozmowy
-- `/endchat` - Zakończ bieżącą sesję
+- Napisz wiadomość → automatyczna sesja Chat AI
+- `/endchat` - Zresetuj sesję (nowa rozmowa)
 - Menu inline z przyciskami do zarządzania sesjami
 
 ### API Chat
@@ -245,6 +256,33 @@ Odpowiedź LLM z kontekstem + historią rozmowy
 | `/chat/sessions` | GET | Lista sesji |
 | `/chat/sessions/{id}/messages` | POST | Wyślij wiadomość |
 | `/chat/sessions/{id}` | DELETE | Usuń sesję |
+
+## Agent Tool-Calling
+
+System automatycznego wykrywania intencji i wykonywania akcji z języka naturalnego.
+
+### Dostępne narzędzia
+
+| Narzędzie | Opis | Przykład |
+|-----------|------|----------|
+| `create_note` | Tworzenie notatki | "Zanotuj: spotkanie jutro o 10" |
+| `create_bookmark` | Zapisanie linku | "Zapisz ten link: https://..." |
+| `summarize_url` | Podsumowanie strony | "Podsumuj ten artykuł: https://..." |
+| `search_knowledge` | RAG - baza wiedzy | "Co wiem o projekcie X?" |
+| `search_web` | Wyszukiwanie internetowe | "Najnowsze wiadomości o AI" |
+| `get_spending` | Analityka wydatków | "Ile wydałem w Biedronce?" |
+| `get_inventory` | Stan spiżarni | "Co mam w lodówce?" |
+| `get_weather` | Pogoda | "Jaka jest pogoda w Krakowie?" |
+| `list_recent` | Ostatnie elementy | "Pokaż ostatnie notatki" |
+| `answer_directly` | Odpowiedź bez wyszukiwania | "Ile to 2+2?" |
+
+### Włączenie agenta
+
+```bash
+CHAT_AGENT_ENABLED=true  # w .env
+```
+
+Agent jest zintegrowany z Chat AI i działa automatycznie jako pre-procesor wiadomości.
 
 ## RSS/Web Summarizer
 
@@ -341,7 +379,12 @@ ocr_vision/
 │   ├── chat/               # Chat AI
 │   │   ├── intent_classifier.py  # Klasyfikacja intencji (rag/web/both/direct)
 │   │   ├── orchestrator.py       # Orkiestracja rozmowy
+│   │   ├── agent_executor.py     # Wykonawcy narzędzi agenta
 │   │   └── searxng_client.py     # Klient SearXNG
+│   ├── agent/              # Agent Tool-Calling
+│   │   ├── tools.py        # Definicje narzędzi (10 narzędzi)
+│   │   ├── router.py       # Router LLM → tool dispatch
+│   │   └── validator.py    # Walidacja inputu, ochrona przed injection
 │   ├── rag/                # Baza wiedzy RAG
 │   │   ├── embedder.py     # Embeddingi via Ollama
 │   │   ├── indexer.py      # Chunking + embedding + storage
@@ -397,8 +440,29 @@ Zmienne środowiskowe (w `docker-compose.yml` lub `.env`):
 | `TELEGRAM_BOT_TOKEN` | - | Token bota Telegram |
 | `TELEGRAM_CHAT_ID` | `0` | ID chatu (0 = wszyscy) |
 | `BOT_ENABLED` | `true` | Włącz/wyłącz bota |
+| `AUTH_TOKEN` | - | Token uwierzytelniania API/Web (pusty = wyłączone) |
+| `CHAT_AGENT_ENABLED` | `true` | Agent tool-calling w Chat AI |
+| `MODEL_COORDINATION_ENABLED` | `true` | Koordynacja VRAM (zarządzanie modelami) |
+| `MODEL_MAX_VRAM_MB` | `12000` | Budżet VRAM w MB |
 
 Pełna lista zmiennych: patrz [CLAUDE.md](CLAUDE.md).
+
+### Koordynacja modeli (VRAM)
+
+System automatycznie zarządza modelami Ollama w ograniczonym VRAM:
+- **LRU eviction** - zwalnia pamięć usuwając najdawniej używane modele
+- **Preloading** - ładuje model przy starcie (`MODEL_PRELOAD_ON_STARTUP`)
+- **Single-model OCR** - tryb `OCR_SINGLE_MODEL_MODE=true` używa jednego modelu do wszystkiego
+
+Sprawdź status modeli: `curl http://localhost:8000/models/status`
+
+### Uwierzytelnianie (opcjonalne)
+
+Ustaw `AUTH_TOKEN` aby włączyć ochronę API i Web UI:
+- API wymaga nagłówka `Authorization: Bearer <token>`
+- Web UI używa sesji z `/login` i `/logout`
+- Publiczne endpointy (`/health`, `/docs`, `/metrics`) nie wymagają auth
+- Telegram bot ma osobną ochronę przez `TELEGRAM_CHAT_ID`
 
 ## Prompty per sklep
 
@@ -424,6 +488,10 @@ System automatycznie wykrywa sklep i używa dedykowanego promptu LLM:
 ### `GET /health`
 
 Sprawdza status serwisów.
+
+### `GET /models/status`
+
+Status koordynatora modeli: VRAM, załadowane modele, metryki eviction.
 
 ### `POST /process-receipt`
 
