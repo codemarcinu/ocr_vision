@@ -573,6 +573,7 @@ class ChatAgentProcessor:
         message: str,
         db_session: AsyncSession,
         conversation_history: Optional[list[dict]] = None,
+        user_profile: Optional[dict] = None,
     ) -> AgentExecutionResult:
         """Process message through agent.
 
@@ -582,14 +583,18 @@ class ChatAgentProcessor:
             message: User message
             db_session: Database session for tool execution
             conversation_history: Recent messages for context [{role, content}, ...]
+            user_profile: Optional user profile for personalization:
+                - default_city: str
+                - timezone: str
+                - favorite_stores: list[str]
 
         Returns:
             AgentExecutionResult indicating if tool was executed or should fallback
         """
         router = self._get_router()
 
-        # Get agent's tool selection with conversation context
-        response = await router.process(message, conversation_history)
+        # Get agent's tool selection with conversation context and profile
+        response = await router.process(message, conversation_history, user_profile)
 
         if not response.success:
             logger.warning(f"Agent routing failed: {response.error}")
@@ -732,6 +737,7 @@ async def process_with_agent(
     message: str,
     db_session: AsyncSession,
     conversation_history: Optional[list[dict]] = None,
+    user_profile: Optional[dict] = None,
 ) -> AgentExecutionResult:
     """Convenience function to process message with agent.
 
@@ -739,9 +745,10 @@ async def process_with_agent(
         message: User message
         db_session: Database session
         conversation_history: Recent messages for context
+        user_profile: Optional user profile for personalization
 
     Returns:
         AgentExecutionResult
     """
     processor = get_agent_processor()
-    return await processor.process(message, db_session, conversation_history)
+    return await processor.process(message, db_session, conversation_history, user_profile)

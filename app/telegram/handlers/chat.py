@@ -60,6 +60,7 @@ async def _try_agent_action(
     message: str,
     db_session,
     session_id: Optional[UUID] = None,
+    telegram_user_id: Optional[int] = None,
 ):
     """Try to execute message as agent action.
 
@@ -67,6 +68,7 @@ async def _try_agent_action(
         message: User message
         db_session: Database session
         session_id: Chat session ID for conversation context
+        telegram_user_id: Telegram user ID for profile personalization
 
     Returns:
         AgentExecutionResult or None if agent not applicable
@@ -84,6 +86,7 @@ async def _try_agent_action(
     try:
         from app.chat.agent_executor import process_with_agent
         from app.db.repositories.chat import ChatRepository
+        from app.db.repositories.user_profile import UserProfileRepository
 
         # Get conversation history for context
         conversation_history = None
@@ -96,7 +99,19 @@ async def _try_agent_action(
                     for msg in recent_msgs
                 ]
 
-        result = await process_with_agent(message, db_session, conversation_history)
+        # Get user profile for personalization
+        user_profile = None
+        if telegram_user_id:
+            profile_repo = UserProfileRepository(db_session)
+            profile = await profile_repo.get_by_telegram_id(telegram_user_id)
+            if profile:
+                user_profile = {
+                    "default_city": profile.default_city,
+                    "timezone": profile.timezone,
+                    "favorite_stores": profile.favorite_stores,
+                }
+
+        result = await process_with_agent(message, db_session, conversation_history, user_profile)
 
         if result.executed:
             return result
@@ -164,8 +179,9 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     context.user_data["active_chat_session"] = str(chat_session.id)
 
                 # Try agent action first (create_note, bookmark, summarize, list)
+                user_id = update.effective_user.id if update.effective_user else None
                 agent_result = await _try_agent_action(
-                    question, session, session_id=chat_session.id
+                    question, session, session_id=chat_session.id, telegram_user_id=user_id
                 )
 
                 if agent_result and agent_result.executed and agent_result.result_text:
@@ -338,8 +354,9 @@ async def handle_chat_message(
                 return
 
             # Try agent action first (create_note, bookmark, summarize, list)
+            user_id = update.effective_user.id if update.effective_user else None
             agent_result = await _try_agent_action(
-                message, session, session_id=chat_session.id
+                message, session, session_id=chat_session.id, telegram_user_id=user_id
             )
 
             if agent_result and agent_result.executed and agent_result.result_text:

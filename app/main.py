@@ -35,6 +35,7 @@ from app.pantry_api import router as pantry_router
 from app.receipts_api import router as receipts_router
 from app.search_api import router as search_router
 from app.web_routes import router as web_router
+from app.profile_api import router as profile_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
@@ -136,6 +137,7 @@ app.include_router(chat_router)
 app.include_router(pantry_router)
 app.include_router(receipts_router)
 app.include_router(search_router)
+app.include_router(profile_router)
 app.include_router(web_router)
 
 # Mount static files for web UI

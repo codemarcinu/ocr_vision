@@ -37,7 +37,7 @@ Celem jest usprawnienie systemu agentowego w Second Brain, aby lepiej rozpoznawa
 | 3 | Dopytywanie przy niejasnych intencjach | 🟡 Średni | ✅ Zaimplementowane |
 | 4 | Sygnalizowanie pewności wyboru | 🟡 Średni | ✅ Zaimplementowane |
 | 5 | Obsługa wielu narzędzi w jednym zapytaniu | 🟢 Niski | ✅ Zaimplementowane |
-| 6 | Personalizacja na podstawie profilu | 🟢 Niski | ⬜ Do zrobienia |
+| 6 | Personalizacja na podstawie profilu | 🟢 Niski | ✅ Zaimplementowane |
 
 ---
 
@@ -692,7 +692,7 @@ async def execute_tool_chain(
 
 **Cel:** Personalizacja agenta na podstawie preferencji.
 
-**Status:** ⬜ Do zrobienia
+**Status:** ✅ Zaimplementowane
 
 **Priorytet:** 🟢 Niski
 
@@ -700,11 +700,11 @@ async def execute_tool_chain(
 
 #### Zadania
 
-- [ ] **6.1** Model `UserProfile` w bazie danych
-- [ ] **6.2** API endpoint do zarządzania profilem
-- [ ] **6.3** Wstrzykiwanie profilu do system prompt
-- [ ] **6.4** Domyślne wartości (miasto, timezone)
-- [ ] **6.5** Telegram command `/profile`
+- [x] **6.1** Model `UserProfile` w bazie danych
+- [x] **6.2** API endpoint do zarządzania profilem
+- [x] **6.3** Wstrzykiwanie profilu do system prompt
+- [x] **6.4** Domyślne wartości (miasto, timezone)
+- [x] **6.5** Telegram command `/profile`
 
 #### Szczegóły techniczne
 
@@ -754,9 +754,18 @@ Używaj tych informacji jako domyślnych wartości gdy użytkownik ich nie poda.
 
 #### Kryteria akceptacji
 
-- [ ] "Jaka pogoda?" bez miasta → używa domyślnego z profilu
-- [ ] `/profile` w Telegram pokazuje i pozwala edytować ustawienia
-- [ ] Profil persystowany w bazie
+- [x] "Jaka pogoda?" bez miasta → używa domyślnego z profilu
+- [x] `/profile` w Telegram pokazuje i pozwala edytować ustawienia
+- [x] Profil persystowany w bazie
+
+**Wynik implementacji (2026-02-05):** ✅ PASS
+- Model `UserProfile` w `app/db/models.py` z polami: default_city, timezone, preferred_language, favorite_stores, most_used_tools
+- Repository `UserProfileRepository` z metodami: get_by_telegram_id, get_or_create_by_telegram_id, update_preferences, increment_tool_usage
+- API endpoints `/profile/*` - GET, POST, PATCH
+- Alembic migration 009_add_user_profiles
+- System prompt rozszerzony o sekcję PROFIL UŻYTKOWNIKA gdy profil dostępny
+- Telegram commands: `/profile`, `/setcity`, `/setstores`
+- Callback handler dla profile: z inline keyboard do edycji miasta
 
 ---
 
@@ -810,6 +819,7 @@ Tydzień 3+ (opcjonalnie):
 | 2026-02-05 | Fix ToolCall validator dla ToolName enum | Bugfix |
 | 2026-02-05 | Wszystkie testy OK - confidence 100%, ask_clarification działa | Testy |
 | 2026-02-05 | Multi-tool support - format B, execute_tool_chain(), context injection | Faza 5 |
+| 2026-02-05 | User Profile - UserProfile model, API, Telegram /profile, system prompt injection | Faza 6 |
 
 ---
 
@@ -831,7 +841,7 @@ Faza 4 (Confidence) ✅
     └──► Faza 3 (ask_clarification) ✅ - auto-trigger przy low confidence
 
 Faza 5 (Multi-tool) ✅ - niezależna, zaimplementowana
-Faza 6 (Profil) - niezależna, może być robiona równolegle
+Faza 6 (Profil) ✅ - niezależna, zaimplementowana
 ```
 
 ### Ryzyka

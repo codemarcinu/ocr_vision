@@ -745,6 +745,44 @@ class DocumentEmbedding(Base):
 # =============================================================================
 
 
+# =============================================================================
+# User Profile (personalization)
+# =============================================================================
+
+
+class UserProfile(Base):
+    """User profile for personalization."""
+
+    __tablename__ = "user_profiles"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    telegram_user_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, unique=True, nullable=True
+    )
+
+    # Preferences
+    default_city: Mapped[str] = mapped_column(String(100), default="Kraków")
+    timezone: Mapped[str] = mapped_column(String(50), default="Europe/Warsaw")
+    preferred_language: Mapped[str] = mapped_column(String(10), default="pl")
+    favorite_stores: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(Text), nullable=True
+    )
+
+    # Statistics (for personalization)
+    most_used_tools: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
 class AgentCallLog(Base):
     """Log entry for agent tool-calling requests."""
 

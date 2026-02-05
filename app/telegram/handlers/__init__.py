@@ -60,6 +60,12 @@ from app.telegram.handlers.voice_notes import (
 from app.telegram.handlers.daily import (
     daily_command,
 )
+from app.telegram.handlers.profile import (
+    profile_command,
+    setstores_command,
+    setcity_command,
+    handle_profile_callback,
+)
 
 __all__ = [
     "ask_command",
@@ -96,4 +102,8 @@ __all__ = [
     "handle_chat_message",
     "handle_voice_note",
     "daily_command",
+    "profile_command",
+    "setstores_command",
+    "setcity_command",
+    "handle_profile_callback",
 ]

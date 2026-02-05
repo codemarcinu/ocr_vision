@@ -52,6 +52,10 @@ from app.telegram.handlers import (
     endchat_command,
     handle_chat_message,
     daily_command,
+    profile_command,
+    setstores_command,
+    setcity_command,
+    handle_profile_callback,
 )
 from app.telegram.handlers.menu_articles import handle_articles_callback
 from app.telegram.handlers.menu_bookmarks import handle_bookmarks_callback
@@ -94,6 +98,7 @@ class PantryBot:
         self._callback_router.register("chat:", handle_chat_callback)
         self._callback_router.register("url:", handle_url_callback)
         self._callback_router.register("review:", handle_review_callback)
+        self._callback_router.register("profile:", handle_profile_callback)
 
     async def start(self) -> None:
         """Start the bot in polling mode."""
@@ -201,6 +206,9 @@ class PantryBot:
         self.application.add_handler(CommandHandler("transcribe", transcribe_command))
         self.application.add_handler(CommandHandler("transcriptions", transcriptions_command))
         self.application.add_handler(CommandHandler("note", note_command))
+        self.application.add_handler(CommandHandler("profile", profile_command))
+        self.application.add_handler(CommandHandler("setstores", setstores_command))
+        self.application.add_handler(CommandHandler("setcity", setcity_command))
 
         # Callback query handler (routes via CallbackRouter)
         self.application.add_handler(CallbackQueryHandler(self._handle_callback))

@@ -167,12 +167,46 @@ WAŻNE dla create_note:
 - "title" = krótki nagłówek (3-8 słów)
 - "content" = pełna treść, ZAWSZE wymagane (nie puste "to")
 
-Zawsze odpowiadaj TYLKO JSON. ZAWSZE dodaj pole confidence."""
+Zawsze odpowiadaj TYLKO JSON. ZAWSZE dodaj pole confidence.
+{profile_section}"""
 
 
-def get_system_prompt() -> str:
-    """Get the system prompt with tool descriptions."""
-    return SYSTEM_PROMPT_TEMPLATE.format(tool_descriptions=format_tool_descriptions())
+# Profile section template
+PROFILE_SECTION_TEMPLATE = """
+═══════════════════════════════════════════════════════════════════════════════
+PROFIL UŻYTKOWNIKA:
+═══════════════════════════════════════════════════════════════════════════════
+- Domyślne miasto: {default_city}
+- Strefa czasowa: {timezone}
+- Ulubione sklepy: {favorite_stores}
+
+Używaj tych informacji jako domyślnych wartości gdy użytkownik ich nie poda.
+Np. "Jaka pogoda?" → użyj domyślnego miasta bez pytania."""
+
+
+def get_system_prompt(user_profile: Optional[dict] = None) -> str:
+    """Get the system prompt with tool descriptions.
+
+    Args:
+        user_profile: Optional dict with profile data:
+            - default_city: str
+            - timezone: str
+            - favorite_stores: list[str]
+    """
+    profile_section = ""
+    if user_profile:
+        favorite_stores = user_profile.get("favorite_stores") or []
+        stores_str = ", ".join(favorite_stores) if favorite_stores else "nie określono"
+        profile_section = PROFILE_SECTION_TEMPLATE.format(
+            default_city=user_profile.get("default_city", "Kraków"),
+            timezone=user_profile.get("timezone", "Europe/Warsaw"),
+            favorite_stores=stores_str,
+        )
+
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        tool_descriptions=format_tool_descriptions(),
+        profile_section=profile_section,
+    )
 
 
 # =============================================================================
@@ -295,6 +329,7 @@ class AgentRouter:
             log_suspicious=True,
         )
 
+        # Base system prompt (without profile)
         self.system_prompt = get_system_prompt()
 
         # Tool executors registry
@@ -320,6 +355,7 @@ class AgentRouter:
         self,
         user_input: str,
         conversation_history: Optional[list[dict]] = None,
+        user_profile: Optional[dict] = None,
     ) -> AgentResponse:
         """Process user input and route to appropriate tool(s).
 
@@ -329,6 +365,10 @@ class AgentRouter:
             user_input: Raw user message
             conversation_history: Optional recent messages [{role, content}, ...]
                                   for context awareness (e.g., "to", "tego")
+            user_profile: Optional user profile dict for personalization:
+                - default_city: str
+                - timezone: str
+                - favorite_stores: list[str]
 
         Returns:
             AgentResponse with tool result or error
@@ -356,7 +396,7 @@ class AgentRouter:
 
         # 2. Call LLM with retries
         tool_result = await self._call_llm_with_retry(
-            validation.sanitized_input, log, conversation_history
+            validation.sanitized_input, log, conversation_history, user_profile
         )
 
         if not tool_result.success:
@@ -460,6 +500,7 @@ class AgentRouter:
         user_input: str,
         log: AgentCallLog,
         conversation_history: Optional[list[dict]] = None,
+        user_profile: Optional[dict] = None,
     ) -> MultiToolCallResult:
         """Call LLM and parse response with retry logic.
 
@@ -469,6 +510,7 @@ class AgentRouter:
             user_input: Sanitized user input
             log: Call log to update
             conversation_history: Optional recent messages for context
+            user_profile: Optional user profile for personalization
 
         Returns:
             MultiToolCallResult with parsed tool call(s) or error
@@ -476,11 +518,14 @@ class AgentRouter:
         last_error: Optional[str] = None
         temperature = 0.0
 
+        # Generate system prompt with profile if available
+        system_prompt = get_system_prompt(user_profile) if user_profile else self.system_prompt
+
         for attempt in range(self.max_retries + 1):
             log.retry_count = attempt
 
             # Build messages with conversation context
-            messages = [{"role": "system", "content": self.system_prompt}]
+            messages = [{"role": "system", "content": system_prompt}]
 
             # Add conversation history for context (limit to last 4 messages)
             if conversation_history:
