@@ -20,6 +20,7 @@ services:
 
   fastapi:
     build: .
+    user: "1000:1000"
     container_name: pantry-api
     ports:
       - "127.0.0.1:8000:8000"
@@ -57,6 +58,7 @@ services:
       - TRANSCRIPTION_AUTO_GENERATE_NOTE=true
       # Notes & Bookmarks
       - NOTES_ENABLED=true
+      - NOTES_OUTPUT_DIR=/data/notes
       - BOOKMARKS_ENABLED=true
       # Chat AI
       - CHAT_ENABLED=true
@@ -64,8 +66,8 @@ services:
       - SEARXNG_URL=http://searxng:8080
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
       - WEATHER_CITY=${WEATHER_CITY:-Kraków}
-      # Web UI - disable Obsidian for receipts/pantry (data in PostgreSQL)
-      - GENERATE_OBSIDIAN_FILES=false
+      # Obsidian markdown files (notes, transcriptions, summaries)
+      - GENERATE_OBSIDIAN_FILES=true
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -327,6 +327,8 @@ async def process_message(
     session_id: UUID,
     db_session: AsyncSession,
     max_history: Optional[int] = None,
+    agent_search_strategy: Optional[str] = None,
+    agent_search_query: Optional[str] = None,
 ) -> ChatResponse:
     """Process a chat message through the full pipeline.
 
@@ -335,6 +337,8 @@ async def process_message(
         session_id: Chat session UUID
         db_session: Database session
         max_history: Max history messages to include (default from config)
+        agent_search_strategy: Optional strategy from agent (skip IntentClassifier)
+        agent_search_query: Optional reformulated query from agent
 
     Returns:
         ChatResponse with answer, sources, and metadata.
@@ -355,10 +359,19 @@ async def process_message(
     # Summarize older messages if history is long
     history = await history_manager.prepare_history(history)
 
-    # 2. Classify intent (structured JSON output)
-    classified = await intent_classifier.classify_intent(message, history)
-    intent = classified.intent
-    search_query = classified.query or message
+    # 2. Classify intent - use agent hint if available (skip LLM call)
+    if agent_search_strategy:
+        # Agent already classified the intent
+        intent = agent_search_strategy
+        search_query = agent_search_query or message
+        logger.info(f"Using agent search strategy: {intent} (skipping IntentClassifier)")
+        confidence = "high"  # Agent classified with high confidence
+    else:
+        # Fallback to IntentClassifier (LLM call)
+        classified = await intent_classifier.classify_intent(message, history)
+        intent = classified.intent
+        search_query = classified.query or message
+        confidence = classified.confidence
 
     # Detect language early - needed for web search language and LLM prompt
     lang = _detect_language(message)
@@ -367,7 +380,7 @@ async def process_message(
     search = await _execute_search(
         intent=intent,
         search_query=search_query,
-        confidence=classified.confidence,
+        confidence=confidence,
         db_session=db_session,
         language=lang,
     )

@@ -1,6 +1,7 @@
 """Telegram /chat and /endchat handlers for multi-turn conversations."""
 
 import logging
+from typing import Optional
 from uuid import UUID
 
 from telegram import Update
@@ -55,34 +56,57 @@ def _looks_like_action(message: str) -> bool:
     return False
 
 
-async def _try_agent_action(message: str, db_session) -> tuple[bool, str | None]:
+async def _try_agent_action(
+    message: str,
+    db_session,
+    session_id: Optional[UUID] = None,
+):
     """Try to execute message as agent action.
 
+    Args:
+        message: User message
+        db_session: Database session
+        session_id: Chat session ID for conversation context
+
     Returns:
-        (executed, result_text) - executed=True if action was performed
+        AgentExecutionResult or None if agent not applicable
     """
+    from app.chat.agent_executor import AgentExecutionResult
+
     if not settings.CHAT_AGENT_ENABLED:
-        return False, None
+        return None
 
     # Heuristic pre-filter: skip agent if message doesn't look like an action
     # This avoids model switching for regular questions
     if not _looks_like_action(message):
-        return False, None
+        return None
 
     try:
         from app.chat.agent_executor import process_with_agent
+        from app.db.repositories.chat import ChatRepository
 
-        result = await process_with_agent(message, db_session)
+        # Get conversation history for context
+        conversation_history = None
+        if session_id:
+            chat_repo = ChatRepository(db_session)
+            recent_msgs = await chat_repo.get_recent_messages(session_id, limit=6)
+            if recent_msgs:
+                conversation_history = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in recent_msgs
+                ]
+
+        result = await process_with_agent(message, db_session, conversation_history)
 
         if result.executed:
-            return True, result.result_text
+            return result
         elif result.error:
             logger.warning(f"Agent error (falling back to chat): {result.error}")
 
-        return False, None
+        return None
     except Exception as e:
         logger.warning(f"Agent processing failed: {e}")
-        return False, None
+        return None
 
 
 def _search_type_label(search_type: str) -> str:
@@ -140,18 +164,26 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     context.user_data["active_chat_session"] = str(chat_session.id)
 
                 # Try agent action first (create_note, bookmark, summarize, list)
-                agent_executed, agent_result = await _try_agent_action(question, session)
+                agent_result = await _try_agent_action(
+                    question, session, session_id=chat_session.id
+                )
 
-                if agent_executed and agent_result:
+                if agent_result and agent_result.executed and agent_result.result_text:
                     # Save user message
                     await chat_repo.add_message(
                         session_id=chat_session.id, role="user", content=question,
                     )
-                    # Save agent response
+                    # Save agent response with TOOL_RESULT format for context
+                    # This allows agent to use result in follow-up messages
+                    history_content = (
+                        agent_result.history_entry["content"]
+                        if agent_result.history_entry
+                        else agent_result.result_text
+                    )
                     await chat_repo.add_message(
                         session_id=chat_session.id,
                         role="assistant",
-                        content=agent_result,
+                        content=history_content,
                         search_type="agent",
                     )
 
@@ -161,28 +193,30 @@ async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
                     await session.commit()
 
-                    # Format and send response
-                    parts = [escape_html(agent_result)]
+                    # Format and send response (show clean result to user)
+                    parts = [escape_html(agent_result.result_text)]
                     parts.append("\n<i>🤖 Agent</i>")
 
                     try:
                         await status_msg.edit_text("\n".join(parts), parse_mode="HTML")
                     except Exception:
-                        await status_msg.edit_text(agent_result[:4096])
+                        await status_msg.edit_text(agent_result.result_text[:4096])
                     return
 
-                # Fall through to orchestrator
+                # Fall through to orchestrator (with agent hint if available)
                 # Save user message
                 await chat_repo.add_message(
                     session_id=chat_session.id, role="user", content=question,
                 )
                 await session.commit()
 
-                # Process with orchestrator
+                # Process with orchestrator - pass agent hint to skip IntentClassifier
                 response = await orchestrator.process_message(
                     message=question,
                     session_id=chat_session.id,
                     db_session=session,
+                    agent_search_strategy=agent_result.search_strategy if agent_result else None,
+                    agent_search_query=agent_result.search_query if agent_result else None,
                 )
 
                 # Save assistant message
@@ -304,44 +338,54 @@ async def handle_chat_message(
                 return
 
             # Try agent action first (create_note, bookmark, summarize, list)
-            agent_executed, agent_result = await _try_agent_action(message, session)
+            agent_result = await _try_agent_action(
+                message, session, session_id=chat_session.id
+            )
 
-            if agent_executed and agent_result:
+            if agent_result and agent_result.executed and agent_result.result_text:
                 # Save user message
                 await chat_repo.add_message(
                     session_id=chat_session.id, role="user", content=message,
                 )
-                # Save agent response
+                # Save agent response with TOOL_RESULT format for context
+                # This allows agent to use result in follow-up messages
+                history_content = (
+                    agent_result.history_entry["content"]
+                    if agent_result.history_entry
+                    else agent_result.result_text
+                )
                 await chat_repo.add_message(
                     session_id=chat_session.id,
                     role="assistant",
-                    content=agent_result,
+                    content=history_content,
                     search_type="agent",
                 )
                 await session.commit()
 
-                # Format and send response
-                parts = [escape_html(agent_result)]
+                # Format and send response (show clean result to user)
+                parts = [escape_html(agent_result.result_text)]
                 parts.append("\n<i>🤖 Agent</i>")
 
                 try:
                     await status_msg.edit_text("\n".join(parts), parse_mode="HTML")
                 except Exception:
-                    await status_msg.edit_text(agent_result[:4096])
+                    await status_msg.edit_text(agent_result.result_text[:4096])
                 return
 
-            # Fall through to orchestrator for search/conversation
+            # Fall through to orchestrator for search/conversation (with agent hint)
             # Save user message
             await chat_repo.add_message(
                 session_id=chat_session.id, role="user", content=message,
             )
             await session.commit()
 
-            # Process with orchestrator
+            # Process with orchestrator - pass agent hint to skip IntentClassifier
             response = await orchestrator.process_message(
                 message=message,
                 session_id=chat_session.id,
                 db_session=session,
+                agent_search_strategy=agent_result.search_strategy if agent_result else None,
+                agent_search_query=agent_result.search_query if agent_result else None,
             )
 
             # Save assistant message

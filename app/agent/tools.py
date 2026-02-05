@@ -24,6 +24,7 @@ class ToolName(str, Enum):
     LIST_RECENT = "list_recent"
     CREATE_BOOKMARK = "create_bookmark"
     ANSWER_DIRECTLY = "answer_directly"
+    ASK_CLARIFICATION = "ask_clarification"
 
 
 TOOL_NAMES = [t.value for t in ToolName]
@@ -283,6 +284,49 @@ class AnswerDirectlyArgs(BaseModel):
         return v.strip()
 
 
+class AskClarificationArgs(BaseModel):
+    """Arguments for ask_clarification tool - ask user for more details."""
+
+    question: str = Field(
+        ...,
+        min_length=5,
+        max_length=500,
+        description="Pytanie do użytkownika",
+    )
+    options: Optional[list[str]] = Field(
+        default=None,
+        description="Sugerowane odpowiedzi (max 5)",
+    )
+    context: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description="Kontekst dlaczego pytasz",
+    )
+
+    @field_validator("question")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def limit_options(cls, v: Any) -> Optional[list[str]]:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            # Limit to 5 options, each max 50 chars
+            return [str(o).strip()[:50] for o in v[:5] if str(o).strip()]
+        return None
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def strip_context(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s[:200] if s else None
+
+
 # =============================================================================
 # Tool Call Model
 # =============================================================================
@@ -300,6 +344,7 @@ ToolArguments = Union[
     ListRecentArgs,
     CreateBookmarkArgs,
     AnswerDirectlyArgs,
+    AskClarificationArgs,
 ]
 
 # Mapping from tool name to argument model
@@ -314,6 +359,7 @@ TOOL_ARG_MODELS: dict[str, type[BaseModel]] = {
     "list_recent": ListRecentArgs,
     "create_bookmark": CreateBookmarkArgs,
     "answer_directly": AnswerDirectlyArgs,
+    "ask_clarification": AskClarificationArgs,
 }
 
 
@@ -328,6 +374,9 @@ class ToolCall(BaseModel):
     def normalize_tool(cls, v: Any) -> str:
         if v is None:
             raise ValueError("tool jest wymagany")
+        # Handle ToolName enum
+        if isinstance(v, ToolName):
+            return v.value
         s = str(v).strip().lower()
         if s not in TOOL_NAMES:
             raise ValueError(f"Nieznane narzędzie: {s}")
@@ -342,6 +391,19 @@ class ToolCallResult(BaseModel):
     validated_args: Optional[BaseModel] = None
     error: Optional[str] = None
     raw_response: Optional[str] = None
+
+
+class MultiToolCallResult(BaseModel):
+    """Result of multi-tool call validation."""
+
+    success: bool
+    is_multi: bool = False  # True if multiple tools, False if single tool
+    tool_calls: list[ToolCall] = []
+    validated_args_list: list[BaseModel] = []
+    error: Optional[str] = None
+    raw_response: Optional[str] = None
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 def _fix_create_note_args(args: dict[str, Any]) -> dict[str, Any]:
@@ -541,6 +603,23 @@ TOOL_DEFINITIONS = [
         },
         "required": ["text"],
     },
+    {
+        "name": "ask_clarification",
+        "description": (
+            "Dopytaj użytkownika gdy brakuje kluczowych informacji lub intencja jest niejasna. "
+            "Użyj gdy: "
+            "1) użytkownik mówi 'to', 'tamto', 'tego' bez kontekstu w historii [TOOL_RESULT]; "
+            "2) brak wymaganego parametru (np. 'zapisz' bez treści do zapisania); "
+            "3) wieloznaczne polecenie (np. 'pokaż ostatnie' - jakiego typu?); "
+            "4) niepełna informacja (np. 'wydatki' bez okresu/sklepu gdy kontekst niejasny)."
+        ),
+        "parameters": {
+            "question": "Pytanie do użytkownika (wymagane)",
+            "options": "Lista sugerowanych odpowiedzi, max 5 (opcjonalne)",
+            "context": "Krótki kontekst dlaczego pytasz (opcjonalne)",
+        },
+        "required": ["question"],
+    },
 ]
 
 
@@ -557,3 +636,100 @@ def format_tool_descriptions() -> str:
         lines.append(f"{i}. {tool['name']} — {tool['description']}")
         lines.append(f"   Parametry: {params_str}")
     return "\n".join(lines)
+
+
+# Maximum number of tools in a multi-tool chain
+MAX_TOOLS_IN_CHAIN = 3
+
+
+def validate_multi_tool_call(raw_json: dict[str, Any]) -> MultiToolCallResult:
+    """Validate raw JSON from LLM - handles both single tool and multi-tool format.
+
+    Single tool format:
+        {"tool": "create_note", "arguments": {...}, "confidence": 0.9}
+
+    Multi-tool format:
+        {"tools": [
+            {"tool": "summarize_url", "arguments": {"url": "..."}},
+            {"tool": "create_bookmark", "arguments": {"url": "..."}}
+        ], "confidence": 0.9}
+
+    Args:
+        raw_json: Dict from LLM response
+
+    Returns:
+        MultiToolCallResult with validated tools or error
+    """
+    # Check which format we have
+    if "tools" in raw_json and isinstance(raw_json["tools"], list):
+        # Multi-tool format
+        tools_list = raw_json["tools"]
+
+        if len(tools_list) == 0:
+            return MultiToolCallResult(
+                success=False,
+                error="Pusta lista narzędzi",
+                raw_response=str(raw_json),
+            )
+
+        if len(tools_list) > MAX_TOOLS_IN_CHAIN:
+            return MultiToolCallResult(
+                success=False,
+                error=f"Za dużo narzędzi ({len(tools_list)}), max {MAX_TOOLS_IN_CHAIN}",
+                raw_response=str(raw_json),
+            )
+
+        validated_calls: list[ToolCall] = []
+        validated_args: list[BaseModel] = []
+
+        for i, tool_spec in enumerate(tools_list):
+            if not isinstance(tool_spec, dict):
+                return MultiToolCallResult(
+                    success=False,
+                    error=f"Narzędzie #{i+1} nie jest obiektem",
+                    raw_response=str(raw_json),
+                )
+
+            # Validate single tool call
+            result = validate_tool_call(tool_spec)
+            if not result.success:
+                return MultiToolCallResult(
+                    success=False,
+                    error=f"Narzędzie #{i+1} ({tool_spec.get('tool', '?')}): {result.error}",
+                    raw_response=str(raw_json),
+                )
+
+            validated_calls.append(result.tool_call)
+            validated_args.append(result.validated_args)
+
+        return MultiToolCallResult(
+            success=True,
+            is_multi=True,
+            tool_calls=validated_calls,
+            validated_args_list=validated_args,
+        )
+
+    elif "tool" in raw_json:
+        # Single tool format (backwards compatible)
+        result = validate_tool_call(raw_json)
+
+        if not result.success:
+            return MultiToolCallResult(
+                success=False,
+                error=result.error,
+                raw_response=result.raw_response,
+            )
+
+        return MultiToolCallResult(
+            success=True,
+            is_multi=False,
+            tool_calls=[result.tool_call],
+            validated_args_list=[result.validated_args],
+        )
+
+    else:
+        return MultiToolCallResult(
+            success=False,
+            error="Brak 'tool' lub 'tools' w odpowiedzi",
+            raw_response=str(raw_json),
+        )

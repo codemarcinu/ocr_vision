@@ -18,8 +18,12 @@ from app.agent.tools import (
     ToolCallResult,
     ToolName,
     validate_tool_call,
+    validate_multi_tool_call,
+    MultiToolCallResult,
+    MAX_TOOLS_IN_CHAIN,
     format_tool_descriptions,
     AnswerDirectlyArgs,
+    AskClarificationArgs,
 )
 from app.agent.validator import (
     SecurityValidator,
@@ -38,31 +42,132 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """\
 Jesteś asystentem osobistego systemu zarządzania wiedzą (Second Brain).
-Na podstawie wiadomości użytkownika wybierz JEDNO narzędzie do wywołania i podaj argumenty.
+Na podstawie wiadomości użytkownika wybierz narzędzie(a) do wywołania i podaj argumenty.
 
 Dostępne narzędzia:
 {tool_descriptions}
 
-Odpowiedz WYŁĄCZNIE poprawnym JSON w formacie:
-{{"tool": "nazwa_narzędzia", "arguments": {{"param1": "wartość1"}}}}
+═══════════════════════════════════════════════════════════════════════════════
+FORMATY ODPOWIEDZI:
+═══════════════════════════════════════════════════════════════════════════════
+
+### FORMAT A: Pojedyncze narzędzie (najczęstszy):
+{{"tool": "nazwa_narzędzia", "arguments": {{"param1": "wartość1"}}, "confidence": 0.85}}
+
+### FORMAT B: Wiele narzędzi (gdy użytkownik chce kilka rzeczy naraz):
+{{"tools": [
+    {{"tool": "summarize_url", "arguments": {{"url": "https://..."}}}},
+    {{"tool": "create_bookmark", "arguments": {{"url": "https://..."}}}}
+], "confidence": 0.9}}
+
+⚠️ WAŻNE dla multi-tool:
+- Max 3 narzędzia w jednym żądaniu
+- Tylko ACTION tools (create_note, create_bookmark, summarize_url, list_recent) - NIE search/get tools
+- Narzędzia wykonują się po kolei - wynik pierwszego może być użyty przez drugie
+- Użyj gdy polecenie zawiera "i", "oraz", "a potem", "również"
+
+⚠️ CONFIDENCE JEST OBOWIĄZKOWE - BEZ TEGO POLA ODPOWIEDŹ JEST NIEPRAWIDŁOWA!
+
+CONFIDENCE (0.0-1.0):
+- 0.9-1.0: Pewny - jasne polecenie z wszystkimi parametrami, np. "Zanotuj: spotkanie jutro o 10"
+- 0.7-0.9: Dość pewny - intencja jasna, parametry z kontekstu, np. "Jaka pogoda?" (domyślne miasto)
+- 0.5-0.7: Niepewny - muszę zgadywać, brakuje kluczowych info → rozważ ask_clarification
+- <0.5: Bardzo niepewny → ZAWSZE użyj ask_clarification
+
+═══════════════════════════════════════════════════════════════════════════════
+PRZYKŁADY (ZAWSZE WZORUJ SIĘ NA TYCH FORMATACH):
+═══════════════════════════════════════════════════════════════════════════════
+
+### Wysokie confidence (0.9+) - jasne polecenie:
+User: "Zanotuj: kupić mleko i chleb"
+→ {{"tool":"create_note","arguments":{{"title":"Lista zakupów","content":"kupić mleko i chleb"}},"confidence":0.95}}
+
+User: "Cześć!"
+→ {{"tool":"answer_directly","arguments":{{"text":"Cześć! W czym mogę pomóc?"}},"confidence":0.95}}
+
+User: "Podsumuj https://example.com/article"
+→ {{"tool":"summarize_url","arguments":{{"url":"https://example.com/article"}},"confidence":0.95}}
+
+### Średnie confidence (0.7-0.9) - intencja jasna, domyślne parametry:
+User: "Jaka pogoda?"
+→ {{"tool":"get_weather","arguments":{{}},"confidence":0.8}}
+
+User: "Co jadłem wczoraj?"
+→ {{"tool":"get_spending","arguments":{{"time_period":"wczoraj"}},"confidence":0.85}}
+
+### ⚠️ NISKIE CONFIDENCE (<0.6) → UŻYJ ask_clarification:
+User: "Zapisz to"
+→ {{"tool":"ask_clarification","arguments":{{"question":"Co chcesz zapisać?","options":["Nową notatkę","Link/zakładkę","Poprzedni wynik"]}},"confidence":0.9}}
+
+User: "Pokaż ostatnie" (bez typu)
+→ {{"tool":"ask_clarification","arguments":{{"question":"Jakiego typu elementy pokazać?","options":["Notatki","Paragony","Zakładki","Artykuły"]}},"confidence":0.9}}
+
+User: "Pokaż ostatnie notatki" (typ podany)
+→ {{"tool":"list_recent","arguments":{{"content_type":"notes","limit":5}},"confidence":0.9}}
+
+User: "Szukaj" (samo słowo bez tematu)
+→ {{"tool":"ask_clarification","arguments":{{"question":"Czego szukasz?","options":["W mojej bazie wiedzy","W internecie","Wszędzie"]}},"confidence":0.9}}
+
+User: "Znajdź coś o AI" (jest temat)
+→ {{"tool":"search_knowledge","arguments":{{"query":"AI"}},"confidence":0.85}}
+
+User: "Zrób coś z tym linkiem"
+→ {{"tool":"ask_clarification","arguments":{{"question":"Co zrobić z linkiem?","options":["Podsumować artykuł","Zapisać jako zakładkę","Oba"]}},"confidence":0.9}}
+
+### Z kontekstem [TOOL_RESULT] - użyj treści, NIE pytaj:
+Historia: [TOOL_RESULT: summarize_url]
+Artykuł o trendach AI w 2026...
+User: "Zapisz to jako notatkę"
+→ {{"tool":"create_note","arguments":{{"title":"Trendy AI 2026","content":"Artykuł o trendach AI w 2026..."}},"confidence":0.9}}
+
+### ⚡ MULTI-TOOL - gdy użytkownik chce kilka rzeczy naraz:
+User: "Podsumuj ten artykuł i zapisz jako zakładkę: https://example.com/ai"
+→ {{"tools":[
+    {{"tool":"summarize_url","arguments":{{"url":"https://example.com/ai"}}}},
+    {{"tool":"create_bookmark","arguments":{{"url":"https://example.com/ai"}}}}
+],"confidence":0.9}}
+
+User: "Pokaż ostatnie notatki i paragony"
+→ {{"tools":[
+    {{"tool":"list_recent","arguments":{{"content_type":"notes","limit":5}}}},
+    {{"tool":"list_recent","arguments":{{"content_type":"receipts","limit":5}}}}
+],"confidence":0.9}}
+
+═══════════════════════════════════════════════════════════════════════════════
+ZASADY WYBORU:
+═══════════════════════════════════════════════════════════════════════════════
+
+WYKORZYSTANIE [TOOL_RESULT]:
+- Jeśli widzisz [TOOL_RESULT: nazwa] w historii, to jest wynik poprzedniej operacji
+- UŻYJ tej treści jako argument (nie pisz "to" ani "powyższe")
+- Z [TOOL_RESULT] w historii → confidence 0.9, NIE używaj ask_clarification
+
+KIEDY ask_clarification (zamiast zgadywania):
+1. "Zapisz/zanotuj to" BEZ [TOOL_RESULT] w historii
+2. "Pokaż ostatnie" bez typu (notatki? paragony? zakładki?)
+3. "Szukaj" bez zapytania
+4. Zaimki "to", "tego", "tamto" bez kontekstu w historii
+5. Gdy confidence < 0.6 - lepiej zapytać niż zgadnąć źle
+
+WYBÓR NARZĘDZIA:
+- URL + streszczenie → summarize_url
+- URL + zapisanie → create_bookmark
+- Osobiste dane (notatki, co czytałem) → search_knowledge
+- Aktualne informacje z internetu → search_web
+- Powitania, smalltalk, matematyka → answer_directly
+
+KIEDY MULTI-TOOL (format B):
+- "Podsumuj i zapisz" → summarize_url + create_bookmark
+- "Pokaż X i Y" → list_recent(X) + list_recent(Y)
+- "Zrób A, a potem B" → tool_A + tool_B
+- Słowa kluczowe: "i", "oraz", "a także", "również", "potem"
+- NIE używaj multi-tool dla: search_*, get_*, answer_directly
 
 WAŻNE dla create_note:
-- "title" = krótki tytuł/nagłówek (3-8 słów), np. "Lista zakupów", "Spotkanie z Tomkiem"
-- "content" = pełna treść notatki, ZAWSZE wymagane, skopiuj tekst użytkownika
+- "title" = krótki nagłówek (3-8 słów)
+- "content" = pełna treść, ZAWSZE wymagane (nie puste "to")
 
-Przykłady create_note:
-- "Zanotuj: kupić mleko" → {{"tool":"create_note","arguments":{{"title":"Lista zakupów","content":"kupić mleko"}}}}
-- "Zapisz że jutro dentysta" → {{"tool":"create_note","arguments":{{"title":"Przypomnienie dentysta","content":"jutro wizyta u dentysty"}}}}
-
-Zasady:
-- Wybierz DOKŁADNIE JEDNO narzędzie najlepiej pasujące do zapytania
-- Podaj tylko argumenty istotne dla zapytania (pomiń opcjonalne jeśli nie podano)
-- Jeśli użytkownik podaje URL i prosi o streszczenie → summarize_url
-- Jeśli użytkownik podaje URL i prosi o zapisanie → create_bookmark
-- Jeśli pytanie dotyczy osobistych danych (co czytałem, moje notatki) → search_knowledge
-- Jeśli pytanie dotyczy aktualnych wiadomości/informacji z internetu → search_web
-- answer_directly: powitania (cześć, hej), smalltalk (co u ciebie, co tam), matematyka, wiedza ogólna
-- Zawsze odpowiadaj TYLKO JSON, bez dodatkowego tekstu"""
+Zawsze odpowiadaj TYLKO JSON. ZAWSZE dodaj pole confidence."""
 
 
 def get_system_prompt() -> str:
@@ -91,6 +196,7 @@ class AgentCallLog:
     execution_success: bool = False
     execution_error: Optional[str] = None
     execution_result: Optional[Any] = None
+    confidence: Optional[float] = None  # LLM confidence score (0.0-1.0)
     retry_count: int = 0
     total_time_ms: int = 0
     injection_risk: str = "none"
@@ -110,6 +216,7 @@ class AgentCallLog:
             "validation_error": self.validation_error,
             "execution_success": self.execution_success,
             "execution_error": self.execution_error,
+            "confidence": self.confidence,
             "retry_count": self.retry_count,
             "total_time_ms": self.total_time_ms,
             "injection_risk": self.injection_risk,
@@ -128,6 +235,11 @@ class AgentResponse:
     error: Optional[str] = None
     log: Optional[AgentCallLog] = None
     warnings: list[str] = field(default_factory=list)
+    # Multi-tool support
+    is_multi: bool = False
+    tools: list[str] = field(default_factory=list)
+    arguments_list: list[dict] = field(default_factory=list)
+    validated_args_list: list = field(default_factory=list)  # List of Pydantic models
 
 
 # Tool executor type
@@ -204,11 +316,19 @@ class AgentRouter:
         for name, executor in executors.items():
             self.register_executor(name, executor)
 
-    async def process(self, user_input: str) -> AgentResponse:
-        """Process user input and route to appropriate tool.
+    async def process(
+        self,
+        user_input: str,
+        conversation_history: Optional[list[dict]] = None,
+    ) -> AgentResponse:
+        """Process user input and route to appropriate tool(s).
+
+        Supports both single-tool and multi-tool requests.
 
         Args:
             user_input: Raw user message
+            conversation_history: Optional recent messages [{role, content}, ...]
+                                  for context awareness (e.g., "to", "tego")
 
         Returns:
             AgentResponse with tool result or error
@@ -236,7 +356,7 @@ class AgentRouter:
 
         # 2. Call LLM with retries
         tool_result = await self._call_llm_with_retry(
-            validation.sanitized_input, log
+            validation.sanitized_input, log, conversation_history
         )
 
         if not tool_result.success:
@@ -263,10 +383,43 @@ class AgentRouter:
                 warnings=warnings,
             )
 
-        # 3. Additional URL validation for url-based tools
-        tool_name = tool_result.tool_call.tool.value
-        validated_args = tool_result.validated_args
+        # 3. Handle multi-tool vs single-tool
+        if tool_result.is_multi:
+            # Multi-tool: return all tools for external execution
+            tool_names = [tc.tool.value for tc in tool_result.tool_calls]
+            args_list = [
+                args.model_dump() if args else {}
+                for args in tool_result.validated_args_list
+            ]
 
+            log.parsed_tool = ",".join(tool_names)
+            log.parsed_arguments = {"tools": args_list}
+            log.validation_success = True
+            log.total_time_ms = int((time.time() - start_time) * 1000)
+
+            logger.info(f"Multi-tool request: {tool_names}")
+
+            return AgentResponse(
+                success=True,
+                # For backwards compatibility, first tool goes in singular fields
+                tool=tool_names[0] if tool_names else None,
+                arguments=args_list[0] if args_list else None,
+                result=None,  # Not executed here
+                log=log if self.log_calls else None,
+                warnings=warnings,
+                # Multi-tool specific fields
+                is_multi=True,
+                tools=tool_names,
+                arguments_list=args_list,
+                validated_args_list=tool_result.validated_args_list,
+            )
+
+        # Single tool handling (original logic)
+        tool_call = tool_result.tool_calls[0]
+        validated_args = tool_result.validated_args_list[0]
+        tool_name = tool_call.tool.value
+
+        # 4. Additional URL validation for url-based tools
         if self.validate_urls and tool_name in ("summarize_url", "create_bookmark"):
             url = getattr(validated_args, "url", None)
             if url:
@@ -287,7 +440,7 @@ class AgentRouter:
         log.parsed_arguments = validated_args.model_dump() if validated_args else None
         log.validation_success = True
 
-        # 4. Execute tool
+        # 5. Execute tool
         result = await self._execute_tool(tool_name, validated_args, log)
 
         log.total_time_ms = int((time.time() - start_time) * 1000)
@@ -303,16 +456,22 @@ class AgentRouter:
         )
 
     async def _call_llm_with_retry(
-        self, user_input: str, log: AgentCallLog
-    ) -> ToolCallResult:
+        self,
+        user_input: str,
+        log: AgentCallLog,
+        conversation_history: Optional[list[dict]] = None,
+    ) -> MultiToolCallResult:
         """Call LLM and parse response with retry logic.
+
+        Supports both single-tool and multi-tool responses.
 
         Args:
             user_input: Sanitized user input
             log: Call log to update
+            conversation_history: Optional recent messages for context
 
         Returns:
-            ToolCallResult with parsed tool call or error
+            MultiToolCallResult with parsed tool call(s) or error
         """
         last_error: Optional[str] = None
         temperature = 0.0
@@ -320,16 +479,24 @@ class AgentRouter:
         for attempt in range(self.max_retries + 1):
             log.retry_count = attempt
 
-            # Call Ollama
-            messages = [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": user_input},
-            ]
+            # Build messages with conversation context
+            messages = [{"role": "system", "content": self.system_prompt}]
+
+            # Add conversation history for context (limit to last 4 messages)
+            if conversation_history:
+                for msg in conversation_history[-4:]:
+                    messages.append({
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", "")[:1500],  # Truncate long messages
+                    })
+
+            # Add current user input
+            messages.append({"role": "user", "content": user_input})
 
             response, error = await post_chat(
                 model=self.model,
                 messages=messages,
-                options={"temperature": temperature, "num_predict": 300},
+                options={"temperature": temperature, "num_predict": 500},  # More tokens for multi-tool
                 format="json",
                 timeout=60.0,
             )
@@ -350,17 +517,141 @@ class AgentRouter:
                 temperature = self.retry_temperature
                 continue
 
-            # Validate tool call
-            result = validate_tool_call(parsed)
+            # Extract confidence from response
+            confidence = parsed.get("confidence")
+            confidence_missing = confidence is None
+            if confidence is not None:
+                try:
+                    confidence = float(confidence)
+                    confidence = max(0.0, min(1.0, confidence))  # Clamp to 0.0-1.0
+                    log.confidence = confidence
+                except (ValueError, TypeError):
+                    confidence = None
+                    confidence_missing = True
+
+            # Validate tool call(s) - handles both single and multi-tool format
+            result = validate_multi_tool_call(parsed)
             if not result.success:
                 last_error = result.error
                 logger.warning(f"Validation failed (attempt {attempt + 1}): {result.error}")
                 temperature = self.retry_temperature
                 continue
 
+            # For multi-tool, skip auto-clarification (user was explicit about wanting multiple tools)
+            if result.is_multi:
+                logger.info(f"Multi-tool request: {[tc.tool.value for tc in result.tool_calls]}")
+                return result
+
+            # For single-tool, apply auto-clarification logic
+            tool_call = result.tool_calls[0] if result.tool_calls else None
+            tool_name = tool_call.tool.value if tool_call else None
+            args = result.validated_args_list[0] if result.validated_args_list else None
+            should_clarify = False
+            clarify_reason = ""
+
+            # Skip clarification check for these tools (they're safe to execute)
+            safe_tools = {"answer_directly", "ask_clarification", "get_weather"}
+
+            if tool_name and tool_name not in safe_tools:
+                # Case 1: Explicit low confidence
+                if confidence is not None and confidence < settings.AGENT_CONFIDENCE_THRESHOLD:
+                    should_clarify = True
+                    clarify_reason = f"low confidence ({confidence:.2f})"
+
+                # Case 2: Missing confidence for ambiguous-prone tools
+                # These tools often fail without enough context
+                ambiguous_tools = {"create_note", "create_bookmark", "list_recent"}
+                if confidence_missing and tool_name in ambiguous_tools:
+                    # Check if there's [TOOL_RESULT] in conversation that provides context
+                    has_tool_result = False
+                    if conversation_history:
+                        for msg in conversation_history[-4:]:
+                            if "[TOOL_RESULT:" in msg.get("content", ""):
+                                has_tool_result = True
+                                break
+
+                    # Only clarify if no context available
+                    if not has_tool_result:
+                        # Check if user input is very short (likely ambiguous)
+                        if len(user_input.strip()) < 30:
+                            should_clarify = True
+                            clarify_reason = f"missing confidence + short input for {tool_name}"
+                            log.confidence = 0.5  # Mark as uncertain
+
+                # Case 3: Search tools with trivial/echo query
+                # If query is exactly the same as input, model didn't extract real topic
+                if tool_name in ("search_knowledge", "search_web") and args:
+                    query = getattr(args, "query", None)
+                    if query:
+                        input_lower = user_input.lower().strip()
+                        query_lower = query.lower().strip()
+                        # Check if query is just echoed input (exact match) or too short
+                        # Note: query being PART of input is fine (extraction is working)
+                        is_exact_echo = query_lower == input_lower
+                        is_trivial = len(query_lower) < 4  # Very short queries like "ai" are OK
+                        is_search_command = input_lower in ("szukaj", "wyszukaj", "znajdź", "search", "find")
+                        if (is_exact_echo or is_search_command) and len(input_lower) < 15:
+                            should_clarify = True
+                            clarify_reason = f"trivial search query '{query}'"
+                            log.confidence = 0.5
+
+                # Case 4: list_recent without explicit type in short input
+                if tool_name == "list_recent" and len(user_input.strip()) < 20:
+                    # Check if user specified a type explicitly
+                    input_lower = user_input.lower()
+                    explicit_types = ["notat", "paragony", "receipt", "zakładk", "bookmark", "artykuł"]
+                    has_explicit_type = any(t in input_lower for t in explicit_types)
+                    if not has_explicit_type:
+                        should_clarify = True
+                        clarify_reason = "list_recent without explicit type"
+                        log.confidence = 0.5
+
+            if should_clarify and tool_call:
+                logger.info(
+                    f"Auto-clarification triggered ({clarify_reason}), "
+                    f"converting '{tool_name}' to ask_clarification"
+                )
+                # Create ask_clarification fallback
+                original_tool = tool_name or "unknown"
+
+                # Generate contextual question based on tool
+                question_map = {
+                    "create_note": "Co chcesz zanotować?",
+                    "create_bookmark": "Jaki link chcesz zapisać?",
+                    "list_recent": "Jakiego typu elementy pokazać?",
+                    "search_knowledge": "Czego szukasz w swojej bazie wiedzy?",
+                    "search_web": "Czego szukasz w internecie?",
+                }
+                question = question_map.get(original_tool, f"Czy chodziło Ci o '{original_tool}'?")
+
+                options_map = {
+                    "create_note": None,  # Free text is better for notes
+                    "create_bookmark": None,
+                    "list_recent": ["Notatki", "Paragony", "Zakładki", "Artykuły"],
+                    "search_knowledge": None,
+                    "search_web": None,
+                }
+                options = options_map.get(original_tool, ["Tak, wykonaj", "Nie, chcę coś innego"])
+
+                clarification_call = ToolCall(
+                    tool=ToolName.ASK_CLARIFICATION,
+                    arguments={
+                        "question": question,
+                        **({"options": options} if options else {}),
+                        "context": f"Wykryto: {original_tool}" if confidence_missing else f"Pewność: {confidence:.0%}",
+                    }
+                )
+                clarification_args = AskClarificationArgs.model_validate(clarification_call.arguments)
+                return MultiToolCallResult(
+                    success=True,
+                    is_multi=False,
+                    tool_calls=[clarification_call],
+                    validated_args_list=[clarification_args],
+                )
+
             return result
 
-        return ToolCallResult(
+        return MultiToolCallResult(
             success=False,
             error=last_error or "Nieznany błąd po wszystkich próbach",
         )

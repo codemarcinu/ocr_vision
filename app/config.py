@@ -240,6 +240,9 @@ class Settings:
     # Agent tool-calling in chat (auto-detect actions like create_note, bookmark)
     CHAT_AGENT_ENABLED: bool = os.getenv("CHAT_AGENT_ENABLED", "true").lower() == "true"
 
+    # Agent confidence threshold - below this value, auto-fallback to ask_clarification
+    AGENT_CONFIDENCE_THRESHOLD: float = float(os.getenv("AGENT_CONFIDENCE_THRESHOLD", "0.6"))
+
     # Web search content fetching
     WEB_FETCH_ENABLED: bool = os.getenv("WEB_FETCH_ENABLED", "true").lower() == "true"
     WEB_FETCH_TOP_N: int = int(os.getenv("WEB_FETCH_TOP_N", "3"))

@@ -144,12 +144,23 @@ Analytics endpoints at `/reports/*`:
 
 ### Docker Volume Mounts
 
-Local paths map to `/data/` inside the container:
+Default paths in `docker-compose.yml` map to `/data/` inside the container:
 ```
 ./paragony    → /data/paragony    (receipt inbox/processed)
-./vault       → /data/vault       (Obsidian output: paragony, notes, bookmarks, transcriptions, summaries, logs, daily)
+./vault       → /data/vault       (Obsidian: paragony, bookmarks, transcriptions, logs, daily)
 ```
-All `*_OUTPUT_DIR` settings in `config.py` default to subdirectories of `/data/vault/` so that all generated markdown is visible in Obsidian.
+
+**Production override** (`docker-compose.override.yml`) maps to actual Obsidian vault:
+```yaml
+volumes:
+  - /home/marcin/Dokumenty/sejf/2brain/zakupy:/data/vault      # receipts
+  - /home/marcin/Dokumenty/sejf/2brain/artykuly:/data/summaries # RSS summaries
+  - /home/marcin/Dokumenty/sejf/2brain/0-inbox:/data/notes      # personal notes
+```
+
+Container runs as `user: "1000:1000"` so files have correct ownership (marcin:marcin).
+
+All `*_OUTPUT_DIR` settings in `config.py` can be overridden via env vars (e.g., `NOTES_OUTPUT_DIR=/data/notes`).
 
 ### Key Design Patterns
 
@@ -211,8 +222,17 @@ LLM-based natural language routing to system tools. User sends a message (text o
 **Chat Integration (`CHAT_AGENT_ENABLED=true`):**
 Agent is integrated with chat as a pre-processor. When user sends a message:
 1. Agent classifies: is this an ACTION or a SEARCH/CONVERSATION?
-2. **Action tools** (`create_note`, `create_bookmark`, `summarize_url`, `list_recent`) → execute immediately
-3. **Search tools** (`search_knowledge`, `search_web`, `get_weather`, `get_spending`, `get_inventory`, `answer_directly`) → fall through to orchestrator with conversation history
+2. **Action tools** (`create_note`, `create_bookmark`, `summarize_url`, `list_recent`, `ask_clarification`) → execute immediately
+3. **Search tools** (`search_knowledge`, `search_web`, `get_weather`, `get_spending`, `get_inventory`, `answer_directly`) → fall through to orchestrator with `search_strategy` hint (skips IntentClassifier)
+
+**Tool Result Memory:**
+When action tools execute, their results are saved to conversation history with `[TOOL_RESULT: tool_name]` prefix. This allows agent to reference previous tool outputs in follow-up requests (e.g., "zapisz to jako notatkę" after `summarize_url`).
+
+**Clarification Tool:**
+`ask_clarification` allows agent to ask user for more details when intent is unclear (e.g., "zapisz to" without context). Returns formatted question with optional suggested options.
+
+**Confidence Scoring:**
+Agent returns confidence score (0.0-1.0) with each tool selection. When confidence < `AGENT_CONFIDENCE_THRESHOLD` (default 0.6), auto-fallback to `ask_clarification` instead of guessing. Confidence logged to `agent_call_logs` table for analytics.
 
 ```
 User: "Zanotuj: spotkanie jutro o 10"
@@ -225,12 +245,12 @@ User: "Co jadłem w tym tygodniu?"
 ```
 
 **Components:**
-- `tools.py` - Tool definitions (10 tools), Pydantic argument models, validation
+- `tools.py` - Tool definitions (11 tools), Pydantic argument models, validation
 - `router.py` - AgentRouter class: LLM call with retry, tool dispatch, logging
 - `validator.py` - Input sanitization, prompt injection detection (low/medium/high risk)
 - `app/chat/agent_executor.py` - Tool executors connecting to notes/bookmarks/RSS APIs
 
-**Available tools:** `create_note`, `search_knowledge`, `search_web`, `get_spending`, `get_inventory`, `get_weather`, `summarize_url`, `list_recent`, `create_bookmark`, `answer_directly`
+**Available tools:** `create_note`, `search_knowledge`, `search_web`, `get_spending`, `get_inventory`, `get_weather`, `summarize_url`, `list_recent`, `create_bookmark`, `answer_directly`, `ask_clarification`
 
 **Usage (standalone):**
 ```python
@@ -277,6 +297,7 @@ GENERATE_OBSIDIAN_FILES=true
 RAG_ENABLED=true
 CHAT_ENABLED=true
 CHAT_AGENT_ENABLED=true              # Agent tool-calling in chat (auto-detect actions)
+AGENT_CONFIDENCE_THRESHOLD=0.6       # Auto-fallback to ask_clarification below this
 TRANSCRIPTION_ENABLED=true
 NOTES_ENABLED=true
 BOOKMARKS_ENABLED=true
@@ -328,15 +349,18 @@ HTMX + Jinja2 templates at `http://localhost:8000/app/`. Templates in `app/templ
 
 ## Output Files
 
-All output goes to `vault/` (Obsidian vault):
-- `vault/paragony/*.md` - Receipt markdown with YAML frontmatter
-- `vault/spiżarnia.md` - Aggregated pantry view
-- `vault/logs/` - Error log, unmatched products JSON, corrections JSON
-- `vault/notes/*.md` - Personal notes + index
-- `vault/bookmarks/index.md` - Bookmarks index
-- `vault/transcriptions/*.md` - Transcription notes + index
-- `vault/summaries/*.md` - RSS article summaries + index
-- `vault/daily/*.md` - Daily summaries
+Output goes to Obsidian vault (paths via `docker-compose.override.yml`):
+
+| Content | Container Path | Obsidian Path (production) |
+|---------|---------------|---------------------------|
+| Receipts | `/data/vault/paragony/*.md` | `2brain/zakupy/paragony/` |
+| Pantry view | `/data/vault/spiżarnia.md` | `2brain/zakupy/` |
+| Logs | `/data/vault/logs/` | `2brain/zakupy/logs/` |
+| **Notes** | `/data/notes/*.md` | `2brain/0-inbox/` |
+| Bookmarks | `/data/vault/bookmarks/` | `2brain/zakupy/bookmarks/` |
+| Transcriptions | `/data/vault/transcriptions/` | `2brain/zakupy/transcriptions/` |
+| RSS summaries | `/data/summaries/*.md` | `2brain/artykuly/` |
+| Daily | `/data/vault/daily/` | `2brain/zakupy/daily/` |
 
 ## Database
 

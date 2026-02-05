@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -772,6 +773,9 @@ class AgentCallLog(Base):
     # Execution
     execution_success: Mapped[bool] = mapped_column(Boolean, default=False)
     execution_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Confidence score from LLM (0.0-1.0)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Metadata
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
