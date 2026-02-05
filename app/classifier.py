@@ -6,13 +6,14 @@ Optimizations:
 - Uses connection pooling via ollama_client module
 - A/B testing runs models in parallel (not sequential)
 - Skips LLM categorization for products already categorized by dictionary
+- Category cache with TTL to skip LLM for recently seen products
 """
 
 import asyncio
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,67 @@ logger = logging.getLogger(__name__)
 
 # A/B test results log file
 AB_TEST_LOG = settings.LOGS_DIR / "classifier_ab_test.jsonl"
+
+# =============================================================================
+# Category Cache (skip LLM for recently categorized products)
+# =============================================================================
+# Cache structure: {product_name: (category, confidence, cached_at)}
+_category_cache: dict[str, tuple[str, float, datetime]] = {}
+
+
+def get_cached_category(product_name: str) -> Optional[tuple[str, float]]:
+    """Get cached category if not expired.
+
+    Args:
+        product_name: The product name to look up
+
+    Returns:
+        Tuple of (category, confidence) if cached and not expired, None otherwise
+    """
+    if not settings.CLASSIFIER_CACHE_TTL:
+        return None
+
+    normalized = product_name.strip().lower()
+    if normalized in _category_cache:
+        category, confidence, cached_at = _category_cache[normalized]
+        if datetime.now() - cached_at < timedelta(seconds=settings.CLASSIFIER_CACHE_TTL):
+            return category, confidence
+        # Expired - remove from cache
+        del _category_cache[normalized]
+    return None
+
+
+def cache_category(product_name: str, category: str, confidence: float) -> None:
+    """Cache a product category.
+
+    Args:
+        product_name: The product name
+        category: The assigned category
+        confidence: The confidence score (0-1)
+    """
+    if not settings.CLASSIFIER_CACHE_TTL:
+        return
+
+    normalized = product_name.strip().lower()
+    _category_cache[normalized] = (category, confidence, datetime.now())
+
+
+def clear_category_cache() -> None:
+    """Clear all cached categories."""
+    global _category_cache
+    _category_cache = {}
+
+
+def get_cache_stats() -> dict:
+    """Get cache statistics."""
+    now = datetime.now()
+    ttl = timedelta(seconds=settings.CLASSIFIER_CACHE_TTL)
+    valid = sum(1 for _, _, cached_at in _category_cache.values() if now - cached_at < ttl)
+    return {
+        "total_entries": len(_category_cache),
+        "valid_entries": valid,
+        "ttl_seconds": settings.CLASSIFIER_CACHE_TTL,
+    }
 
 def _log_ab_result(
     model_a: str,
@@ -232,9 +294,12 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
         return [], None
 
     # Optimization: separate products that need LLM categorization from already-categorized
-    # Products with dictionary category (confidence >= 0.6) don't need LLM
+    # Sources that skip LLM:
+    # 1. Dictionary category with confidence >= 0.6
+    # 2. Category cache with valid TTL
     needs_llm = []
     already_categorized = []
+    cache_hits = 0
 
     for p in products:
         if p.kategoria and p.confidence and p.confidence >= 0.6:
@@ -253,7 +318,27 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
                 rabat=p.rabat,
             ))
         else:
-            needs_llm.append(p)
+            # Check cache before adding to needs_llm
+            cached = get_cached_category(p.nazwa)
+            if cached:
+                category, confidence = cached
+                cache_hits += 1
+                already_categorized.append(CategorizedProduct(
+                    nazwa=p.nazwa,
+                    cena=p.cena,
+                    kategoria=category,
+                    confidence=confidence,
+                    warning=p.warning,
+                    nazwa_oryginalna=p.nazwa_oryginalna,
+                    nazwa_znormalizowana=p.nazwa_znormalizowana,
+                    cena_oryginalna=p.cena_oryginalna,
+                    rabat=p.rabat,
+                ))
+            else:
+                needs_llm.append(p)
+
+    if cache_hits > 0:
+        logger.info(f"Category cache: {cache_hits} hits")
 
     # If all products are already categorized, skip LLM entirely
     if not needs_llm:
@@ -363,6 +448,11 @@ async def categorize_products(products: list[Product]) -> tuple[list[Categorized
                 cena_oryginalna=original.cena_oryginalna if original else None,
                 rabat=original.rabat if original else None,
             ))
+
+            # Cache the category for future use (skip "Inne" - not useful to cache)
+            if category != "Inne" and confidence >= 0.7:
+                cache_category(name, category, confidence)
+
         except (ValueError, TypeError) as e:
             logger.warning(f"Skipping invalid categorized product: {p} - {e}")
             continue

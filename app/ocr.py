@@ -145,6 +145,70 @@ RULES:
 - Prices as numbers with dot decimal (7.88 not 7,88)"""
 
 
+# Single-model comprehensive prompt (OCR + structuring + categorization in one call)
+# Used when OCR_SINGLE_MODEL_MODE=true to avoid model switching
+OCR_COMPREHENSIVE_PROMPT = """Analyze this Polish grocery store receipt image and extract ALL products with prices and categories.
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 1: READ THE RECEIPT - Extract all text carefully
+STEP 2: IDENTIFY PRODUCTS - Each product line = one entry
+STEP 3: CALCULATE FINAL PRICES - After all discounts
+STEP 4: ASSIGN CATEGORIES - From the list below
+═══════════════════════════════════════════════════════════════════════════════
+
+PRICE RULES (CRITICAL):
+1. WEIGHTED PRODUCTS (kg): "0.279 x 28.20" then "7.88" → final price is 7.88, NOT 28.20
+2. DISCOUNTED: price → "Rabat -X.XX" → final price = LAST number before next product
+3. REGULAR: single price = final price
+
+CATEGORIES (choose ONE per product):
+- Nabiał (dairy: milk, cheese, yogurt, eggs)
+- Pieczywo (bakery: bread, rolls)
+- Mięso (meat: chicken, pork, beef)
+- Wędliny (cold cuts: ham, sausage)
+- Ryby (fish, seafood)
+- Warzywa (vegetables)
+- Owoce (fruits)
+- Napoje (drinks: juice, water, soda)
+- Alkohol (beer, wine, spirits)
+- Napoje gorące (coffee, tea)
+- Słodycze (sweets: chocolate, candy)
+- Przekąski (snacks: chips, nuts)
+- Produkty sypkie (dry goods: pasta, rice, flour)
+- Przyprawy (spices, sauces, ketchup)
+- Konserwy (canned goods)
+- Mrożonki (frozen foods)
+- Dania gotowe (ready meals)
+- Chemia (cleaning supplies)
+- Kosmetyki (personal care)
+- Dla dzieci (baby products)
+- Dla zwierząt (pet products)
+- Inne (other)
+
+Return ONLY valid JSON:
+{{
+  "products": [
+    {{"nazwa": "Product name", "cena": 7.88, "kategoria": "Nabiał", "cena_przed": 11.13, "rabat": 3.25}},
+    {{"nazwa": "Another product", "cena": 3.49, "kategoria": "Pieczywo"}}
+  ],
+  "sklep": "Store name",
+  "data": "YYYY-MM-DD",
+  "suma": 123.45
+}}
+
+Fields:
+- "nazwa": product name from receipt
+- "cena": FINAL price (after discount)
+- "kategoria": category from list above
+- "cena_przed": price before discount (optional)
+- "rabat": discount amount as positive number (optional)
+- "sklep": store name (Biedronka, Lidl, etc.)
+- "data": date in YYYY-MM-DD format
+- "suma": total paid (look for "Suma PLN", "DO ZAPŁATY", "Karta płatnicza")
+
+IGNORE: PTU/VAT lines, payment method lines, receipt numbers."""
+
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
@@ -459,6 +523,34 @@ async def extract_products_from_image(
         logger.error(f"Failed to encode image {image_path}: {e}")
         return None, f"Failed to read image: {e}"
 
+    # Single-model mode: Use comprehensive prompt (OCR + categorization in one call)
+    # This avoids model switching between vision and text models
+    if settings.OCR_SINGLE_MODEL_MODE:
+        logger.info(f"Vision OCR (single-model mode): {image_path.name}")
+        response_text, error = await call_ollama(
+            OCR_COMPREHENSIVE_PROMPT,
+            image_base64,
+            timeout=360.0,  # Longer timeout for comprehensive processing
+        )
+
+        if error:
+            logger.error(f"Single-model OCR failed: {error}")
+            # Fall back to standard mode
+            logger.info("Falling back to standard two-model mode")
+        else:
+            data = parse_json_response(response_text)
+            if data:
+                products_data = data if isinstance(data, list) else data.get("products", [])
+                if products_data and len(products_data) >= 2:
+                    # Build receipt with pre-categorized products
+                    receipt, build_error = _build_receipt_with_categories(data, response_text)
+                    if receipt:
+                        logger.info(f"Single-model OCR succeeded: {len(receipt.products)} products")
+                        return receipt, None
+                    logger.warning(f"Single-model build failed: {build_error}, falling back")
+
+            logger.warning("Single-model OCR produced insufficient results, falling back")
+
     # Stage 1: Primary extraction (single-pass)
     logger.info(f"Vision OCR (primary): {image_path.name}")
     response_text, error = await call_ollama(OCR_PROMPT, image_base64)
@@ -635,6 +727,147 @@ async def _extract_two_stage(image_base64: str, filename: str) -> tuple[Optional
         logger.info(f"Two-stage extracted {len(receipt.products)} products")
 
     return receipt, build_error
+
+
+def _build_receipt_with_categories(data: dict, raw_response: str) -> tuple[Optional[Receipt], Optional[str]]:
+    """Build Receipt object from parsed data that already includes categories.
+
+    Used by single-model OCR mode where the vision model provides both
+    product extraction and categorization in one call.
+    """
+    metadata = data if isinstance(data, dict) else {}
+    products_data = data if isinstance(data, list) else data.get("products", [])
+
+    # Detect store
+    store_from_model = metadata.get("sklep") or metadata.get("store_name") or ""
+    detected_store = detect_store_from_text(store_from_model) or detect_store_from_text(raw_response)
+
+    if detected_store:
+        logger.info(f"Detected store: {detected_store}")
+
+    # Valid categories from settings
+    valid_categories = set(settings.CATEGORIES)
+
+    # Skip patterns
+    skip_patterns = ['PTU', 'VAT', 'SUMA', 'TOTAL', 'RAZEM', 'PARAGON', 'FISKALNY',
+                     'KAUCJ', 'ZWROT', 'OPAKOW', 'PŁATN', 'PLATN', 'KARTA', 'SPRZEDA',
+                     'GOTÓWKA', 'RESZTA', 'WYDANO', 'NUMER', 'TRANS', 'OPODATK']
+
+    products = []
+    for p in products_data:
+        try:
+            name = str(p.get("nazwa") or p.get("name") or "").strip()
+            price = float(p.get("cena") or p.get("price") or 0)
+
+            if not name or len(name) < 4:
+                continue
+
+            name_upper = name.upper()
+            if any(pat in name_upper for pat in skip_patterns):
+                continue
+
+            if price <= 0 or price > 500:
+                continue
+
+            # Get category from model response
+            model_category = str(p.get("kategoria") or p.get("category") or "").strip()
+            if model_category and model_category in valid_categories:
+                category = model_category
+                confidence = 0.85  # Model-assigned category
+            else:
+                # Fallback to dictionary normalization
+                norm_result = normalize_product(name, store=detected_store)
+                category = norm_result.category if norm_result.confidence >= 0.6 else None
+                confidence = norm_result.confidence if norm_result.confidence >= 0.6 else None
+
+                if norm_result.method == "no_match":
+                    log_unmatched_product(name, price, detected_store, norm_result.confidence)
+
+            # Extract discount info
+            original_price = None
+            discount = None
+            try:
+                original_price = float(p.get("cena_przed") or 0) or None
+            except (ValueError, TypeError):
+                pass
+            try:
+                discount = abs(float(p.get("rabat") or 0)) or None
+            except (ValueError, TypeError):
+                pass
+
+            if original_price and not discount and original_price > price:
+                discount = round(original_price - price, 2)
+
+            rabaty_szczegoly = None
+            if discount:
+                rabaty_szczegoly = [DiscountDetail(typ="kwotowy", wartosc=discount, opis="Rabat")]
+
+            warning = None
+            if price > settings.PRICE_WARNING_THRESHOLD:
+                warning = f"Price > {settings.PRICE_WARNING_THRESHOLD} PLN"
+
+            products.append(Product(
+                nazwa=name,
+                cena=price,
+                warning=warning,
+                nazwa_oryginalna=name,
+                nazwa_znormalizowana=name,  # Skip heavy normalization in single-model mode
+                kategoria=category,
+                confidence=confidence,
+                cena_oryginalna=original_price,
+                rabat=discount,
+                rabaty_szczegoly=rabaty_szczegoly,
+            ))
+
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Skipping invalid product: {p} - {e}")
+            continue
+
+    if not products:
+        return None, "No products found"
+
+    # Run price fixer
+    products, price_warnings = fix_products(products)
+
+    # Extract metadata
+    receipt_date = metadata.get("data") or metadata.get("date")
+    if receipt_date in ("null", None, ""):
+        receipt_date = None
+
+    if detected_store:
+        receipt_store = get_store_display_name(detected_store)
+    else:
+        receipt_store = store_from_model if store_from_model not in ("null", None, "") else None
+
+    # Extract total
+    receipt_total = None
+    regex_total = extract_total_from_text(raw_response)
+    if regex_total:
+        receipt_total = regex_total
+    else:
+        try:
+            model_total = metadata.get("suma") or metadata.get("total")
+            if model_total and model_total != "null":
+                receipt_total = float(model_total)
+        except (ValueError, TypeError):
+            pass
+
+    calculated_total = round(sum(p.cena for p in products), 2)
+    if not receipt_total:
+        receipt_total = calculated_total
+
+    receipt = Receipt(
+        products=products,
+        sklep=receipt_store,
+        data=receipt_date,
+        suma=receipt_total,
+        raw_text=raw_response,
+        calculated_total=calculated_total,
+    )
+
+    logger.info(f"Built receipt (single-model): {len(products)} products, store={receipt_store}")
+
+    return receipt, None
 
 
 def _build_receipt(data: dict, raw_response: str) -> tuple[Optional[Receipt], Optional[str]]:
