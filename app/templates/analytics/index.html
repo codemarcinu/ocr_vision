@@ -5,8 +5,81 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 {% endblock %}
 
+{% block breadcrumb %}
+{% set breadcrumbs = [{"label": "Analityka"}] %}
+{% include "components/breadcrumbs.html" %}
+{% endblock %}
+
 {% block content %}
-<h4 class="mb-4">Analityka</h4>
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="mb-0">Analityka</h4>
+    <div class="dropdown">
+        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="bi bi-download me-1"></i> Eksport CSV
+        </button>
+        <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/app/analityka/export?type=monthly">Wydatki miesięczne</a></li>
+            <li><a class="dropdown-item" href="/app/analityka/export?type=stores">Sklepy</a></li>
+            <li><a class="dropdown-item" href="/app/analityka/export?type=categories">Kategorie</a></li>
+        </ul>
+    </div>
+</div>
+
+<!-- KPI Summary Cards -->
+{% if kpi %}
+<div class="row g-3 mb-4">
+    {% if kpi.weekly and kpi.weekly.this_week is defined %}
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Ten tydzień</div>
+                <div class="fs-5 fw-bold">{{ "%.2f"|format(kpi.weekly.this_week.total) }} zł</div>
+                {% if kpi.weekly.diff_pct is defined %}
+                <small class="{{ 'text-danger' if kpi.weekly.diff_pct > 0 else 'text-success' }}">
+                    <i class="bi bi-{{ 'arrow-up' if kpi.weekly.diff_pct > 0 else 'arrow-down' }}"></i>
+                    {{ "%.0f"|format(kpi.weekly.diff_pct|abs) }}% vs poprzedni
+                </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if kpi.discounts and kpi.discounts.total_savings is defined %}
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Oszczędności</div>
+                <div class="fs-5 fw-bold text-success">{{ "%.2f"|format(kpi.discounts.total_savings) }} zł</div>
+                <small class="text-muted">{{ kpi.discounts.discounted_items }} produktów z rabatem</small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if kpi.top_store %}
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Najczęstszy sklep</div>
+                <div class="fs-5 fw-bold">{{ kpi.top_store.store or kpi.top_store.get("store", "-") }}</div>
+                <small class="text-muted">{{ kpi.top_store.receipt_count or kpi.top_store.get("receipt_count", 0) }} paragonów</small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if kpi.weekly and kpi.weekly.this_week is defined %}
+    <div class="col-6 col-md-3">
+        <div class="card">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Średni paragon</div>
+                {% set avg = (kpi.weekly.this_week.total / kpi.weekly.this_week.receipts) if kpi.weekly.this_week.receipts else 0 %}
+                <div class="fs-5 fw-bold">{{ "%.2f"|format(avg) }} zł</div>
+                <small class="text-muted">{{ kpi.weekly.this_week.receipts }} paragonów</small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 
 <!-- Tabs -->
 <ul class="nav nav-tabs mb-4">
