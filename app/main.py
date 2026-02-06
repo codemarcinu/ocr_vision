@@ -187,7 +187,7 @@ async def startup_event():
             async for session in get_session():
                 repo = EmbeddingRepository(session)
                 stats = await repo.get_stats()
-                total = sum(stats.values()) if stats else 0
+                total = stats.get("total_chunks", 0) if stats else 0
                 if total == 0:
                     logger.info("RAG: embeddings table empty, starting background reindex")
                     asyncio.create_task(reindex_all(progress_callback=lambda msg: logger.info(f"RAG reindex: {msg}")))

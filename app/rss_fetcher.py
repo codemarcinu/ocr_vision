@@ -95,7 +95,7 @@ async def fetch_feed(feed_url: str) -> Tuple[Optional[FeedInfo], Optional[str]]:
                 )
             )
 
-        feed_title = parsed.feed.get("title", feed_url)
+        feed_title = getattr(parsed.feed, "title", feed_url)
 
         return (
             FeedInfo(
