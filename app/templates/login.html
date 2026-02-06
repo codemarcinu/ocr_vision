@@ -19,7 +19,7 @@
                 {% if error %}
                 <div class="alert alert-danger">{{ error }}</div>
                 {% endif %}
-                <form method="post" action="/login">
+                <form method="post" action="/login{% if next %}?next={{ next }}{% endif %}">
                     <div class="mb-3">
                         <label for="token" class="form-label">Token</label>
                         <input type="password" class="form-control" id="token" name="token" autofocus required>

@@ -100,21 +100,25 @@ _auth_templates = Jinja2Templates(directory=str(Path(__file__).parent / "templat
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request, next: str = ""):
     """Show login form."""
-    return _auth_templates.TemplateResponse("login.html", {"request": request})
+    return _auth_templates.TemplateResponse("login.html", {"request": request, "next": next})
 
 
 @app.post("/login")
 @limiter.limit("5/minute")
-async def login_submit(request: Request, token: str = Form(...)):
+async def login_submit(request: Request, next: str = "", token: str = Form(...)):
     """Validate token and set session cookie."""
     if not secrets.compare_digest(token, settings.AUTH_TOKEN):
         return _auth_templates.TemplateResponse("login.html", {
-            "request": request, "error": "Nieprawidłowy token",
+            "request": request, "error": "Nieprawidłowy token", "next": next,
         })
     session_token = create_session()
-    response = RedirectResponse(url="/app/", status_code=303)
+    # Redirect back to the page the user came from (only allow local paths)
+    redirect_to = "/app/"
+    if next and next.startswith("/") and not next.startswith("//"):
+        redirect_to = next
+    response = RedirectResponse(url=redirect_to, status_code=303)
     response.set_cookie(
         key="session_token",
         value=session_token,

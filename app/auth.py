@@ -85,7 +85,9 @@ async def web_auth_middleware(request: Request, call_next):
     is_web_ui = any(path == p or path.startswith(p + "/") for p in web_ui_paths) or path == "/"
 
     if is_web_ui:
-        return RedirectResponse(url="/login", status_code=303)
+        from urllib.parse import quote
+        login_url = f"/login?next={quote(path, safe='/')}"
+        return RedirectResponse(url=login_url, status_code=303)
 
     return JSONResponse(status_code=401, content={"detail": "Brak autoryzacji"})
 
