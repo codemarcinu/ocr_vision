@@ -59,6 +59,7 @@ class ChatResponse:
     search_query: Optional[str] = None
     model_used: str = ""
     processing_time_sec: float = 0.0
+    confidence: str = ""  # "high", "medium", "low" from intent classifier
 
 
 @dataclass
@@ -457,6 +458,7 @@ async def process_message(
             search_type=search.final_intent,
             model_used=model,
             processing_time_sec=round(time.time() - start_time, 2),
+            confidence=confidence,
         )
 
     # 7. Extract sources
@@ -469,6 +471,7 @@ async def process_message(
         search_query=search_query if intent != "direct" else None,
         model_used=model,
         processing_time_sec=round(time.time() - start_time, 2),
+        confidence=confidence,
     )
 
 

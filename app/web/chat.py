@@ -90,6 +90,7 @@ async def chat_send(
             "sources": response.sources,
             "search_type": response.search_type,
             "processing_time": response.processing_time_sec,
+            "confidence": response.confidence,
         })
 
         # If new session, trigger client-side update

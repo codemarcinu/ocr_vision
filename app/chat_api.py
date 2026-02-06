@@ -36,6 +36,7 @@ class ChatMessageResponse(BaseModel):
     search_type: str
     model_used: str
     processing_time_sec: float
+    confidence: str = ""
 
 
 class ChatSessionResponse(BaseModel):
@@ -126,6 +127,7 @@ async def send_message(
             search_type="agent",
             model_used="agent",
             processing_time_sec=0,
+            confidence="high",
         )
 
     # Fall through to orchestrator (with agent search strategy hint)
@@ -163,6 +165,7 @@ async def send_message(
         search_type=response.search_type,
         model_used=response.model_used,
         processing_time_sec=response.processing_time_sec,
+        confidence=response.confidence,
     )
 
 

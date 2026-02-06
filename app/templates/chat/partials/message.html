@@ -36,6 +36,12 @@
         {% elif search_type == "both" %}<i class="bi bi-archive"></i>+<i class="bi bi-globe2"></i>
         {% else %}<i class="bi bi-chat-left"></i> Bezposrednio{% endif %}
         | {{ "%.1f"|format(processing_time) }}s
+        {% if confidence %}
+        | <span class="chat-confidence chat-confidence--{{ confidence }}" title="Pewnosc klasyfikacji: {{ confidence }}">
+            <i class="bi bi-{% if confidence == 'high' %}check-circle-fill{% elif confidence == 'medium' %}dash-circle{% else %}exclamation-circle{% endif %}"></i>
+            {{ confidence }}
+        </span>
+        {% endif %}
     </div>
 </div>
 {% endif %}
