@@ -63,21 +63,17 @@ class PushService:
                 vapid_claims={"sub": self.vapid_subject},
             )
             logger.info(f"Push sent to endpoint: {subscription.endpoint[:50]}...")
-            return True
+            return "ok"
         except WebPushException as e:
+            # 410 Gone or 404 Not Found = subscription expired/invalid
+            if e.response and e.response.status_code in (410, 404):
+                logger.info(f"Subscription expired ({e.response.status_code}): {subscription.endpoint[:50]}...")
+                return "expired"
             logger.error(f"Push failed: {e}")
-            # 410 Gone means subscription is expired
-            if e.response and e.response.status_code == 410:
-                logger.info("Subscription expired (410 Gone)")
-                return False
-            # 404 Not Found also means subscription is invalid
-            if e.response and e.response.status_code == 404:
-                logger.info("Subscription not found (404)")
-                return False
-            return False
+            return "error"
         except Exception as e:
             logger.exception(f"Unexpected error sending push: {e}")
-            return False
+            return "error"
 
     async def broadcast(
         self,
@@ -86,22 +82,27 @@ class PushService:
         body: str,
         url: Optional[str] = None,
         tag: Optional[str] = None,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list[str]]:
         """Send push notification to multiple subscriptions.
 
-        Returns (success_count, failure_count).
+        Returns (success_count, failure_count, expired_endpoints).
         """
         success = 0
         failed = 0
+        expired_endpoints: list[str] = []
 
         for sub in subscriptions:
-            if await self.send_to_subscription(sub, title, body, url, tag):
+            result = await self.send_to_subscription(sub, title, body, url, tag)
+            if result == "ok":
                 success += 1
+            elif result == "expired":
+                failed += 1
+                expired_endpoints.append(sub.endpoint)
             else:
                 failed += 1
 
         logger.info(f"Broadcast complete: {success} sent, {failed} failed")
-        return success, failed
+        return success, failed, expired_endpoints
 
 
 # Singleton instance

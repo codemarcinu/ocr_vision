@@ -248,6 +248,37 @@ async def query_spending(
     return context
 
 
+def _extract_pantry_search_term(q: str) -> Optional[str]:
+    """Extract a specific product search term from pantry query.
+
+    Returns the product name if the query is a specific search
+    (e.g. "czy mam mleko", "szukaj sera"), or None for generic
+    overview questions (e.g. "co mam do jedzenia", "co jest w spiżarni").
+    """
+    import re
+
+    # Explicit search commands: "szukaj X", "znajdź X"
+    for prefix in ("szukaj ", "znajdź ", "znajdz "):
+        if prefix in q:
+            term = q.split(prefix, 1)[1].strip().rstrip("?")
+            if len(term) >= 2:
+                return term
+
+    # "czy mam X" / "czy jest X" — specific product check
+    m = re.search(r"czy\s+(?:mam|jest|są)\s+(.+)", q)
+    if m:
+        term = m.group(1).strip().rstrip("?")
+        # Filter out generic continuations
+        generic = ("coś", "cos", "do jedzenia", "w spiżarni", "w spizarni",
+                   "jakieś", "jakies", "jedzenie")
+        if len(term) >= 2 and term not in generic:
+            return term
+
+    # "mam X?" — only if preceded by "czy" (already handled) or nothing useful
+    # Generic "co mam", "co jest" → NOT a search, return None
+    return None
+
+
 async def query_inventory(
     query: str,
     session: AsyncSession,
@@ -291,15 +322,12 @@ async def query_inventory(
                     lines.append(f"- {cs['category']}: {cs['item_count']} szt.")
                 parts.append("\n".join(lines))
 
-        elif any(kw in q for kw in ("szukaj", "znajdź", "znajdz", "jest", "mam")):
-            # Try to extract a search term — use the query minus common words
-            search_term = q
-            for remove in ("szukaj", "znajdź", "znajdz", "czy", "mam", "jest",
-                           "w", "spiżarni", "spizarni", "pantry"):
-                search_term = search_term.replace(remove, "")
-            search_term = search_term.strip()
+        else:
+            # Check if this is a specific product search (not a generic overview)
+            # "czy mam mleko", "czy jest ser", "szukaj chleb", "znajdź masło"
+            search_term = _extract_pantry_search_term(q)
 
-            if search_term and len(search_term) >= 2:
+            if search_term:
                 items = await pantry.search(search_term, limit=10)
                 if items:
                     lines = [f"Wyniki szukania '{search_term}' w spiżarni:"]
@@ -310,9 +338,6 @@ async def query_inventory(
                     parts.append("\n".join(lines))
                 else:
                     parts.append(f"Nie znaleziono '{search_term}' w spiżarni.")
-            else:
-                # Fall through to default
-                pass
 
         if not parts:
             # Default: show grouped items + stats

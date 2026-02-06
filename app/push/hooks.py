@@ -40,13 +40,19 @@ async def _broadcast_push(
             if not subscriptions:
                 return
 
-            success, failed = await push_service.broadcast(
+            success, failed, expired = await push_service.broadcast(
                 subscriptions=subscriptions,
                 title=title,
                 body=body,
                 url=url,
                 tag=tag,
             )
+            # Auto-deactivate expired subscriptions (410 Gone / 404)
+            for endpoint in expired:
+                await repo.deactivate(endpoint)
+                logger.info(f"Deactivated expired subscription: {endpoint[:50]}...")
+            if expired:
+                await session.commit()
             logger.info(f"Push broadcast ({tag}): {success} sent, {failed} failed")
     except Exception as e:
         logger.warning(f"Push notification failed ({tag}): {e}")
