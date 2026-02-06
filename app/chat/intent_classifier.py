@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -9,6 +10,9 @@ from app import ollama_client
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Matches http(s) URLs in text
+_URL_RE = re.compile(r'https?://\S+')
 
 
 @dataclass
@@ -73,6 +77,16 @@ async def classify_intent(
     Returns:
         ClassifiedIntent with intent, reformulated query, and confidence.
     """
+    # Fast-path: if message is primarily a URL, classify as "web" without LLM
+    stripped = question.strip()
+    urls = _URL_RE.findall(stripped)
+    if urls:
+        non_url_text = _URL_RE.sub("", stripped).strip()
+        if len(non_url_text) < 10:
+            # Message is just a URL (or URL + a few words) -> web search/summarize
+            logger.info(f"Intent: 'web' (fast-path URL detection) for: {stripped[:80]}")
+            return ClassifiedIntent(intent="web", query=urls[0], confidence="high")
+
     model = settings.CHAT_MODEL or settings.CLASSIFIER_MODEL
 
     history_text = _format_history(history)
