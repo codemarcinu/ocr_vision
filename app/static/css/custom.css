@@ -538,3 +538,70 @@ body {
     background: var(--bs-tertiary-bg);
     font-family: inherit;
 }
+
+/* ===== Receipt Split-Screen ===== */
+.receipt-split {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.receipt-split:not(.receipt-split--has-image) {
+    display: block;
+}
+
+.receipt-image-panel {
+    flex: 0 0 45%;
+    max-width: 45%;
+    min-width: 0;
+}
+
+.receipt-data-panel {
+    flex: 1;
+    min-width: 0;
+}
+
+.receipt-image-sticky {
+    position: sticky;
+    top: calc(var(--sb-topbar-height) + 1rem);
+}
+
+.receipt-image-container {
+    overflow: auto;
+    max-height: calc(100vh - var(--sb-topbar-height) - 8rem);
+    background: var(--bs-tertiary-bg);
+    display: flex;
+    justify-content: center;
+}
+
+.receipt-image {
+    width: 100%;
+    height: auto;
+    display: block;
+    transition: transform 0.15s ease;
+    user-select: none;
+}
+
+.receipt-image-pdf {
+    width: 100%;
+    height: calc(100vh - var(--sb-topbar-height) - 8rem);
+    border: none;
+}
+
+@media (max-width: 991.98px) {
+    .receipt-split {
+        flex-direction: column;
+    }
+
+    .receipt-image-panel {
+        flex: none;
+        max-width: 100%;
+    }
+
+    .receipt-image-sticky {
+        position: static;
+    }
+
+    .receipt-image-container {
+        max-height: 50vh;
+    }
+}

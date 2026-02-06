@@ -19,84 +19,167 @@
     </form>
 </div>
 
-<div class="row g-4">
-    <!-- Meta info -->
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header"><h6 class="mb-0">Informacje</h6></div>
-            <div class="card-body">
-                <table class="table table-sm table-borderless mb-0">
-                    <tr>
-                        <td class="text-muted">Sklep</td>
-                        <td class="fw-medium">{{ receipt.store.name if receipt.store else receipt.store_raw or "-" }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Data</td>
-                        <td>{{ receipt.receipt_date.strftime("%d.%m.%Y") if receipt.receipt_date else "-" }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Suma OCR</td>
-                        <td>{{ "%.2f"|format(receipt.total_ocr|float) if receipt.total_ocr else "-" }} zl</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Suma obliczona</td>
-                        <td>{{ "%.2f"|format(receipt.total_calculated|float) if receipt.total_calculated else "-" }} zl</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Suma koncowa</td>
-                        <td class="fw-bold fs-5">{{ "%.2f"|format(receipt.total_final|float) if receipt.total_final else "-" }} zl</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Plik</td>
-                        <td><small>{{ receipt.source_file or "-" }}</small></td>
-                    </tr>
-                </table>
-
-                {% if receipt.needs_review %}
-                <div class="alert alert-warning py-2 mt-2 mb-0">
-                    <i class="bi bi-exclamation-triangle"></i> <strong>Wymaga przegladu</strong>
-                    {% for reason in receipt.review_reasons or [] %}
-                    <div class="small">{{ reason }}</div>
-                    {% endfor %}
+<div class="receipt-split{% if has_image %} receipt-split--has-image{% endif %}">
+    {% if has_image %}
+    <!-- Left panel: Receipt image (sticky) -->
+    <div class="receipt-image-panel">
+        <div class="receipt-image-sticky">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <h6 class="mb-0"><i class="bi bi-image"></i> Skan</h6>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="receiptImageZoom(-0.25)" title="Pomniejsz">
+                            <i class="bi bi-zoom-out"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="receiptImageZoom(0)" title="Dopasuj">
+                            <i class="bi bi-arrows-fullscreen"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="receiptImageZoom(0.25)" title="Powieksz">
+                            <i class="bi bi-zoom-in"></i>
+                        </button>
+                    </div>
                 </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Edit form -->
-        <div class="card mt-3">
-            <div class="card-header"><h6 class="mb-0">Edytuj</h6></div>
-            <div class="card-body">
-                <form hx-post="/app/paragony/{{ receipt.id }}/update" hx-target="body">
-                    <div class="mb-2">
-                        <label class="form-label form-label-sm">Sklep</label>
-                        <input type="text" name="store_raw" class="form-control form-control-sm"
-                               value="{{ receipt.store_raw or '' }}">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label form-label-sm">Data</label>
-                        <input type="date" name="receipt_date" class="form-control form-control-sm"
-                               value="{{ receipt.receipt_date.isoformat() if receipt.receipt_date else '' }}">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label form-label-sm">Suma koncowa</label>
-                        <input type="number" step="0.01" name="total_final" class="form-control form-control-sm"
-                               value="{{ receipt.total_final|float if receipt.total_final else '' }}">
-                    </div>
-                    <button type="submit" class="btn btn-sm btn-primary">Zapisz</button>
-                </form>
+                <div class="receipt-image-container" id="receipt-image-container">
+                    {% set ext = receipt.source_file.rsplit('.', 1)[-1].lower() if receipt.source_file else '' %}
+                    {% if ext == 'pdf' %}
+                    <iframe src="/app/paragony/{{ receipt.id }}/image" class="receipt-image-pdf" id="receipt-image"></iframe>
+                    {% else %}
+                    <img src="/app/paragony/{{ receipt.id }}/image" alt="Skan paragonu" class="receipt-image" id="receipt-image" draggable="false">
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
+    {% endif %}
 
-    <!-- Items table -->
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h6 class="mb-0">Produkty ({{ receipt.items|length if receipt.items else 0 }})</h6>
+    <!-- Right panel: Data -->
+    <div class="receipt-data-panel">
+        <div class="row g-3">
+            <!-- Meta info -->
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header"><h6 class="mb-0">Informacje</h6></div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <table class="table table-sm table-borderless mb-0">
+                                    <tr>
+                                        <td class="text-muted">Sklep</td>
+                                        <td class="fw-medium">{{ receipt.store.name if receipt.store else receipt.store_raw or "-" }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">Data</td>
+                                        <td>{{ receipt.receipt_date.strftime("%d.%m.%Y") if receipt.receipt_date else "-" }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">Plik</td>
+                                        <td><small>{{ receipt.source_file or "-" }}</small></td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="col-sm-6">
+                                <table class="table table-sm table-borderless mb-0">
+                                    <tr>
+                                        <td class="text-muted">Suma OCR</td>
+                                        <td>{{ "%.2f"|format(receipt.total_ocr|float) if receipt.total_ocr else "-" }} zl</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">Suma obliczona</td>
+                                        <td>{{ "%.2f"|format(receipt.total_calculated|float) if receipt.total_calculated else "-" }} zl</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted">Suma koncowa</td>
+                                        <td class="fw-bold fs-5">{{ "%.2f"|format(receipt.total_final|float) if receipt.total_final else "-" }} zl</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+
+                        {% if receipt.needs_review %}
+                        <div class="alert alert-warning py-2 mt-2 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Wymaga przegladu</strong>
+                            {% for reason in receipt.review_reasons or [] %}
+                            <div class="small">{{ reason }}</div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
-            {% include "receipts/partials/items_table.html" %}
+
+            <!-- Edit form -->
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header"><h6 class="mb-0">Edytuj</h6></div>
+                    <div class="card-body">
+                        <form hx-post="/app/paragony/{{ receipt.id }}/update" hx-target="body">
+                            <div class="row g-2">
+                                <div class="col-sm-4">
+                                    <label class="form-label form-label-sm">Sklep</label>
+                                    <input type="text" name="store_raw" class="form-control form-control-sm"
+                                           value="{{ receipt.store_raw or '' }}">
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label form-label-sm">Data</label>
+                                    <input type="date" name="receipt_date" class="form-control form-control-sm"
+                                           value="{{ receipt.receipt_date.isoformat() if receipt.receipt_date else '' }}">
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label form-label-sm">Suma koncowa</label>
+                                    <input type="number" step="0.01" name="total_final" class="form-control form-control-sm"
+                                           value="{{ receipt.total_final|float if receipt.total_final else '' }}">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-primary mt-2">Zapisz</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Items table -->
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">Produkty ({{ receipt.items|length if receipt.items else 0 }})</h6>
+                    </div>
+                    {% include "receipts/partials/items_table.html" %}
+                </div>
+            </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if has_image %}
+<script>
+(function() {
+    var scale = 1;
+    var img = document.getElementById('receipt-image');
+    if (!img) return;
+
+    window.receiptImageZoom = function(delta) {
+        if (delta === 0) {
+            scale = 1;
+        } else {
+            scale = Math.max(0.25, Math.min(4, scale + delta));
+        }
+        img.style.transform = 'scale(' + scale + ')';
+        img.style.transformOrigin = 'top center';
+    };
+
+    // Mouse wheel zoom
+    var container = document.getElementById('receipt-image-container');
+    container.addEventListener('wheel', function(e) {
+        if (e.ctrlKey) {
+            e.preventDefault();
+            var delta = e.deltaY > 0 ? -0.1 : 0.1;
+            scale = Math.max(0.25, Math.min(4, scale + delta));
+            img.style.transform = 'scale(' + scale + ')';
+            img.style.transformOrigin = 'top center';
+        }
+    }, { passive: false });
+})();
+</script>
+{% endif %}
 {% endblock %}
