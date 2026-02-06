@@ -1,7 +1,7 @@
 """REST API for transcription management."""
 
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List, Optional
 from uuid import UUID
 
@@ -176,9 +176,12 @@ async def create_job_from_file(
             detail=f"Invalid file type: {file_ext}. Allowed: {', '.join(allowed_extensions)}"
         )
 
-    # Save file to temp directory
+    # Save file to temp directory (sanitize filename to prevent path traversal)
+    safe_filename = PurePosixPath(file.filename).name if file.filename else ""
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
     settings.TRANSCRIPTION_TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    temp_path = settings.TRANSCRIPTION_TEMP_DIR / file.filename
+    temp_path = settings.TRANSCRIPTION_TEMP_DIR / safe_filename
     with open(temp_path, "wb") as f:
         content = await file.read()
         f.write(content)

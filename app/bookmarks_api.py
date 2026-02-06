@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.dependencies import BookmarkRepoDep
+from app.url_validator import validate_url
 
 router = APIRouter(prefix="/bookmarks", tags=["Bookmarks"])
 
@@ -57,6 +58,12 @@ async def list_bookmarks(
 @router.post("/")
 async def create_bookmark(bookmark: BookmarkCreate, repo: BookmarkRepoDep):
     """Create a new bookmark."""
+    # Validate URL to prevent SSRF
+    try:
+        validate_url(bookmark.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Nieprawidłowy URL: {e}")
+
     # Check for duplicates
     existing = await repo.get_by_url(bookmark.url)
     if existing:

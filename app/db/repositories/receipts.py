@@ -339,11 +339,11 @@ class ReceiptRepository(BaseRepository[Receipt]):
                 COUNT(*) as receipt_count,
                 COALESCE(SUM(total_final), 0) as total_spent
             FROM receipts
-            WHERE receipt_date >= NOW() - INTERVAL ':months months'
+            WHERE receipt_date >= NOW() - make_interval(months => :months)
             GROUP BY DATE_TRUNC('month', receipt_date)
             ORDER BY month DESC
-        """.replace(":months", str(months)))
-        result = await self.session.execute(stmt)
+        """)
+        result = await self.session.execute(stmt, {"months": months})
         return [
             {
                 "month": row.month.isoformat() if row.month else None,

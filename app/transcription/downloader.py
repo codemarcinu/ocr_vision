@@ -59,6 +59,12 @@ class DownloaderService:
         Returns:
             DownloadResult with paths and metadata
         """
+        from app.url_validator import validate_url
+        try:
+            validate_url(url)
+        except ValueError as e:
+            raise ValueError(f"Nieprawidłowy URL: {e}")
+
         import yt_dlp
 
         logger.info(f"Downloading from: {url}")
