@@ -79,8 +79,11 @@
     {% endfor %}
 </div>
 {% else %}
-<div class="empty-state">
-    <div class="empty-state-icon">📦</div>
-    <p>Spizarnia jest pusta</p>
-</div>
+{% set es_icon = '<i class="bi bi-box-seam"></i>' %}
+{% set es_title = 'Spizarnia jest pusta' %}
+{% set es_description = 'Zeskanuj paragon, aby automatycznie uzupelnic spizarnie' %}
+{% set es_action_url = '/app/paragony/upload' %}
+{% set es_action_icon = 'receipt' %}
+{% set es_action_label = 'Upload paragonu' %}
+{% include "components/empty_state.html" %}
 {% endif %}

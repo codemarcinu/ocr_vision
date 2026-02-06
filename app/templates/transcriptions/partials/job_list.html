@@ -34,8 +34,11 @@
 </div>
 {% endfor %}
 {% else %}
-<div class="empty-state">
-    <div class="empty-state-icon"><i class="bi bi-mic"></i></div>
-    <p>Brak transkrypcji</p>
-</div>
+{% set es_icon = '<i class="bi bi-mic"></i>' %}
+{% set es_title = 'Brak transkrypcji' %}
+{% set es_description = 'Transkrybuj audio lub video z YouTube' %}
+{% set es_action_url = '/app/transkrypcje/' %}
+{% set es_action_icon = 'plus-lg' %}
+{% set es_action_label = 'Nowa transkrypcja' %}
+{% include "components/empty_state.html" %}
 {% endif %}

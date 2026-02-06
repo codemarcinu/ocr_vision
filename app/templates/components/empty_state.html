@@ -1,0 +1,23 @@
+{# Reusable empty state component.
+   Usage: {% include "components/empty_state.html" %}
+   Required context vars: es_icon, es_title
+   Optional: es_description, es_action_url, es_action_icon, es_action_label, es_action_hx_post, es_action_hx_target
+#}
+<div class="empty-state py-5">
+    <div class="empty-state-icon">{{ es_icon }}</div>
+    <h6 class="mb-1">{{ es_title }}</h6>
+    {% if es_description is defined and es_description %}
+    <p class="text-muted small mb-3">{{ es_description }}</p>
+    {% endif %}
+    {% if es_action_url is defined and es_action_url %}
+    <a href="{{ es_action_url }}" class="btn btn-primary btn-sm">
+        <i class="bi bi-{{ es_action_icon | default('plus-lg') }} me-1"></i>{{ es_action_label }}
+    </a>
+    {% elif es_action_hx_post is defined and es_action_hx_post %}
+    <button class="btn btn-primary btn-sm"
+            hx-post="{{ es_action_hx_post }}"
+            hx-target="{{ es_action_hx_target | default('body') }}">
+        <i class="bi bi-{{ es_action_icon | default('plus-lg') }} me-1"></i>{{ es_action_label }}
+    </button>
+    {% endif %}
+</div>

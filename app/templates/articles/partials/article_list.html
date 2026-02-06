@@ -35,8 +35,11 @@
 </div>
 {% endfor %}
 {% else %}
-<div class="empty-state">
-    <div class="empty-state-icon"><i class="bi bi-newspaper"></i></div>
-    <p>Brak artykulow</p>
-</div>
+{% set es_icon = '<i class="bi bi-newspaper"></i>' %}
+{% set es_title = 'Brak artykulow' %}
+{% set es_description = 'Dodaj feed RSS lub podsumuj artykul z URL' %}
+{% set es_action_url = '/app/artykuly/?tab=feeds' %}
+{% set es_action_icon = 'rss' %}
+{% set es_action_label = 'Dodaj feed RSS' %}
+{% include "components/empty_state.html" %}
 {% endif %}

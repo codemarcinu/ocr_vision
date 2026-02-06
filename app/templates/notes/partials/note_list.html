@@ -15,6 +15,9 @@
         {% endif %}
     </a>
     {% else %}
-    <div class="text-center text-muted py-3">Brak notatek</div>
+    {% set es_icon = '<i class="bi bi-journal-text"></i>' %}
+    {% set es_title = 'Brak notatek' %}
+    {% set es_description = 'Stworz pierwsza notatke uzywajac formularza powyzej' %}
+    {% include "components/empty_state.html" %}
     {% endfor %}
 </div>

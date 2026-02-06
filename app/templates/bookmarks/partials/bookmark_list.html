@@ -42,8 +42,8 @@
 </div>
 {% endfor %}
 {% else %}
-<div class="empty-state">
-    <div class="empty-state-icon"><i class="bi bi-bookmark"></i></div>
-    <p>Brak zakładek. Dodaj pierwszą zakładkę powyżej.</p>
-</div>
+{% set es_icon = '<i class="bi bi-bookmark"></i>' %}
+{% set es_title = 'Brak zakladek' %}
+{% set es_description = 'Dodaj pierwsza zakladke uzywajac formularza powyzej' %}
+{% include "components/empty_state.html" %}
 {% endif %}
