@@ -40,14 +40,16 @@
         if (!toggle || !sidebar) return;
 
         toggle.addEventListener('click', function() {
-            sidebar.classList.toggle('show');
+            var isOpen = sidebar.classList.toggle('show');
             if (backdrop) backdrop.classList.toggle('show');
+            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
 
         if (backdrop) {
             backdrop.addEventListener('click', function() {
                 sidebar.classList.remove('show');
                 backdrop.classList.remove('show');
+                toggle.setAttribute('aria-expanded', 'false');
             });
         }
     }
@@ -79,14 +81,16 @@
         }[type] || 'text-bg-primary';
 
         const id = 'toast-' + Date.now();
-        const html = '<div id="' + id + '" class="toast ' + bgClass + '" role="alert">' +
-            '<div class="d-flex">' +
-            '<div class="toast-body">' + message + '</div>' +
+        var el = document.createElement('div');
+        el.id = id;
+        el.className = 'toast ' + bgClass;
+        el.setAttribute('role', 'alert');
+        el.innerHTML = '<div class="d-flex">' +
+            '<div class="toast-body"></div>' +
             '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
-            '</div></div>';
-
-        container.insertAdjacentHTML('beforeend', html);
-        var el = document.getElementById(id);
+            '</div>';
+        el.querySelector('.toast-body').textContent = message;
+        container.appendChild(el);
         var toast = new bootstrap.Toast(el, { delay: 4000 });
         toast.show();
         el.addEventListener('hidden.bs.toast', function() { el.remove(); });
@@ -104,10 +108,10 @@
         // Error handling
         document.body.addEventListener('htmx:responseError', function(evt) {
             var status = evt.detail.xhr ? evt.detail.xhr.status : 0;
-            var msg = 'Wystapil blad';
+            var msg = 'Wystąpił błąd';
             if (status === 404) msg = 'Nie znaleziono';
-            else if (status === 500) msg = 'Blad serwera';
-            else if (status === 0) msg = 'Brak polaczenia z serwerem';
+            else if (status === 500) msg = 'Błąd serwera';
+            else if (status === 0) msg = 'Brak połączenia z serwerem';
             showToast(msg + ' (' + status + ')', 'error');
         });
 

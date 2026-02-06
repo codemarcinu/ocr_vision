@@ -50,9 +50,10 @@ function initUploadDropzone(dropzoneId, inputId, previewId) {
             '<div class="d-flex align-items-center gap-2 mt-3">' +
             '<span class="fs-3">' + icon + '</span>' +
             '<div>' +
-            '<div class="fw-medium">' + file.name + '</div>' +
+            '<div class="fw-medium" id="preview-filename"></div>' +
             '<div class="text-muted small">' + size + ' KB</div>' +
             '</div></div>';
+        document.getElementById('preview-filename').textContent = file.name;
         previewEl.style.display = 'block';
     }
 }
