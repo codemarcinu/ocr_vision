@@ -23,7 +23,7 @@ from app.db.connection import close_db, init_db
 from app.dependencies import AnalyticsRepoDep, FeedbackRepoDep, PantryRepoDep, ReceiptRepoDep
 from app.dictionary_api import router as dictionary_router
 from app.models import HealthStatus, ProcessingResult, Receipt
-from app.obsidian_writer import log_error, write_error_file
+from app.writers.obsidian import log_error, write_error_file
 from app.services.receipt_saver import save_receipt_to_db, write_receipt_to_obsidian, index_receipt_in_rag
 from app.rss_api import router as rss_router
 from app.transcription_api import router as transcription_router

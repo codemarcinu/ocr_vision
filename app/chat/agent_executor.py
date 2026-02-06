@@ -150,7 +150,7 @@ async def execute_create_note(
 ) -> tuple[str, dict]:
     """Execute create_note tool. Returns (result_text, metadata)."""
     from app.db.repositories.notes import NoteRepository
-    from app.notes_writer import write_note_file
+    from app.writers.notes import write_note_file
     from app.rag.hooks import index_note_hook
 
     repo = NoteRepository(db_session)
@@ -192,7 +192,7 @@ async def execute_create_bookmark(
 ) -> tuple[str, dict]:
     """Execute create_bookmark tool. Returns (result_text, metadata)."""
     from app.db.repositories.bookmarks import BookmarkRepository
-    from app.bookmarks_writer import write_bookmarks_index
+    from app.writers.bookmarks import write_bookmarks_index
     from app.rag.hooks import index_bookmark_hook
 
     repo = BookmarkRepository(db_session)

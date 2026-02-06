@@ -13,7 +13,7 @@ from app.db.connection import get_session
 from app.db.repositories.rss import ArticleRepository, RssFeedRepository
 from app.rss_fetcher import detect_feed_type, fetch_feed
 from app.summarizer import summarize_content
-from app.summary_writer import write_summary_file, write_summary_file_simple
+from app.writers.summary import write_summary_file, write_summary_file_simple
 from app.web_scraper import scrape_url, scrape_with_fallback
 
 logger = logging.getLogger(__name__)

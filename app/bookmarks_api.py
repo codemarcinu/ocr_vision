@@ -99,7 +99,7 @@ async def create_bookmark(bookmark: BookmarkCreate, repo: BookmarkRepoDep):
     if settings.GENERATE_OBSIDIAN_FILES:
         try:
             all_bookmarks = await repo.get_all(limit=1000)
-            from app.bookmarks_writer import write_bookmarks_index
+            from app.writers.bookmarks import write_bookmarks_index
             write_bookmarks_index(all_bookmarks)
         except Exception:
             pass

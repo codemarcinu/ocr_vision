@@ -86,7 +86,7 @@ async def create_note(note: NoteCreate, repo: NoteRepoDep):
     # Write to Obsidian
     from app.config import settings
     if settings.GENERATE_OBSIDIAN_FILES:
-        from app.notes_writer import write_note_file
+        from app.writers.notes import write_note_file
         write_note_file(n)
 
     # RAG indexing

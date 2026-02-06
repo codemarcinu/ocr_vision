@@ -185,7 +185,7 @@ def write_receipt_to_obsidian(
         return None
 
     try:
-        from app.obsidian_writer import write_receipt_file, update_pantry_file
+        from app.writers.obsidian import write_receipt_file, update_pantry_file
 
         receipt_path = write_receipt_file(receipt, categorized, filename)
         update_pantry_file(categorized, receipt)

@@ -155,7 +155,7 @@ async def mobile_note_create(
     # Write to Obsidian
     if settings.GENERATE_OBSIDIAN_FILES:
         try:
-            from app.notes_writer import write_note_file
+            from app.writers.notes import write_note_file
             note = await repo.get_recent(limit=1)
             if note:
                 write_note_file(note[0])
