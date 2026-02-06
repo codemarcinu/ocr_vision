@@ -16,9 +16,9 @@ from typing import Optional
 
 from app.config import settings
 from app.models import Receipt, Product, DiscountDetail
-from app.google_vision_ocr import ocr_with_google_vision
+from app.ocr.google_vision import ocr_with_google_vision
 from app.store_prompts import detect_store_from_text, get_store_display_name
-from app.ocr_prompts import get_structuring_prompt
+from app.ocr.prompts import get_structuring_prompt
 from app.dictionaries import normalize_product
 from app.feedback_logger import log_unmatched_product
 from app import ollama_client

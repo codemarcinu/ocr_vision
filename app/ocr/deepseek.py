@@ -26,7 +26,7 @@ from app.dictionaries import normalize_product
 from app.store_prompts import detect_store_from_text, get_store_display_name
 from app.feedback_logger import log_unmatched_product
 from app.price_fixer import fix_products
-from app.ocr_prompts import (
+from app.ocr.prompts import (
     OCR_PROMPT_UNIVERSAL,
     get_structuring_prompt,
 )
@@ -231,7 +231,7 @@ async def _try_google_vision_fallback(
     logger.info(f"Previous errors: {previous_errors}")
 
     try:
-        from app.google_vision_ocr import ocr_with_google_vision
+        from app.ocr.google_vision import ocr_with_google_vision
     except ImportError as e:
         return None, f"Google Vision module not available: {e}"
 
@@ -533,7 +533,7 @@ async def extract_products_deepseek(
             fallback_model = settings.OCR_FALLBACK_MODEL
             logger.info(f"Falling back to vision OCR backend with {fallback_model}...")
             try:
-                from app.ocr import extract_products_from_image, call_ollama, parse_json_response, _build_receipt, encode_image, OCR_PROMPT
+                from app.ocr.vision import extract_products_from_image, call_ollama, parse_json_response, _build_receipt, encode_image, OCR_PROMPT
 
                 # Use fallback model instead of default OCR_MODEL
                 image_base64 = await encode_image(image_path)
@@ -836,7 +836,7 @@ async def ocr_page_only(image_path: Path) -> tuple[str, Optional[str]]:
         logger.info(f"OCR-only falling back to {fallback_model} for {image_path.name}...")
 
         try:
-            from app.ocr import call_ollama
+            from app.ocr.vision import call_ollama
 
             # Simple prompt for raw text extraction (not JSON)
             raw_text_prompt = """Odczytaj CAŁY tekst z tego polskiego paragonu.

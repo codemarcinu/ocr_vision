@@ -51,13 +51,13 @@ from app.auth import web_auth_middleware, create_session, destroy_session
 
 # Import alternative OCR backends if configured
 if settings.OCR_BACKEND == "paddle":
-    from app.paddle_ocr import extract_products_paddle, extract_total_from_text
+    from app.ocr.paddle import extract_products_paddle, extract_total_from_text
 elif settings.OCR_BACKEND == "deepseek":
-    from app.deepseek_ocr import extract_products_deepseek, extract_total_from_text, process_multipage_pdf
+    from app.ocr.deepseek import extract_products_deepseek, extract_total_from_text, process_multipage_pdf
 elif settings.OCR_BACKEND == "google":
-    from app.google_ocr_backend import extract_products_google, process_multipage_pdf_google
+    from app.ocr.google_backend import extract_products_google, process_multipage_pdf_google
 elif settings.OCR_BACKEND == "openai":
-    from app.openai_ocr_backend import extract_products_openai, process_multipage_pdf_openai, extract_total_from_text
+    from app.ocr.openai_backend import extract_products_openai, process_multipage_pdf_openai, extract_total_from_text
 
 logging.basicConfig(
     level=logging.INFO,

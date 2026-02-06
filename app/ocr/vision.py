@@ -447,7 +447,7 @@ async def _try_google_vision_fallback(
     logger.info(f"Previous errors: {previous_errors}")
 
     try:
-        from app.google_vision_ocr import ocr_with_google_vision
+        from app.ocr.google_vision import ocr_with_google_vision
     except ImportError as e:
         return None, f"Google Vision module not available: {e}"
 

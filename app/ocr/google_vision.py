@@ -4,7 +4,7 @@ This module provides OCR text extraction using Google Cloud Vision API.
 It's designed as the last resort fallback when all local Ollama models fail.
 
 Usage:
-    from app.google_vision_ocr import ocr_with_google_vision
+    from app.ocr.google_vision import ocr_with_google_vision
 
     text, error = await ocr_with_google_vision(image_path)
     if error:
