@@ -233,6 +233,10 @@ async def startup_event():
     if settings.TRANSCRIPTION_ENABLED:
         asyncio.create_task(_voice_queue_loop())
 
+    # Start folder watch (auto-import receipts from inbox)
+    if settings.FOLDER_WATCH_ENABLED:
+        asyncio.create_task(_folder_watch_loop())
+
 
 async def _voice_queue_loop():
     """Background loop: process queued voice messages every 30 minutes."""
@@ -333,6 +337,72 @@ async def _process_voice_queue():
         # Unload Whisper after batch to free VRAM
         await _unload_whisper_model()
         logger.info("Voice queue batch complete, Whisper unloaded")
+
+
+async def _folder_watch_loop():
+    """Background loop: auto-import new receipt files from INBOX_DIR."""
+    interval = settings.FOLDER_WATCH_INTERVAL_SECONDS
+    await asyncio.sleep(120)  # Wait 2 min after startup before first scan
+    logger.info(f"Folder watch started: scanning {settings.INBOX_DIR} every {interval}s")
+    while True:
+        try:
+            await _scan_inbox()
+        except Exception as e:
+            logger.exception(f"Folder watch scan failed: {e}")
+        await asyncio.sleep(interval)
+
+
+async def _scan_inbox():
+    """Scan INBOX_DIR for new files and process them."""
+    inbox = settings.INBOX_DIR
+    if not inbox.exists():
+        return
+
+    # Get already-processed filenames (in processed dir)
+    processed_names = set()
+    if settings.PROCESSED_DIR.exists():
+        processed_names = {f.name for f in settings.PROCESSED_DIR.iterdir() if f.is_file()}
+
+    # Also check DB for source_file to avoid reprocessing
+    db_source_files = set()
+    try:
+        from app.db.connection import get_session
+        from app.db.repositories.receipts import ReceiptRepository
+        async for session in get_session():
+            repo = ReceiptRepository(session)
+            recent = await repo.get_recent(limit=200, include_items=False)
+            db_source_files = {r.source_file for r in recent if r.source_file}
+    except Exception as e:
+        logger.warning(f"Folder watch: couldn't check DB for duplicates: {e}")
+
+    known_files = processed_names | db_source_files
+
+    # Find new files
+    new_files = []
+    for f in sorted(inbox.iterdir()):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in settings.SUPPORTED_FORMATS:
+            continue
+        if f.name in known_files:
+            continue
+        new_files.append(f)
+
+    if not new_files:
+        return
+
+    logger.info(f"Folder watch: found {len(new_files)} new file(s) in inbox")
+
+    for file_path in new_files:
+        try:
+            logger.info(f"Folder watch: processing {file_path.name}")
+            result = await _process_file(file_path)
+            if result.success:
+                logger.info(f"Folder watch: {file_path.name} processed OK")
+            else:
+                logger.warning(f"Folder watch: {file_path.name} failed: {result.error}")
+        except Exception as e:
+            logger.error(f"Folder watch: error processing {file_path.name}: {e}")
 
 
 @app.on_event("shutdown")

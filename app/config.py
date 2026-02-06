@@ -144,6 +144,10 @@ class Settings:
     # Voice note processing (queued to avoid VRAM conflicts with chat)
     VOICE_NOTE_PROCESS_INTERVAL_MINUTES: int = int(os.getenv("VOICE_NOTE_PROCESS_INTERVAL_MINUTES", "30"))
 
+    # Folder watch (auto-import receipts from inbox directory)
+    FOLDER_WATCH_ENABLED: bool = os.getenv("FOLDER_WATCH_ENABLED", "false").lower() == "true"
+    FOLDER_WATCH_INTERVAL_SECONDS: int = int(os.getenv("FOLDER_WATCH_INTERVAL_SECONDS", "300"))
+
     # Transcription categories for note extraction
     TRANSCRIPTION_CATEGORIES: list = [
         "Edukacja",
