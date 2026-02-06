@@ -79,7 +79,7 @@ self.addEventListener('fetch', (event) => {
   // API calls - network first, fallback to cache
   if (url.pathname.startsWith('/chat/') ||
       url.pathname.startsWith('/api/') ||
-      url.pathname.startsWith('/transcriptions/') ||
+      url.pathname.startsWith('/transcription/') ||
       url.pathname.startsWith('/process-receipt')) {
     event.respondWith(networkFirst(request));
     return;

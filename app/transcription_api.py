@@ -1,6 +1,7 @@
 """REST API for transcription management."""
 
 import logging
+import tempfile
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
 from uuid import UUID
@@ -550,3 +551,35 @@ async def get_stats():
         repo = TranscriptionJobRepository(session)
         stats = await repo.get_stats()
         return StatsResponse(**stats)
+
+
+@router.post("/quick")
+async def quick_transcribe(audio: UploadFile = File(...)):
+    """Quick voice transcription - returns text immediately without creating a job."""
+    if not settings.TRANSCRIPTION_ENABLED:
+        raise HTTPException(status_code=503, detail="Transcription is disabled")
+
+    allowed_extensions = {".mp3", ".m4a", ".wav", ".ogg", ".webm", ".mp4", ".opus"}
+    file_ext = Path(audio.filename).suffix.lower() if audio.filename else ".webm"
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"Invalid file type: {file_ext}")
+
+    # Save to temp file
+    settings.TRANSCRIPTION_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(
+        dir=settings.TRANSCRIPTION_TEMP_DIR, suffix=file_ext, delete=False
+    )
+    try:
+        content = await audio.read()
+        tmp.write(content)
+        tmp.close()
+
+        transcriber = TranscriberService()
+        full_text, segments, info = await transcriber.transcribe(tmp.name)
+
+        return {"text": full_text, "language": info.get("detected_language", "unknown")}
+    except Exception as e:
+        logger.exception(f"Quick transcription failed: {e}")
+        raise HTTPException(status_code=500, detail="Transkrypcja nie powiodła się")
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
