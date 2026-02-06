@@ -93,6 +93,51 @@ async def pantry_add(
     return response
 
 
+@router.post("/app/spizarnia/backfill", response_class=HTMLResponse)
+async def pantry_backfill(request: Request, repo: PantryRepoDep):
+    """Import items from existing receipts into pantry."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.db.models import Receipt, ReceiptItem, PantryItem
+
+    # Find receipt items not yet in pantry
+    existing_ids = select(PantryItem.receipt_item_id).where(
+        PantryItem.receipt_item_id.isnot(None)
+    )
+    stmt = (
+        select(ReceiptItem)
+        .join(Receipt)
+        .options(selectinload(ReceiptItem.receipt))
+        .where(ReceiptItem.id.notin_(existing_ids))
+        .order_by(Receipt.receipt_date.desc())
+        .limit(500)
+    )
+    result = await repo.session.execute(stmt)
+    items = result.scalars().all()
+
+    added = 0
+    for item in items:
+        await repo.add_from_receipt(
+            receipt_item_id=item.id,
+            product_id=item.product_id,
+            name=item.name_normalized or item.name_raw,
+            category_id=item.category_id,
+            store_id=item.receipt.store_id,
+            purchase_date=item.receipt.receipt_date,
+        )
+        added += 1
+
+    await repo.session.commit()
+
+    grouped = await repo.get_grouped_by_category()
+    stats = await repo.get_stats()
+    response = templates.TemplateResponse("pantry/partials/items_grouped.html", {
+        "request": request, "grouped": grouped, "stats": stats, "q": "",
+    })
+    response.headers.update(_htmx_trigger(f"Zaimportowano {added} produktow z paragonow"))
+    return response
+
+
 @router.get("/app/spizarnia/partials/add-form", response_class=HTMLResponse)
 async def pantry_add_form(request: Request):
     return templates.TemplateResponse("pantry/partials/add_form.html", {

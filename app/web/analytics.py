@@ -34,8 +34,7 @@ async def analytics_page(
         "data_json": json.dumps(data, default=str),
     }
 
-    if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(f"analytics/partials/{tab}_chart.html", ctx)
+    # Tabs use regular <a href> navigation, not HTMX — always return full page
     return templates.TemplateResponse("analytics/index.html", ctx)
 
 
