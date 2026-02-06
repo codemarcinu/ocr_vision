@@ -97,6 +97,16 @@ async def create_bookmark(bookmark: BookmarkCreate, repo: BookmarkRepoDep):
         except Exception:
             pass
 
+    # Push notification
+    try:
+        from app.push.hooks import push_bookmark_created
+        await push_bookmark_created(
+            title=b.title or bookmark.url,
+            bookmark_id=str(b.id),
+        )
+    except Exception:
+        pass
+
     return {"id": str(b.id), "url": b.url}
 
 

@@ -120,6 +120,18 @@ async def handle_manual_total_input(
         write_receipt_to_obsidian(receipt, categorized, filename)
         await index_receipt_in_rag(db_receipt_id)
 
+        # Push notification
+        try:
+            from app.push.hooks import push_receipt_processed
+            await push_receipt_processed(
+                store_name=receipt.sklep,
+                total=float(receipt.suma) if receipt.suma else None,
+                item_count=len(categorized),
+                receipt_id=str(db_receipt_id) if db_receipt_id else None,
+            )
+        except Exception:
+            pass
+
         inbox_path = Path(review_data.get("inbox_path", settings.INBOX_DIR / filename))
         if inbox_path.exists():
             shutil.move(inbox_path, settings.PROCESSED_DIR / filename)
@@ -162,6 +174,18 @@ async def _approve_receipt(query, context, review_data, receipt_id, pending_key)
         # Write Obsidian markdown + RAG indexing
         write_receipt_to_obsidian(receipt, categorized, filename)
         await index_receipt_in_rag(db_receipt_id)
+
+        # Push notification
+        try:
+            from app.push.hooks import push_receipt_processed
+            await push_receipt_processed(
+                store_name=receipt.sklep,
+                total=float(receipt.suma) if receipt.suma else None,
+                item_count=len(categorized),
+                receipt_id=str(db_receipt_id) if db_receipt_id else None,
+            )
+        except Exception:
+            pass
 
         log_review_correction(
             receipt_id=receipt_id,

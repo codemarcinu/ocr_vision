@@ -99,6 +99,13 @@ async def create_note(note: NoteCreate, repo: NoteRepoDep):
         except Exception:
             pass
 
+    # Push notification
+    try:
+        from app.push.hooks import push_note_created
+        await push_note_created(title=n.title, note_id=str(n.id))
+    except Exception:
+        pass
+
     return {"id": str(n.id), "title": n.title}
 
 

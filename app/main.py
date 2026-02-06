@@ -720,6 +720,18 @@ async def _process_file(file_path: Path) -> ProcessingResult:
         if db_receipt_id:
             await index_receipt_in_rag(db_receipt_id)
 
+        # Step 3d: Push notification
+        try:
+            from app.push.hooks import push_receipt_processed
+            await push_receipt_processed(
+                store_name=receipt.sklep,
+                total=float(receipt.suma) if receipt.suma else None,
+                item_count=len(categorized),
+                receipt_id=str(db_receipt_id) if db_receipt_id else None,
+            )
+        except Exception:
+            pass
+
         # Step 4: Move to processed
         try:
             processed_path = settings.PROCESSED_DIR / filename

@@ -128,6 +128,14 @@ async def fetch_all_feeds() -> Tuple[int, List[str]]:
 
         await session.commit()
 
+    # Push notification for new articles
+    if new_articles > 0:
+        try:
+            from app.push.hooks import push_articles_fetched
+            await push_articles_fetched(new_articles)
+        except Exception:
+            pass
+
     return new_articles, errors
 
 

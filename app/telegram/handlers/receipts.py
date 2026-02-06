@@ -403,6 +403,18 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         write_receipt_to_obsidian(combined_receipt, categorized, pdf_filename)
         await index_receipt_in_rag(db_receipt_id)
 
+        # Push notification
+        try:
+            from app.push.hooks import push_receipt_processed
+            await push_receipt_processed(
+                store_name=combined_receipt.sklep,
+                total=float(combined_receipt.suma) if combined_receipt.suma else None,
+                item_count=len(categorized),
+                receipt_id=str(db_receipt_id) if db_receipt_id else None,
+            )
+        except Exception:
+            pass
+
         # Move PDF to processed
         try:
             processed_path = settings.PROCESSED_DIR / pdf_filename
@@ -563,6 +575,18 @@ async def _process_pdf_with_progress(
         receipt_path = write_receipt_to_obsidian(combined_receipt, categorized, filename)
         await index_receipt_in_rag(db_receipt_id)
 
+        # Push notification
+        try:
+            from app.push.hooks import push_receipt_processed
+            await push_receipt_processed(
+                store_name=combined_receipt.sklep,
+                total=float(combined_receipt.suma) if combined_receipt.suma else None,
+                item_count=len(categorized),
+                receipt_id=str(db_receipt_id) if db_receipt_id else None,
+            )
+        except Exception:
+            pass
+
         # Move to processed
         try:
             processed_path = settings.PROCESSED_DIR / filename
@@ -682,6 +706,18 @@ async def _process_receipt_with_progress(
     # Write Obsidian markdown + RAG indexing
     receipt_path = write_receipt_to_obsidian(receipt, categorized, filename)
     await index_receipt_in_rag(db_receipt_id)
+
+    # Push notification
+    try:
+        from app.push.hooks import push_receipt_processed
+        await push_receipt_processed(
+            store_name=receipt.sklep,
+            total=float(receipt.suma) if receipt.suma else None,
+            item_count=len(categorized),
+            receipt_id=str(db_receipt_id) if db_receipt_id else None,
+        )
+    except Exception:
+        pass
 
     # Move to processed
     try:

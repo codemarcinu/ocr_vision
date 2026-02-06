@@ -238,6 +238,18 @@ async def process_json_import(text: str) -> tuple[bool, str, Optional[str]]:
         write_receipt_to_obsidian(receipt, categorized, filename)
         await index_receipt_in_rag(db_receipt_id)
 
+        # Push notification
+        try:
+            from app.push.hooks import push_receipt_processed
+            await push_receipt_processed(
+                store_name=receipt.sklep,
+                total=float(receipt.suma) if receipt.suma else None,
+                item_count=len(categorized),
+                receipt_id=str(db_receipt_id) if db_receipt_id else None,
+            )
+        except Exception:
+            pass
+
         summary = format_import_summary(receipt, categorized, filename)
         return True, summary, filename
 

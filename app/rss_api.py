@@ -292,6 +292,13 @@ async def summarize_single_url(data: SummarizeRequest):
         except Exception:
             pass
 
+    # Push notification
+    try:
+        from app.push.hooks import push_articles_fetched
+        await push_articles_fetched(1)
+    except Exception:
+        pass
+
     return SummarizeResponse(
         title=scraped.title,
         url=url,
