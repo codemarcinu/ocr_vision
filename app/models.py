@@ -53,6 +53,7 @@ class ProcessingResult(BaseModel):
     error: Optional[str] = Field(None, description="Error message if failed")
     processed_at: datetime = Field(default_factory=datetime.now, description="Processing timestamp")
     needs_review: bool = Field(default=False, description="Flag indicating result needs human verification")
+    receipt_id: Optional[str] = Field(None, description="Database receipt ID (UUID)")
 
 
 class HealthStatus(BaseModel):

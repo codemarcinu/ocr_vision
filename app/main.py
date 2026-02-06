@@ -755,7 +755,8 @@ async def _process_file(file_path: Path) -> ProcessingResult:
             source_file=filename,
             output_file=str(receipt_file),
             processed_at=processed_at,
-            needs_review=receipt.needs_review if receipt else False
+            needs_review=receipt.needs_review if receipt else False,
+            receipt_id=str(db_receipt_id) if db_receipt_id else None,
         )
 
     finally:
