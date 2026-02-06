@@ -13,12 +13,15 @@ import httpx
 import secrets
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.classifier import categorize_products
 from app.config import settings
+
+# Build version for SW cache invalidation (unique per process start)
+_BUILD_VERSION = datetime.utcnow().strftime("%Y%m%d%H%M%S")
 from app.db.connection import close_db, init_db
 from app.dependencies import AnalyticsRepoDep, FeedbackRepoDep, PantryRepoDep, ReceiptRepoDep
 from app.dictionary_api import router as dictionary_router
@@ -889,12 +892,15 @@ async def root():
 
 @app.get("/sw.js")
 async def service_worker():
-    """Serve Service Worker with correct scope header."""
-    from fastapi.responses import FileResponse
-    return FileResponse(
-        Path(__file__).parent / "static" / "sw.js",
+    """Serve Service Worker with cache version injected from build time."""
+    sw_path = Path(__file__).parent / "static" / "sw.js"
+    content = sw_path.read_text()
+    # Inject build-time cache version so each deploy invalidates SW cache
+    content = f"self.__CACHE_VERSION = '{_BUILD_VERSION}';\n" + content
+    return Response(
+        content=content,
         media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"}
+        headers={"Service-Worker-Allowed": "/"},
     )
 
 

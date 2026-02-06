@@ -268,12 +268,24 @@ class MobileApp {
     const payload = { message: text };
     if (this.sessionId) payload.session_id = this.sessionId;
 
-    const response = await fetch('/chat/stream', {
+    let response = await fetch('/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal,
     });
+
+    // Stale session - clear and retry without session_id
+    if (response.status === 404 && this.sessionId) {
+      this.sessionId = null;
+      sessionStorage.removeItem('chat_session_id');
+      response = await fetch('/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+        signal,
+      });
+    }
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -319,21 +331,27 @@ class MobileApp {
               for (let i = 0; i < 3; i++) typingEl.appendChild(document.createElement('span'));
             }
           } else if (eventType === 'tool_result') {
-            // Agent tool executed - render as action card
+            // Agent tool executed - render as action card or text fallback
             this.hideTyping(typingId);
             const card = this.renderActionCard(data.tool, data.metadata);
+            msgEl = document.createElement('div');
+            msgEl.className = 'message assistant';
             if (card) {
-              msgEl = document.createElement('div');
-              msgEl.className = 'message assistant';
               msgEl.appendChild(card);
-              this.addMessageActions(msgEl, data.text);
-              const time = document.createElement('div');
-              time.className = 'message-time';
-              time.textContent = new Date().toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit' });
-              msgEl.appendChild(time);
-              this.chatContainer.appendChild(msgEl);
-              this.scrollToBottom();
+            } else if (data.text) {
+              // Fallback: render tool result as plain text
+              contentDiv = document.createElement('div');
+              contentDiv.className = 'message-content';
+              contentDiv.innerHTML = this.renderMarkdown(data.text);
+              msgEl.appendChild(contentDiv);
             }
+            this.addMessageActions(msgEl, data.text);
+            const time = document.createElement('div');
+            time.className = 'message-time';
+            time.textContent = new Date().toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit' });
+            msgEl.appendChild(time);
+            this.chatContainer.appendChild(msgEl);
+            this.scrollToBottom();
           } else if (eventType === 'token') {
             // First token - create message bubble, hide typing
             if (!msgEl) {
@@ -427,7 +445,20 @@ class MobileApp {
     };
     if (signal) fetchOptions.signal = signal;
 
-    const response = await fetch('/chat/message', fetchOptions);
+    let response = await fetch('/chat/message', fetchOptions);
+
+    // Stale session - clear and retry without session_id
+    if (response.status === 404 && this.sessionId) {
+      this.sessionId = null;
+      sessionStorage.removeItem('chat_session_id');
+      const retryOptions = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message })
+      };
+      if (signal) retryOptions.signal = signal;
+      response = await fetch('/chat/message', retryOptions);
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -612,7 +643,16 @@ class MobileApp {
         </div>
       `;
     } else {
-      return null;
+      // Generic fallback for any other tool result
+      const title = metadata.title || tool || 'Akcja wykonana';
+      card.className = 'action-card generic';
+      card.innerHTML = `
+        <div class="action-card-header">
+          <span class="action-card-icon">\u2705</span>
+          <span class="action-card-title">${this.escapeHtml(title)}</span>
+        </div>
+        ${metadata.content_preview ? `<div class="action-card-body">${this.escapeHtml(metadata.content_preview)}</div>` : ''}
+      `;
     }
 
     return card;
@@ -932,25 +972,41 @@ class MobileApp {
     const progress = document.getElementById('file-preview-progress');
     const bar = document.getElementById('file-preview-bar');
     const actions = document.getElementById('file-preview-actions');
+    const nameEl = document.getElementById('file-preview-name');
 
-    // Show progress, hide buttons
+    const abortBtn = document.getElementById('file-preview-abort');
+
+    // Show progress + abort button, hide send/cancel
     if (actions) actions.classList.add('hidden');
     if (progress) progress.classList.remove('hidden');
+    if (abortBtn) abortBtn.classList.remove('hidden');
+    if (nameEl) nameEl.textContent = 'Przesy\u0142anie...';
 
     const empty = document.querySelector('.empty-state');
     if (empty) empty.remove();
-    this.addMessage(`📷 Przesyłam: ${file.name}...`, 'user');
+    this.addMessage(`\ud83d\udcf7 ${file.name}`, 'user');
 
     const formData = new FormData();
     formData.append('file', file);
 
+    let xhr;
+    const abortHandler = () => { if (xhr) xhr.abort(); };
+    if (abortBtn) abortBtn.addEventListener('click', abortHandler);
+
     try {
       const result = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
+        xhr = new XMLHttpRequest();
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable && bar) {
-            bar.style.width = Math.round((e.loaded / e.total) * 100) + '%';
+            const pct = Math.round((e.loaded / e.total) * 100);
+            bar.style.width = pct + '%';
+            if (nameEl) nameEl.textContent = `Przesy\u0142anie... ${pct}%`;
           }
+        });
+        xhr.upload.addEventListener('load', () => {
+          // Upload done, now waiting for server OCR processing
+          if (bar) { bar.style.width = '100%'; bar.classList.add('processing'); }
+          if (nameEl) nameEl.textContent = 'Przetwarzanie paragonu...';
         });
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
@@ -959,12 +1015,17 @@ class MobileApp {
             reject(new Error(`HTTP ${xhr.status}`));
           }
         });
-        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+        xhr.addEventListener('error', () => reject(new Error('B\u0142\u0105d po\u0142\u0105czenia')));
+        xhr.addEventListener('abort', () => reject(new Error('Anulowano')));
+        xhr.timeout = 120000; // 2 min timeout
+        xhr.addEventListener('timeout', () => reject(new Error('Przekroczono czas oczekiwania')));
         xhr.open('POST', '/process-receipt');
         xhr.send(formData);
       });
 
       if (overlay) overlay.classList.add('hidden');
+      if (bar) bar.classList.remove('processing');
+      if (abortBtn) { abortBtn.classList.add('hidden'); abortBtn.removeEventListener('click', abortHandler); }
 
       if (result.success) {
         const receipt = result.receipt || {};
@@ -972,7 +1033,6 @@ class MobileApp {
         const total = receipt.suma || 0;
         const itemsCount = receipt.products?.length || 0;
 
-        // Render as action card
         const card = this.renderActionCard('receipt', {
           card_type: 'receipt_processed',
           store: store,
@@ -991,15 +1051,17 @@ class MobileApp {
             'assistant'
           );
         }
-        this.showToast('Paragon przetworzony', 'success');
       } else {
         throw new Error(result.error || 'Processing failed');
       }
     } catch (error) {
       console.error('Upload error:', error);
       if (overlay) overlay.classList.add('hidden');
-      this.addMessage('\u274c Nie uda\u0142o si\u0119 przetworzy\u0107 paragonu: ' + (error.message || 'Nieznany b\u0142\u0105d'), 'assistant');
-      this.showToast('B\u0142\u0105d przetwarzania', 'error');
+      if (bar) bar.classList.remove('processing');
+      if (abortBtn) { abortBtn.classList.add('hidden'); abortBtn.removeEventListener('click', abortHandler); }
+      if (error.message !== 'Anulowano') {
+        this.addMessage('\u274c ' + (error.message || 'Nie uda\u0142o si\u0119 przetworzy\u0107 paragonu'), 'assistant');
+      }
     }
   }
 
@@ -1229,6 +1291,16 @@ class MobileApp {
   }
 
   async sendVoiceMessage(audioBlob) {
+    // Show user bubble with voice message info
+    const empty = document.querySelector('.empty-state');
+    if (empty) empty.remove();
+
+    const duration = this.recordingStartTime
+      ? Math.round((Date.now() - this.recordingStartTime) / 1000)
+      : 0;
+    const durationText = duration > 0 ? ` (${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')})` : '';
+    this.addMessage(`\uD83C\uDFA4 Notatka g\u0142osowa${durationText}`, 'user');
+
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'voice.webm');
@@ -1239,13 +1311,13 @@ class MobileApp {
       });
 
       if (response.ok) {
-        this.showToast('Notatka g\u0142osowa dodana do kolejki', 'success');
+        this.addMessage('\u2705 Notatka g\u0142osowa zapisana. Zostanie przetworzona w ci\u0105gu 30 minut.', 'assistant');
       } else {
         throw new Error('Queue failed');
       }
     } catch (error) {
       console.error('Voice error:', error);
-      this.showToast('Nie uda\u0142o si\u0119 wys\u0142a\u0107 nagrania', 'error');
+      this.addMessage('\u274c Nie uda\u0142o si\u0119 wys\u0142a\u0107 nagrania. Spr\u00f3buj ponownie.', 'assistant');
     }
   }
 
@@ -2110,7 +2182,6 @@ class LockScreen {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.lastActivity = Date.now();
-        sessionStorage.setItem('lock_unlocked_at', String(Date.now()));
       } else if (this.enabled && this._hasPin() && !this.isLocked) {
         const elapsed = Date.now() - this.lastActivity;
         if (elapsed > this.lockTimeout) {

@@ -3,7 +3,8 @@
  * Handles offline support and caching for PWA
  */
 
-const CACHE_VERSION = 'v5';
+// Injected by server on each deploy; fallback for local dev
+const CACHE_VERSION = self.__CACHE_VERSION || 'dev';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `dynamic-${CACHE_VERSION}`;
 
