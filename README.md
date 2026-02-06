@@ -1,14 +1,14 @@
 # Second Brain
 
-System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki, **baza wiedzy RAG** (zadawanie pytań do wszystkich zgromadzonych danych) i **Chat AI** (wieloturowe rozmowy z RAG + wyszukiwanie SearXNG). Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji, **PostgreSQL + pgvector** do przechowywania danych i wyszukiwania semantycznego. Bot Telegram z menu inline keyboard i **walidacją human-in-the-loop**.
+System zarządzania wiedzą osobistą z modułami: OCR paragonów, podsumowania RSS/stron, transkrypcje audio/wideo, notatki osobiste, zakładki, **baza wiedzy RAG** (zadawanie pytań do wszystkich zgromadzonych danych) i **Chat AI** (wieloturowe rozmowy z RAG + wyszukiwanie SearXNG). Wykorzystuje Ollama LLM do ekstrakcji i kategoryzacji, **PostgreSQL + pgvector** do przechowywania danych i wyszukiwania semantycznego. Interfejsy: **Web UI** (HTMX), **Mobile PWA** i **REST API** z **walidacją human-in-the-loop**.
 
 ## Architektura
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Telegram Bot   │     │    FastAPI      │     │     Ollama      │
-│  lub paragony/  │────▶│    Backend      │────▶│   (GPU)         │
-│  inbox/         │     │                 │     │                 │
+│  Web UI (HTMX)  │     │    FastAPI      │     │     Ollama      │
+│  Mobile PWA     │────▶│    Backend      │────▶│   (GPU)         │
+│  REST API       │     │                 │     │                 │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
                                 │
                ┌────────────────┼────────────────┐
@@ -34,7 +34,6 @@ Moduły:
 - Docker z obsługą GPU (NVIDIA) lub CPU
 - Docker Compose
 - Ollama z modelami (patrz poniżej)
-- Token bota Telegram (opcjonalnie)
 
 ## Szybki start
 
@@ -44,7 +43,7 @@ Skopiuj i dostosuj plik `.env`:
 
 ```bash
 cp .env.example .env
-# Edytuj TELEGRAM_BOT_TOKEN i TELEGRAM_CHAT_ID
+# Dostosuj zmienne środowiskowe (OCR_BACKEND, AUTH_TOKEN itp.)
 ```
 
 ### 2. Uruchom kontenery
@@ -77,27 +76,29 @@ docker exec -it pantry-api alembic upgrade head
 curl http://localhost:8000/health
 ```
 
-### 6. Przetwórz paragon
+### 6. Otwórz interfejs
 
-**Via Telegram (zalecane):**
-- Wyślij zdjęcie lub PDF do bota
-- Bot przetworzy i pokaże wynik (lub poprosi o weryfikację)
+- **Web UI:** `http://localhost:8000/app/` - pełny interfejs desktopowy
+- **Mobile PWA:** `http://localhost:8000/m/` - interfejs mobilny (instalowalny)
+- **API docs:** `http://localhost:8000/docs` - Swagger UI
 
-**Via API:**
+### 7. Przetwórz paragon
+
+**Przez Web UI:**
+- Otwórz dashboard → kliknij "Dodaj paragon" → wybierz zdjęcie/PDF
+
+**Przez API:**
 ```bash
 curl -X POST http://localhost:8000/process-receipt \
   -F "file=@paragon.png"
 ```
 
-### 7. Zapytaj bazę wiedzy
+### 8. Zapytaj bazę wiedzy
 
 Po zgromadzeniu danych (paragony, artykuły, transkrypcje):
 
-**Przez Telegram:**
-```
-/ask ile wydałem w Biedronce w styczniu?
-/ask co wiem o sztucznej inteligencji?
-```
+**Przez Chat (Web UI / Mobile PWA):**
+- Otwórz Chat → wpisz pytanie, np. "ile wydałem w Biedronce w styczniu?"
 
 **Przez API:**
 ```bash
@@ -117,7 +118,7 @@ System automatycznie wykrywa potencjalne błędy OCR i prosi o weryfikację.
 | Różnica absolutna | > 5 PLN | OCR: 84.50, Produkty: 144.48 |
 | Różnica procentowa | > 10% | OCR: 100.00, Produkty: 88.00 |
 
-### Przepływ weryfikacji (Telegram)
+### Przepływ weryfikacji
 
 ```
 Paragon → OCR → Walidacja sumy
@@ -127,7 +128,7 @@ Paragon → OCR → Walidacja sumy
     Suma OK                 Suma błędna
          │                       │
          ▼                       ▼
-    Auto-zapis              [Telegram Review]
+    Auto-zapis              [Web UI Review]
                             ├─ Zatwierdź
                             ├─ Popraw sumę
                             │   ├─ Użyj sumy produktów
@@ -177,50 +178,9 @@ Nowe treści są automatycznie indeksowane w momencie tworzenia. Przy pierwszym 
 | `/ask/stats` | GET | Statystyki indeksu |
 | `/ask/reindex` | POST | Pełna reindeksacja (w tle) |
 
-## Telegram Bot - Komendy
-
-| Komenda | Opis |
-|---------|------|
-| Wyślij zdjęcie | Przetwórz paragon |
-| Wyślij PDF | Przetwórz paragon (wielostronicowy) |
-| `/recent [N]` | Ostatnie N paragonów |
-| `/reprocess <plik>` | Ponowne przetwarzanie |
-| `/pending` | Pliki w kolejce |
-| `/pantry [kategoria]` | Zawartość spiżarni |
-| `/use <produkt>` | Oznacz jako zużyty |
-| `/remove <produkt>` | Usuń z spiżarni |
-| `/search <fraza>` | Szukaj produktu |
-| `/q <fraza>` | Szybkie wyszukiwanie |
-| `/stats [week/month]` | Statystyki wydatków |
-| `/stores` | Wydatki wg sklepów |
-| `/categories` | Wydatki wg kategorii |
-| `/rabaty` | Raport rabatów |
-| `/errors` | Lista błędów OCR |
-| `/clearerrors` | Wyczyść błędy OCR |
-| `/feeds` | Lista subskrybowanych kanałów RSS |
-| `/subscribe <URL>` | Dodaj kanał RSS/Atom |
-| `/unsubscribe <ID>` | Usuń kanał RSS |
-| `/summarize <URL>` | Podsumuj stronę internetową |
-| `/refresh` | Pobierz nowe artykuły |
-| `/articles` | Lista ostatnich artykułów |
-| `/transcribe <URL>` | Transkrybuj YouTube |
-| `/transcribe` + audio | Transkrybuj przesłany plik |
-| `/transcriptions` | Lista transkrypcji |
-| `/note <ID>` | Notatka z transkrypcji |
-| `/n <tekst>` | Szybka notatka |
-| `/ask <pytanie>` | Zapytaj bazę wiedzy (RAG) |
-| `/find <fraza>` | Szukaj w bazie wiedzy |
-| Wiadomość tekstowa | Chat AI (always-on, auto-sesja) |
-| `/endchat` | Zresetuj sesję Chat AI |
-| `/settings` | Ustawienia bota |
-
 ## Chat AI
 
-Wieloturowy asystent konwersacyjny z dostępem do bazy wiedzy (RAG) i wyszukiwania internetowego (SearXNG).
-
-### Always-On Chat
-
-Chat jest **zawsze aktywny** - wystarczy napisać wiadomość tekstową do bota, a system automatycznie utworzy sesję i odpowie. Nie trzeba używać komendy `/chat`.
+Wieloturowy asystent konwersacyjny z dostępem do bazy wiedzy (RAG) i wyszukiwania internetowego (SearXNG). Dostępny w Web UI (`/app/chat`) i Mobile PWA (`/m/chat`).
 
 ### Integracja z Agentem (Tool-Calling)
 
@@ -241,12 +201,6 @@ Natychmiastowe wykonanie    Orchestrator + LLM
 **Przykłady:**
 - "Zanotuj: spotkanie jutro o 10" → Agent tworzy notatkę
 - "Ile wydałem w Biedronce?" → Chat z RAG odpowiada
-
-### Komendy Telegram
-
-- Napisz wiadomość → automatyczna sesja Chat AI
-- `/endchat` - Zresetuj sesję (nowa rozmowa)
-- Menu inline z przyciskami do zarządzania sesjami
 
 ### API Chat
 
@@ -286,13 +240,13 @@ Agent jest zintegrowany z Chat AI i działa automatycznie jako pre-procesor wiad
 
 ## RSS/Web Summarizer
 
-System zawiera agenta do subskrypcji kanałów RSS i podsumowywania stron internetowych.
+System umożliwia subskrypcję kanałów RSS i podsumowywanie stron internetowych za pomocą AI.
 
 ### Funkcje
 
 - **Subskrypcje RSS/Atom** - dodawaj kanały i automatycznie pobieraj artykuły
 - **Podsumowania na żądanie** - `/summarize <URL>` generuje bullet points
-- **Auto-fetch** - cykliczne pobieranie nowych artykułów (co 4h)
+- **Fetch on-demand** - pobieranie nowych artykułów przez API (`POST /rss/fetch`)
 - **Zapis do Obsidian** - podsumowania w `vault/summaries/`
 - **Auto-indeksowanie RAG** - nowe artykuły automatycznie trafiają do bazy wiedzy
 
@@ -307,7 +261,7 @@ System zawiera agenta do subskrypcji kanałów RSS i podsumowywania stron intern
 
 ## Transkrypcje audio/wideo
 
-Agent do transkrypcji nagrań (YouTube, pliki lokalne) z generowaniem notatek.
+Transkrypcja nagrań (YouTube, pliki lokalne) z generowaniem notatek.
 
 ### Funkcje
 
@@ -356,33 +310,43 @@ ocr_vision/
 │   ├── config.py           # Konfiguracja (env vars)
 │   ├── models.py           # Modele Pydantic (Receipt, Product)
 │   ├── dependencies.py     # FastAPI DI (repozytoria)
-│   ├── ocr.py              # Vision OCR backend
-│   ├── deepseek_ocr.py     # DeepSeek OCR backend
-│   ├── google_ocr_backend.py # Google Vision OCR backend
-│   ├── openai_ocr_backend.py # Google Vision + OpenAI structuring
-│   ├── openai_client.py    # Klient OpenAI (singleton + retry)
-│   ├── paddle_ocr.py       # PaddleOCR backend
-│   ├── classifier.py       # Kategoryzacja produktów (LLM)
-│   ├── store_prompts.py    # Prompty per sklep (12 sklepów)
-│   ├── obsidian_writer.py  # Generowanie markdown
-│   ├── ask_api.py          # RAG API
-│   ├── chat_api.py         # Chat AI API
-│   ├── notes_api.py        # Notatki API
-│   ├── bookmarks_api.py    # Zakładki API
-│   ├── rss_api.py          # RSS API
-│   ├── transcription_api.py # Transkrypcje API
-│   ├── dictionary_api.py   # Słownik produktów API
-│   ├── pantry_api.py       # Spiżarnia API
-│   ├── receipts_api.py     # Paragony API (przeglądanie/edycja)
-│   ├── search_api.py       # Wyszukiwanie unified
-│   ├── web_routes.py       # Web UI (HTMX + Jinja2)
+│   ├── model_coordinator.py # Koordynacja VRAM
+│   ├── auth.py             # Uwierzytelnianie (opcjonalne)
+│   ├── ocr/                # Backendy OCR
+│   │   ├── vision.py       # Vision OCR (domyślny)
+│   │   ├── deepseek.py     # DeepSeek OCR
+│   │   ├── google_backend.py # Google Vision OCR
+│   │   ├── openai_backend.py # Google Vision + OpenAI structuring
+│   │   ├── paddle.py       # PaddleOCR
+│   │   ├── google_vision.py # Google Cloud Vision API (utility)
+│   │   └── prompts.py      # Prompty OCR
+│   ├── web/                # Web UI (HTMX + Jinja2) - 14 modułów
+│   │   ├── dashboard.py    # Dashboard
+│   │   ├── receipts.py     # Przeglądanie paragonów
+│   │   ├── pantry.py       # Spiżarnia
+│   │   ├── analytics.py    # Statystyki i wykresy
+│   │   ├── chat.py         # Interfejs Chat AI
+│   │   ├── notes.py        # Notatki
+│   │   ├── bookmarks.py    # Zakładki
+│   │   ├── articles.py     # Artykuły RSS
+│   │   ├── transcriptions.py # Transkrypcje
+│   │   ├── dictionary.py   # Słownik produktów
+│   │   ├── search.py       # Wyszukiwanie
+│   │   ├── ask.py          # Pytania RAG
+│   │   ├── helpers.py      # Współdzielone utility
+│   │   └── redirects.py    # Przekierowania
+│   ├── writers/            # Generowanie markdown (Obsidian)
+│   │   ├── obsidian.py     # Paragony, spiżarnia, logi
+│   │   ├── notes.py        # Notatki
+│   │   ├── bookmarks.py    # Zakładki
+│   │   └── summary.py      # Podsumowania RSS
 │   ├── chat/               # Chat AI
 │   │   ├── intent_classifier.py  # Klasyfikacja intencji (rag/web/both/direct)
 │   │   ├── orchestrator.py       # Orkiestracja rozmowy
 │   │   ├── agent_executor.py     # Wykonawcy narzędzi agenta
 │   │   └── searxng_client.py     # Klient SearXNG
 │   ├── agent/              # Agent Tool-Calling
-│   │   ├── tools.py        # Definicje narzędzi (10 narzędzi)
+│   │   ├── tools.py        # Definicje narzędzi (11 narzędzi)
 │   │   ├── router.py       # Router LLM → tool dispatch
 │   │   └── validator.py    # Walidacja inputu, ochrona przed injection
 │   ├── rag/                # Baza wiedzy RAG
@@ -392,22 +356,22 @@ ocr_vision/
 │   │   ├── answerer.py     # Generowanie odpowiedzi (PL/EN)
 │   │   └── hooks.py        # Auto-indexing hooks
 │   ├── db/
-│   │   ├── models.py       # SQLAlchemy ORM (~740 linii)
+│   │   ├── models.py       # SQLAlchemy ORM
 │   │   └── repositories/   # Repozytoria (16 plików)
 │   ├── transcription/      # Transkrypcje Whisper
 │   │   ├── transcriber.py  # Faster-Whisper (GPU)
 │   │   ├── downloader.py   # yt-dlp
 │   │   └── extractor.py    # Map-reduce ekstrakcja wiedzy
-│   ├── telegram/
-│   │   ├── bot.py          # Główna klasa bota
-│   │   ├── callback_router.py  # Router callbacków (prefix-based)
-│   │   ├── handlers/       # Handlery komend (19 plików)
-│   │   └── rss_scheduler.py
+│   ├── services/           # Serwisy (receipt_saver, push, obsidian_sync)
+│   ├── push/               # Web Push notifications
 │   ├── dictionaries/       # Normalizacja produktów/sklepów
-│   ├── templates/          # Jinja2 szablony (Web UI)
-│   └── static/             # CSS/JS
+│   ├── templates/          # Jinja2 szablony (Web UI + Mobile)
+│   ├── static/             # CSS/JS (htmx, marked, purify, sw.js)
+│   ├── mobile_routes.py    # Mobile PWA (/m/)
+│   ├── *_api.py            # Routery API per moduł
+│   ├── classifier.py       # Kategoryzacja produktów (LLM + cache)
+│   └── store_prompts.py    # Prompty per sklep (12 sklepów)
 ├── alembic/                # Migracje bazy danych
-│   └── versions/           # 001-006
 ├── searxng/                # Konfiguracja SearXNG
 ├── monitoring/             # Prometheus/Grafana/Loki
 ├── paragony/
@@ -437,9 +401,6 @@ Zmienne środowiskowe (w `docker-compose.yml` lub `.env`):
 | `CHAT_ENABLED` | `true` | Włącz/wyłącz Chat AI |
 | `CHAT_MODEL` | `` | Model LLM dla chatu (pusty = CLASSIFIER_MODEL) |
 | `SEARXNG_URL` | `http://searxng:8080` | URL instancji SearXNG |
-| `TELEGRAM_BOT_TOKEN` | - | Token bota Telegram |
-| `TELEGRAM_CHAT_ID` | `0` | ID chatu (0 = wszyscy) |
-| `BOT_ENABLED` | `true` | Włącz/wyłącz bota |
 | `AUTH_TOKEN` | - | Token uwierzytelniania API/Web (pusty = wyłączone) |
 | `CHAT_AGENT_ENABLED` | `true` | Agent tool-calling w Chat AI |
 | `MODEL_COORDINATION_ENABLED` | `true` | Koordynacja VRAM (zarządzanie modelami) |
@@ -462,7 +423,7 @@ Ustaw `AUTH_TOKEN` aby włączyć ochronę API i Web UI:
 - API wymaga nagłówka `Authorization: Bearer <token>`
 - Web UI używa sesji z `/login` i `/logout`
 - Publiczne endpointy (`/health`, `/docs`, `/metrics`) nie wymagają auth
-- Telegram bot ma osobną ochronę przez `TELEGRAM_CHAT_ID`
+- Mobile PWA obsługuje offline caching i request queue
 
 ## Prompty per sklep
 

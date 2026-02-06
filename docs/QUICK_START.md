@@ -52,22 +52,22 @@ Powinieneś zobaczyć:
 
 ---
 
-## 5. Połącz się z Telegram
+## 5. Otwórz interfejs
 
-1. Otwórz Telegram
-2. Znajdź swojego bota (nazwa od administratora)
-3. Kliknij **Start**
-4. Wyślij `/help` aby zobaczyć dostępne komendy
+- **Desktop:** http://localhost:8000/app/ - pełny Web UI
+- **Telefon:** http://localhost:8000/m/ - Mobile PWA (można zainstalować)
+- **API docs:** http://localhost:8000/docs - Swagger UI
 
 ---
 
 ## 6. Przetwórz pierwszy paragon
 
-### Przez Telegram:
-1. Zrób zdjęcie paragonu
-2. Wyślij zdjęcie do bota
-3. Poczekaj na odpowiedź (1-2 minuty)
-4. Zatwierdź jeśli wszystko OK
+### Przez Web UI:
+1. Otwórz dashboard (`/app/`)
+2. Kliknij "Dodaj paragon"
+3. Wybierz zdjęcie lub PDF
+4. Poczekaj na przetworzenie (30s-2min)
+5. Zatwierdź jeśli wymagana weryfikacja
 
 ### Przez folder:
 1. Skopiuj zdjęcie do `paragony/inbox/`
@@ -78,37 +78,18 @@ Powinieneś zobaczyć:
 
 ## 7. Zapytaj bazę wiedzy
 
-Po przetworzeniu kilku paragonów lub artykułów, możesz zadawać pytania:
+Po przetworzeniu kilku paragonów lub artykułów, otwórz Chat (`/app/chat`) i zadaj pytanie:
 
 ```
-/ask ile wydałem w Biedronce?
-/ask co wiem o mleku?
+"Ile wydałem w Biedronce?"
+"Co wiem o mleku?"
 ```
 
 ---
 
-## 8. Podstawowe komendy
+## 8. Chat AI i Agent - po prostu pisz!
 
-| Komenda | Opis |
-|---------|------|
-| Wiadomość tekstowa | Chat AI - po prostu pisz! |
-| `/recent` | Ostatnie paragony |
-| `/stats` | Statystyki wydatków |
-| `/pantry` | Spiżarnia |
-| `/ask <pytanie>` | Zapytaj bazę wiedzy |
-| `/endchat` | Zresetuj rozmowę |
-| `/feeds` | Kanały RSS |
-| `/subscribe <URL>` | Dodaj kanał RSS |
-| `/transcribe <URL>` | Transkrybuj YouTube |
-| `/q <fraza>` | Szybkie wyszukiwanie |
-| `/n <tekst>` | Szybka notatka |
-| `/help` | Pomoc |
-
----
-
-## 9. Chat AI i Agent - po prostu pisz!
-
-Nie musisz używać komend. Wystarczy napisać wiadomość:
+W Chat możesz nie tylko pytać, ale też wykonywać akcje:
 
 ```
 "Ile wydałem w Biedronce?"

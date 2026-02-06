@@ -31,6 +31,9 @@ Folder `archive/` zawiera stare notatki i specyfikacje projektowe.
 ```
 ocr_vision/
 ├── app/                    # Kod aplikacji
+│   ├── ocr/                # Backendy OCR (vision, deepseek, google, openai, paddle)
+│   ├── web/                # Web UI - 14 modułów per feature (HTMX + Jinja2)
+│   ├── writers/            # Generatory markdown (Obsidian)
 │   ├── db/                 # Warstwa bazy danych
 │   │   ├── models.py       # Modele SQLAlchemy
 │   │   ├── connection.py   # Połączenie z bazą
@@ -47,19 +50,16 @@ ocr_vision/
 │   │   ├── agent_executor.py     # Wykonawcy narzędzi agenta
 │   │   └── searxng_client.py     # Klient SearXNG
 │   ├── agent/              # Agent Tool-Calling
-│   │   ├── tools.py        # Definicje narzędzi (10 narzędzi)
+│   │   ├── tools.py        # Definicje narzędzi (11 narzędzi)
 │   │   ├── router.py       # Router LLM → tool dispatch
 │   │   └── validator.py    # Walidacja inputu
-│   ├── telegram/           # Bot Telegram
-│   │   ├── bot.py          # Główna klasa bota (always-on chat)
-│   │   ├── callback_router.py  # Router callbacków
-│   │   ├── handlers/       # Handlery komend (19 plików)
-│   │   └── rss_scheduler.py
 │   ├── transcription/      # Transkrypcje audio/wideo
 │   ├── services/           # Serwisy aplikacji
+│   ├── push/               # Web Push notifications
 │   ├── dictionaries/       # Słowniki produktów/sklepów
 │   ├── main.py             # FastAPI endpoints
 │   ├── model_coordinator.py # Koordynacja VRAM
+│   ├── mobile_routes.py    # Mobile PWA (/m/)
 │   ├── auth.py             # Uwierzytelnianie (opcjonalne)
 │   └── config.py           # Konfiguracja
 ├── alembic/                # Migracje bazy danych
@@ -78,6 +78,6 @@ ocr_vision/
 
 ## Pomoc
 
-- Użyj `/help` w Telegram
 - Sprawdź [FAQ w przewodniku](USER_GUIDE.md#najczęstsze-pytania-faq)
+- Dokumentacja API: `http://localhost:8000/docs`
 - Zgłoś problem administratorowi

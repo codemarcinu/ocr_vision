@@ -8,18 +8,18 @@
 
 1. [Co to jest Second Brain?](#co-to-jest-second-brain)
 2. [Jak zacząć?](#jak-zacząć)
-3. [Codzienne użycie](#codzienne-użycie)
-4. [Weryfikacja paragonów](#weryfikacja-paragonów)
-5. [Przeglądanie danych](#przeglądanie-danych)
-6. [Obsługiwane sklepy](#obsługiwane-sklepy)
-7. [RSS i podsumowania stron](#rss-i-podsumowania-stron)
-8. [Transkrypcje audio/wideo](#transkrypcje-audiowideo)
-9. [Baza wiedzy (RAG)](#baza-wiedzy-rag)
-10. [Chat AI](#chat-ai)
-11. [Agent - inteligentne akcje](#agent---inteligentne-akcje)
-12. [Notatki osobiste](#notatki-osobiste)
-13. [Słownik produktów](#słownik-produktów)
-14. [Interfejs webowy](#interfejs-webowy)
+3. [Interfejsy](#interfejsy)
+4. [Codzienne użycie](#codzienne-użycie)
+5. [Weryfikacja paragonów](#weryfikacja-paragonów)
+6. [Przeglądanie danych](#przeglądanie-danych)
+7. [Obsługiwane sklepy](#obsługiwane-sklepy)
+8. [RSS i podsumowania stron](#rss-i-podsumowania-stron)
+9. [Transkrypcje audio/wideo](#transkrypcje-audiowideo)
+10. [Baza wiedzy (RAG)](#baza-wiedzy-rag)
+11. [Chat AI](#chat-ai)
+12. [Agent - inteligentne akcje](#agent---inteligentne-akcje)
+13. [Notatki osobiste](#notatki-osobiste)
+14. [Słownik produktów](#słownik-produktów)
 15. [Najczęstsze pytania (FAQ)](#najczęstsze-pytania-faq)
 
 ---
@@ -45,15 +45,15 @@ Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
 ### Jak to działa?
 
 ```
-📸 Zdjęcie paragonu / 🔗 Link / 🎙️ Nagranie / 📝 Notatka
-        ↓
-🤖 AI przetwarza treść
-        ↓
-💾 Zapis do bazy danych + Obsidian
-        ↓
-🧠 Automatyczne indeksowanie w bazie wiedzy (RAG)
-        ↓
-❓ Możesz zadawać pytania: /ask co wiem o mleku?
+Zdjęcie paragonu / Link / Nagranie / Notatka
+        |
+   AI przetwarza treść
+        |
+   Zapis do bazy danych + Obsidian
+        |
+   Automatyczne indeksowanie w bazie wiedzy (RAG)
+        |
+   Możesz zadawać pytania w Chat AI
 ```
 
 ---
@@ -63,8 +63,8 @@ Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
 ### Wymagania
 
 - Komputer z Docker (administrator lub osoba techniczna pomoże to zainstalować)
-- Konto Telegram (darmowe)
-- Smartfon do robienia zdjęć paragonów
+- Przeglądarka internetowa (Chrome, Firefox, Safari)
+- Smartfon do robienia zdjęć paragonów (opcjonalnie - Mobile PWA)
 
 ### Pierwsze uruchomienie
 
@@ -73,35 +73,85 @@ Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
    docker-compose up -d
    ```
 
-2. **Znajdź swojego bota** - w Telegram wyszukaj bota (nazwa zostanie podana przez administratora)
+2. **Otwórz przeglądarkę** - wejdź na adres podany przez administratora:
+   - **Desktop:** `http://localhost:8000/app/` - pełny interfejs Web UI
+   - **Telefon:** `http://localhost:8000/m/` - Mobile PWA (można zainstalować)
 
-3. **Wyślij pierwsze zdjęcie** - zrób zdjęcie paragonu i wyślij do bota
+3. **Zainstaluj na telefonie (opcjonalnie)** - otwórz `/m/` w Chrome na telefonie i wybierz "Zainstaluj aplikację" z menu. Dzięki temu Second Brain pojawi się jako osobna aplikacja z ikonką na ekranie głównym.
 
-4. **Gotowe!** - bot przetworzy paragon i zapisze dane
+4. **Wyślij pierwsze zdjęcie** - na dashboardzie kliknij "Dodaj paragon" i wybierz zdjęcie
+
+5. **Gotowe!** - system przetworzy paragon i zapisze dane
+
+---
+
+## Interfejsy
+
+System oferuje trzy sposoby dostępu:
+
+### Web UI (Desktop)
+
+Pełny interfejs dostępny pod `http://localhost:8000/app/`:
+
+| Widok | Opis |
+|-------|------|
+| Dashboard | Przegląd systemu, szybkie akcje |
+| Paragony | Przeglądanie i zarządzanie paragonami |
+| Spiżarnia | Stan zapasów |
+| Analityka | Statystyki i wykresy wydatków |
+| Artykuły | Pobrane i podsumowane artykuły RSS |
+| Transkrypcje | Lista transkrypcji z notatkami |
+| Notatki | Przeglądanie i edycja notatek |
+| Zakładki | Zarządzanie zakładkami |
+| Chat | Interfejs Chat AI |
+| Słownik | Zarządzanie słownikiem produktów |
+| Wyszukiwanie | Wyszukiwanie po całej bazie |
+
+### Mobile PWA (Telefon)
+
+Interfejs mobilny pod `http://localhost:8000/m/`:
+
+- Chat-centryczny design zoptymalizowany pod telefon
+- Możliwość instalacji jako aplikacja (PWA)
+- Obsługa offline z kolejką żądań
+- Web Share Target - udostępniaj zdjęcia i linki z innych aplikacji
+- Skróty: aparat (paragon), notatka, dyktafon
+
+### REST API
+
+Programistyczny dostęp do wszystkich funkcji:
+- Dokumentacja Swagger: `http://localhost:8000/docs`
+- Wszystkie endpointy opisane w sekcjach poniżej
 
 ---
 
 ## Codzienne użycie
 
-### Sposób 1: Przez Telegram (zalecany)
+### Sposób 1: Przez telefon (Mobile PWA)
 
-1. Otwórz Telegram na telefonie
-2. Wejdź do rozmowy z botem
-3. Zrób zdjęcie paragonu (lub wybierz z galerii)
-4. Wyślij zdjęcie
-5. Poczekaj na odpowiedź (zwykle 1-2 minuty)
+1. Otwórz aplikację Second Brain na telefonie
+2. Zrób zdjęcie paragonu aparatem lub wybierz z galerii
+3. Wyślij przez dashboard lub udostępnij z galerii zdjęć
+4. Poczekaj na przetworzenie (zwykle 30s-2min)
+
+### Sposób 2: Przez przeglądarkę (Web UI)
+
+1. Otwórz `http://localhost:8000/app/` w przeglądarce
+2. Na dashboardzie kliknij "Dodaj paragon"
+3. Wybierz zdjęcie lub PDF
+4. System przetworzy i wyświetli wynik
+
+### Sposób 3: Przez folder na komputerze
+
+1. Skopiuj zdjęcie paragonu do folderu `paragony/inbox/`
+2. System automatycznie je przetworzy
+3. Wynik pojawi się w folderze `vault/paragony/`
 
 **Wskazówki do robienia zdjęć:**
 - Paragon powinien być dobrze oświetlony
 - Unikaj cieni i odblasków
 - Cały paragon powinien być widoczny
 - Tekst powinien być czytelny (nie rozmazany)
-
-### Sposób 2: Przez folder na komputerze
-
-1. Skopiuj zdjęcie paragonu do folderu `paragony/inbox/`
-2. System automatycznie je przetworzy
-3. Wynik pojawi się w folderze `vault/paragony/`
 
 ### Obsługiwane formaty plików
 
@@ -116,7 +166,7 @@ Second Brain to **inteligentny system zarządzania wiedzą osobistą**, który:
 
 ## Weryfikacja paragonów
 
-Czasami AI nie jest w 100% pewna odczytu. Wtedy **poprosi Cię o pomoc** przez Telegram.
+Czasami AI nie jest w 100% pewna odczytu. Wtedy **poprosi Cię o pomoc** przez Web UI.
 
 ### Kiedy pojawia się weryfikacja?
 
@@ -125,44 +175,38 @@ Czasami AI nie jest w 100% pewna odczytu. Wtedy **poprosi Cię o pomoc** przez T
 
 ### Jak wygląda prośba o weryfikację?
 
+W interfejsie webowym paragon wyświetli się ze statusem "Do weryfikacji":
+
 ```
-🧾 Paragon wymaga weryfikacji
+Paragon wymaga weryfikacji
 
-📍 Sklep: Biedronka
-📅 Data: 2025-01-31
+Sklep: Biedronka
+Data: 2026-01-31
 
-📦 Produkty (5):
-• Mleko Łaciate 2% | 4.99 zł
-• Chleb pszenny | 5.49 zł
-• Jabłka Gala | 7.20 zł
-• Ser żółty | 12.99 zł
-• Masło extra | 8.49 zł
+Produkty (5):
+  Mleko Łaciate 2%  | 4.99 zł
+  Chleb pszenny     | 5.49 zł
+  Jabłka Gala       | 7.20 zł
+  Ser żółty         | 12.99 zł
+  Masło extra       | 8.49 zł
 
-💰 Suma z paragonu: 39.16 zł
-📊 Suma produktów: 39.16 zł ✓
+Suma z paragonu:  39.16 zł
+Suma produktów:   39.16 zł
 
-[✅ Zatwierdź] [✏️ Popraw sumę] [❌ Odrzuć]
+[Zatwierdź] [Popraw sumę] [Odrzuć]
 ```
 
 ### Co oznaczają przyciski?
 
 | Przycisk | Kiedy użyć |
 |----------|------------|
-| ✅ **Zatwierdź** | Wszystko się zgadza, zapisz paragon |
-| ✏️ **Popraw sumę** | Suma jest błędna, chcę ją poprawić |
-| ❌ **Odrzuć** | Paragon jest nieczytelny lub błędny, nie zapisuj |
+| **Zatwierdź** | Wszystko się zgadza, zapisz paragon |
+| **Popraw sumę** | Suma jest błędna, chcę ją poprawić |
+| **Odrzuć** | Paragon jest nieczytelny lub błędny, nie zapisuj |
 
 ### Poprawianie sumy
 
 Po kliknięciu "Popraw sumę" pojawią się opcje:
-
-```
-Jak chcesz poprawić sumę?
-
-[📊 Użyj sumy z produktów: 39.16 zł]
-[✍️ Wpisz ręcznie]
-```
-
 - **Użyj sumy z produktów** - system policzy sumę z wykrytych produktów
 - **Wpisz ręcznie** - sam wpiszesz prawidłową kwotę
 
@@ -170,49 +214,39 @@ Jak chcesz poprawić sumę?
 
 ## Przeglądanie danych
 
-### Komendy Telegram
+### Web UI
 
-Wpisz w rozmowie z botem:
+W interfejsie webowym (`/app/`) dostępne są widoki:
 
-| Komenda | Co robi |
-|---------|---------|
-| `/recent` | Ostatnie 5 paragonów |
-| `/stats` | Statystyki zakupów |
-| `/stores` | Lista sklepów i wydatki |
-| `/categories` | Wydatki według kategorii |
-| `/pantry` | Zawartość spiżarni |
-| `/search mleko` | Szukaj produktu "mleko" |
-| `/pending` | Paragony czekające na weryfikację |
-| `/ask <pytanie>` | Zapytaj bazę wiedzy (patrz sekcja [RAG](#baza-wiedzy-rag)) |
+| Widok | Co pokazuje |
+|-------|-------------|
+| Dashboard | Przegląd: ostatnie paragony, statystyki |
+| Paragony | Lista paragonów z filtrowaniem i wyszukiwaniem |
+| Spiżarnia | Aktualne zapasy z kategoriami |
+| Analityka | Wykresy wydatków, trendy, porównania |
+| Wyszukiwanie | Szukanie po całej bazie (paragony, notatki, artykuły...) |
 
-### Przykładowe statystyki
+### Przykładowe statystyki (Analityka)
 
 ```
-📊 Statystyki zakupów
+Statystyki zakupów
 
-📅 Okres: styczeń 2025
+Okres: styczeń 2026
 
-🧾 Paragony: 23
-💰 Suma wydatków: 1,847.32 zł
-📦 Produktów: 156
+Paragony: 23
+Suma wydatków: 1,847.32 zł
+Produktów: 156
 
-🏪 Top sklepy:
+Top sklepy:
 1. Biedronka - 892.45 zł (12 wizyt)
 2. Lidl - 534.20 zł (7 wizyt)
 3. Żabka - 420.67 zł (4 wizyty)
 
-📁 Top kategorie:
+Top kategorie:
 1. Nabiał - 312.50 zł
 2. Mięso - 287.30 zł
 3. Warzywa - 198.45 zł
 ```
-
-### Dostęp przez przeglądarkę (zaawansowane)
-
-Jeśli masz dostęp do komputera z aplikacją, możesz otworzyć:
-
-- `http://localhost:8000` - główna strona API
-- `http://localhost:8000/docs` - interaktywna dokumentacja
 
 ---
 
@@ -222,18 +256,18 @@ System rozpoznaje i prawidłowo odczytuje paragony z następujących sklepów:
 
 | Sklep | Status | Uwagi |
 |-------|--------|-------|
-| Biedronka | ✅ Pełne wsparcie | Obsługa rabatów, promocji |
-| Lidl | ✅ Pełne wsparcie | - |
-| Kaufland | ✅ Pełne wsparcie | - |
-| Żabka | ✅ Pełne wsparcie | - |
-| Auchan | ✅ Pełne wsparcie | - |
-| Carrefour | ✅ Pełne wsparcie | - |
-| Netto | ✅ Pełne wsparcie | - |
-| Dino | ✅ Pełne wsparcie | - |
-| Lewiatan | ✅ Obsługiwany | Prompt generyczny |
-| Polo Market | ✅ Obsługiwany | Prompt generyczny |
-| Stokrotka | ✅ Obsługiwany | Prompt generyczny |
-| Intermarché | ✅ Obsługiwany | Prompt generyczny |
+| Biedronka | Pełne wsparcie | Obsługa rabatów, promocji |
+| Lidl | Pełne wsparcie | - |
+| Kaufland | Pełne wsparcie | - |
+| Żabka | Pełne wsparcie | - |
+| Auchan | Pełne wsparcie | - |
+| Carrefour | Pełne wsparcie | - |
+| Netto | Pełne wsparcie | - |
+| Dino | Pełne wsparcie | - |
+| Lewiatan | Obsługiwany | Prompt generyczny |
+| Polo Market | Obsługiwany | Prompt generyczny |
+| Stokrotka | Obsługiwany | Prompt generyczny |
+| Intermarché | Obsługiwany | Prompt generyczny |
 
 ### Dlaczego różne sklepy?
 
@@ -264,82 +298,39 @@ System "wie" jak czytać każdy format i wyciąga prawidłowe ceny.
 
 ## RSS i podsumowania stron
 
-System zawiera funkcję **subskrypcji kanałów RSS/Atom** oraz **podsumowywania stron internetowych** za pomocą AI.
+System umożliwia **subskrypcję kanałów RSS/Atom** oraz **podsumowywanie stron internetowych** za pomocą AI.
 
 ### Co to robi?
 
 | Funkcja | Opis |
 |---------|------|
-| 📰 Subskrypcje RSS | Śledź ulubione blogi i serwisy informacyjne |
-| 📝 Podsumowania | AI generuje bullet points z kluczowymi informacjami |
-| 🔄 Auto-fetch | Nowe artykuły pobierane automatycznie co 4 godziny |
-| 💾 Zapis do Obsidian | Podsumowania zapisywane w `vault/summaries/` |
+| Subskrypcje RSS | Śledź ulubione blogi i serwisy informacyjne |
+| Podsumowania | AI generuje bullet points z kluczowymi informacjami |
+| Zapis do Obsidian | Podsumowania zapisywane jako pliki markdown |
+| Auto-indeksowanie RAG | Nowe artykuły automatycznie trafiają do bazy wiedzy |
 
-### Jak zacząć?
+### Jak używać?
 
-#### Dodaj kanał RSS
+#### Przez Web UI
 
-W Telegram wpisz:
-```
-/subscribe https://blog.example.com/rss
-```
+W sekcji **Artykuły** (`/app/articles`):
+- Przeglądaj pobrane artykuły
+- Dodawaj nowe kanały RSS
+- Podsumowuj pojedyncze strony wklejając URL
 
-Bot odpowie:
-```
-✅ Dodano kanał: Example Blog
-📰 Typ: RSS 2.0
-🔗 https://blog.example.com/rss
-```
+#### Przez API
 
-#### Podsumuj pojedynczą stronę
-
-Aby podsumować dowolny artykuł:
-```
-/summarize https://example.com/article
-```
-
-Bot przeczyta stronę i wygeneruje podsumowanie:
-```
-📝 Podsumowanie: Example Article
-
-• Główny temat artykułu dotyczy...
-• Kluczowe dane: 45% wzrost, 100 nowych użytkowników
-• Autor rekomenduje wdrożenie rozwiązania X
-• Wnioski: technologia Y zyskuje na popularności
-
-📅 2026-02-02 | 🔗 example.com
-```
-
-### Komendy RSS
-
-| Komenda | Co robi |
-|---------|---------|
-| `/feeds` | Lista subskrybowanych kanałów |
-| `/subscribe <URL>` | Dodaj nowy kanał RSS/Atom |
-| `/unsubscribe <ID>` | Usuń kanał (ID z listy `/feeds`) |
-| `/summarize <URL>` | Podsumuj pojedynczą stronę |
-| `/refresh` | Ręcznie pobierz nowe artykuły |
-| `/articles` | Ostatnie pobrane artykuły |
-| `/articles <feed_id>` | Artykuły z konkretnego kanału |
-
-### Automatyczne pobieranie
-
-System automatycznie sprawdza kanały RSS co **4 godziny** i pobiera nowe artykuły. Gdy znajdzie nowe treści, wysyła powiadomienie:
-
-```
-📬 Nowe artykuły (3)
-
-📰 Example Blog:
-  • Tytuł artykułu 1
-  • Tytuł artykułu 2
-
-📰 Another Feed:
-  • Ciekawy artykuł
-```
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/rss/feeds` | GET | Lista kanałów |
+| `/rss/feeds` | POST | Dodaj kanał RSS |
+| `/rss/summarize` | POST | Podsumuj URL |
+| `/rss/articles` | GET | Lista artykułów |
+| `/rss/fetch` | POST | Pobierz nowe artykuły |
 
 ### Gdzie znajdę podsumowania?
 
-Wszystkie podsumowania są zapisywane w folderze `vault/summaries/` jako pliki markdown. Możesz je przeglądać w Obsidian lub dowolnym edytorze tekstu.
+Wszystkie podsumowania są zapisywane w folderze konfigurowanym w ustawieniach (domyślnie `vault/summaries/`) jako pliki markdown. Możesz je przeglądać w Obsidian lub dowolnym edytorze tekstu.
 
 ### Obsługiwane formaty
 
@@ -347,7 +338,7 @@ Wszystkie podsumowania są zapisywane w folderze `vault/summaries/` jako pliki m
 |--------|----------|
 | RSS 2.0 | Większość blogów i serwisów |
 | Atom | Blogi na Bloggerze, niektóre serwisy |
-| Strony HTML | Dowolna strona z `/summarize` |
+| Strony HTML | Dowolna strona przez podsumowywanie URL |
 
 ---
 
@@ -359,46 +350,28 @@ System umożliwia **transkrypcję nagrań audio i wideo** (w tym filmów z YouTu
 
 | Funkcja | Opis |
 |---------|------|
-| 🎬 YouTube | Transkrybuje filmy z YouTube (z URL) |
-| 🎙️ Pliki audio | Transkrybuje przesłane pliki (MP3, M4A, WAV, OGG, OPUS) |
-| 📝 Notatki | AI generuje podsumowanie, tematy, encje i zadania do wykonania |
-| 💾 Obsidian | Notatki zapisywane w `transcriptions/` |
+| YouTube | Transkrybuje filmy z YouTube (z URL) |
+| Pliki audio | Transkrybuje przesłane pliki (MP3, M4A, WAV, OGG, OPUS) |
+| Notatki | AI generuje podsumowanie, tematy, encje i zadania do wykonania |
+| Obsidian | Notatki zapisywane w `transcriptions/` |
 
 ### Jak używać?
 
-#### Transkrypcja filmu z YouTube
+#### Przez Web UI
 
-W Telegram wpisz:
-```
-/transcribe https://youtube.com/watch?v=abc123
-```
+W sekcji **Transkrypcje** (`/app/transcriptions`):
+- Wklej URL filmu z YouTube
+- Lub prześlij plik audio
+- System automatycznie transkrybuje i wygeneruje notatkę
 
-Bot pobierze film, transkrybuje go i wygeneruje notatkę:
-```
-🎙️ Transkrypcja zakończona
+#### Przez API
 
-📹 Tytuł: Interesujący film o AI
-📺 Kanał: Tech Channel
-⏱️ Czas: 45:00
-🗣️ Język: polski
-📊 Słów: 8,500
-
-📝 Notatka wygenerowana automatycznie.
-Użyj /note <ID> aby zobaczyć.
-```
-
-#### Transkrypcja pliku audio
-
-Wyślij plik audio (MP3, M4A, WAV, OGG, OPUS) do bota - system automatycznie go transkrybuje.
-
-### Komendy transkrypcji
-
-| Komenda | Co robi |
-|---------|---------|
-| `/transcribe <URL>` | Transkrybuj film z YouTube |
-| `/transcribe` + plik audio | Transkrybuj przesłany plik |
-| `/transcriptions` | Lista ostatnich transkrypcji |
-| `/note <ID>` | Pokaż wygenerowaną notatkę |
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/transcription/jobs` | GET/POST | Lista/tworzenie zadań |
+| `/transcription/jobs/upload` | POST | Upload pliku audio |
+| `/transcription/jobs/{id}/note` | GET | Pobranie notatki |
+| `/transcription/jobs/{id}/generate-note` | POST | Generowanie notatki |
 
 ### Notatki z transkrypcji
 
@@ -419,74 +392,64 @@ System posiada **inteligentną bazę wiedzy**, która pozwala zadawać pytania w
 ### Jak to działa?
 
 ```
-❓ Pytanie: "Ile wydałem w Biedronce w styczniu?"
-        ↓
-🔍 Przeszukanie bazy wiedzy (embeddingi + pgvector)
-        ↓
-📚 Znalezienie najlepszych fragmentów
-        ↓
-🤖 AI generuje odpowiedź na podstawie Twoich danych
-        ↓
-🧠 Odpowiedź z listą źródeł
+Pytanie: "Ile wydałem w Biedronce w styczniu?"
+        |
+   Przeszukanie bazy wiedzy (embeddingi + pgvector)
+        |
+   Znalezienie najlepszych fragmentów
+        |
+   AI generuje odpowiedź na podstawie Twoich danych
+        |
+   Odpowiedź z listą źródeł
 ```
 
 ### Jak używać?
 
-W Telegram wpisz `/ask` i zadaj pytanie:
+#### Przez Chat (zalecany sposób)
+
+Otwórz Chat (`/app/chat` lub `/m/chat`) i po prostu zadaj pytanie:
 
 ```
-/ask ile wydałem w Biedronce w styczniu?
+Ty: Ile wydałem w Biedronce w styczniu?
+AI: Na podstawie paragonów ze stycznia, w Biedronce wydałeś
+    łącznie 892.45 zł w 12 wizytach...
 ```
 
-Bot odpowie:
-```
-🧠 Odpowiedź:
+#### Przez sekcję "Zapytaj" w Web UI
 
-Na podstawie paragonów ze stycznia, w Biedronce wydałeś
-łącznie 892.45 zł w 12 wizytach. Najczęściej kupowane
-produkty to mleko (4.99 zł), chleb (5.49 zł) i jabłka...
+W sekcji **Zapytaj** (`/app/ask`) wpisz pytanie - system przeszuka bazę wiedzy i wygeneruje odpowiedź.
 
-📚 Źródła:
-  🧾 Paragon: Biedronka | 2026-01-05 | 78.50 zł
-  🧾 Paragon: Biedronka | 2026-01-12 | 92.30 zł
-  🧾 Paragon: Biedronka | 2026-01-19 | 65.40 zł
+#### Przez API
 
-⏱️ 2.3s | 📊 5 fragmentów | 🤖 qwen2.5:7b
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "ile wydałem w Biedronce?"}'
 ```
 
 ### Przykłady pytań
 
 | Pytanie | Co wyszuka |
 |---------|------------|
-| `/ask ile wydałem w Biedronce?` | Paragony z Biedronki |
-| `/ask co wiem o sztucznej inteligencji?` | Artykuły, transkrypcje, notatki o AI |
-| `/ask jakie produkty kupuję najczęściej?` | Analiza paragonów |
-| `/ask co mówił prelegent o bezpieczeństwie?` | Transkrypcje wykładów |
-| `/ask jakie artykuły czytałem o Pythonie?` | Podsumowania RSS |
+| "Ile wydałem w Biedronce?" | Paragony z Biedronki |
+| "Co wiem o sztucznej inteligencji?" | Artykuły, transkrypcje, notatki o AI |
+| "Jakie produkty kupuję najczęściej?" | Analiza paragonów |
+| "Co mówił prelegent o bezpieczeństwie?" | Transkrypcje wykładów |
+| "Jakie artykuły czytałem o Pythonie?" | Podsumowania RSS |
 
 ### Jakie dane są przeszukiwane?
 
 | Typ danych | Źródło |
 |------------|--------|
-| 🧾 Paragony | Sklepy, daty, produkty, ceny |
-| 📰 Artykuły | Podsumowania RSS i stron |
-| 🎙️ Transkrypcje | Notatki z nagrań audio/wideo |
-| 📝 Notatki | Osobiste notatki |
-| 🔖 Zakładki | Zapisane linki z opisami |
+| Paragony | Sklepy, daty, produkty, ceny |
+| Artykuły | Podsumowania RSS i stron |
+| Transkrypcje | Notatki z nagrań audio/wideo |
+| Notatki | Osobiste notatki |
+| Zakładki | Zapisane linki z opisami |
 
 ### Automatyczne indeksowanie
 
 Nowe treści są **automatycznie** dodawane do bazy wiedzy zaraz po ich utworzeniu. Nie musisz nic robić - system sam indeksuje nowe paragony, artykuły, transkrypcje i notatki.
-
-### API (zaawansowane)
-
-Baza wiedzy dostępna jest również przez REST API:
-
-| Endpoint | Metoda | Opis |
-|----------|--------|------|
-| `/ask` | POST | Zadaj pytanie (JSON: `{"question": "..."}`) |
-| `/ask/stats` | GET | Statystyki indeksu |
-| `/ask/reindex` | POST | Pełna reindeksacja |
 
 ---
 
@@ -494,24 +457,24 @@ Baza wiedzy dostępna jest również przez REST API:
 
 System posiada **wieloturowego asystenta konwersacyjnego**, który łączy bazę wiedzy (RAG) z wyszukiwaniem internetowym (SearXNG).
 
-### Always-On Chat - po prostu pisz!
+### Jak używać?
 
-Chat jest **zawsze aktywny**. Nie musisz używać żadnej komendy - wystarczy napisać wiadomość tekstową do bota:
+Otwórz Chat w Web UI (`/app/chat`) lub Mobile PWA (`/m/chat`) i po prostu napisz wiadomość:
 
 ```
 Ty: Ile wydałem w Biedronce w tym miesiącu?
-Bot: Na podstawie Twoich paragonów, w tym miesiącu wydałeś...
+AI: Na podstawie Twoich paragonów, w tym miesiącu wydałeś...
 
 Ty: A jakie produkty kupuję najczęściej?
-Bot: Według danych z zakupów, najczęściej kupujesz...
+AI: Według danych z zakupów, najczęściej kupujesz...
 ```
 
 System automatycznie utworzy sesję rozmowy i będzie pamiętać kontekst.
 
-### Czym różni się od /ask?
+### Czym różni się od "Zapytaj" (/ask)?
 
-| Funkcja | `/ask` | Chat (wiadomość tekstowa) |
-|---------|--------|---------------------------|
+| Funkcja | Zapytaj (/ask) | Chat |
+|---------|----------------|------|
 | Typ rozmowy | Jednorazowe pytanie | Wieloturowa konwersacja |
 | Kontekst | Tylko aktualne pytanie | Pamięta historię rozmowy |
 | Źródła | Tylko baza wiedzy (RAG) | RAG + wyszukiwanie internetowe |
@@ -523,10 +486,10 @@ Chat automatycznie rozpoznaje, gdy chcesz coś zrobić, a nie tylko zapytać:
 
 ```
 Ty: Zanotuj że jutro mam spotkanie o 10
-Bot: ✅ Utworzono notatkę: "Spotkanie o 10"
+AI: Utworzono notatkę: "Spotkanie o 10"
 
 Ty: Zapisz ten link https://example.com
-Bot: ✅ Dodano zakładkę: example.com
+AI: Dodano zakładkę: example.com
 ```
 
 Więcej o automatycznych akcjach: [Agent - inteligentne akcje](#agent---inteligentne-akcje)
@@ -542,15 +505,6 @@ System automatycznie rozpoznaje typ pytania:
 | `both` | Połączenie obu źródeł | "porównaj moje wydatki z cenami rynkowymi" |
 | `direct` | Bez wyszukiwania | "przetłumacz to na angielski" |
 
-### Komendy Chat AI
-
-| Komenda | Co robi |
-|---------|---------|
-| Dowolna wiadomość | Rozpoczyna rozmowę (automatyczna sesja) |
-| `/endchat` | Zresetuj sesję (zacznij od nowa) |
-
-Sesje dostępne również przez menu inline (przyciski w Telegram).
-
 ---
 
 ## Agent - inteligentne akcje
@@ -559,32 +513,32 @@ System posiada **agenta AI**, który automatycznie rozpoznaje intencje w wiadomo
 
 ### Jak to działa?
 
-Gdy piszesz do bota, agent analizuje wiadomość:
+Gdy piszesz w Chat, agent analizuje wiadomość:
 - **Pytanie o dane?** → Przeszukuje bazę wiedzy
 - **Polecenie akcji?** → Wykonuje natychmiast
 
 ```
-📝 Wiadomość: "Zanotuj że jutro mam dentystę o 10"
-    ↓
-🤖 Agent rozpoznaje: create_note
-    ↓
-✅ Tworzy notatkę automatycznie
+Wiadomość: "Zanotuj że jutro mam dentystę o 10"
+    |
+Agent rozpoznaje: create_note
+    |
+Tworzy notatkę automatycznie
 ```
 
 ### Co potrafi agent?
 
 | Powiedz | Agent zrobi |
 |---------|-------------|
-| "Zanotuj: spotkanie jutro o 10" | 📝 Utworzy notatkę |
-| "Zapisz link https://..." | 🔖 Doda zakładkę |
-| "Podsumuj artykuł https://..." | 📰 Wygeneruje podsumowanie |
-| "Co mam w lodówce?" | 🥫 Pokaże stan spiżarni |
-| "Ile wydałem w Biedronce?" | 💰 Pokaże wydatki |
-| "Jaka jest pogoda?" | 🌤️ Sprawdzi pogodę |
-| "Pokaż ostatnie notatki" | 📋 Wyświetli listę |
-| "Wyszukaj w internecie..." | 🌐 Przeszuka internet |
+| "Zanotuj: spotkanie jutro o 10" | Utworzy notatkę |
+| "Zapisz link https://..." | Doda zakładkę |
+| "Podsumuj artykuł https://..." | Wygeneruje podsumowanie |
+| "Co mam w lodówce?" | Pokaże stan spiżarni |
+| "Ile wydałem w Biedronce?" | Pokaże wydatki |
+| "Jaka jest pogoda?" | Sprawdzi pogodę |
+| "Pokaż ostatnie notatki" | Wyświetli listę |
+| "Wyszukaj w internecie..." | Przeszuka internet |
 
-### Przykłady użycia w stylu "głosówki"
+### Przykłady użycia naturalnym językiem
 
 Agent świetnie rozumie naturalny, potoczny język:
 
@@ -604,7 +558,7 @@ Agent świetnie rozumie naturalny, potoczny język:
 
 ### Kiedy agent działa?
 
-Agent jest zintegrowany z Chat AI i działa automatycznie przy każdej wiadomości. Nie musisz używać żadnych specjalnych komend.
+Agent jest zintegrowany z Chat AI i działa automatycznie przy każdej wiadomości. Nie musisz używać żadnych specjalnych komend - po prostu pisz w Chat.
 
 ---
 
@@ -614,19 +568,23 @@ System umożliwia tworzenie i zarządzanie **notatkami osobistymi** z tagami i k
 
 ### Jak używać?
 
-Notatki tworzy się przez REST API:
+#### Przez Chat (najłatwiejszy sposób)
 
-```bash
-curl -X POST http://localhost:8000/notes/ \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Moja notatka", "content": "Treść notatki...", "tags": ["ważne"]}'
+W Chat napisz:
+```
+Zanotuj: jutro spotkanie z klientem o 14:00
 ```
 
-### Gdzie znajdę notatki?
+Agent automatycznie utworzy notatkę.
 
-Notatki zapisywane są w folderze `notes/` jako pliki Markdown oraz w bazie danych PostgreSQL.
+#### Przez Web UI
 
-### API notatek
+W sekcji **Notatki** (`/app/notes`):
+- Przeglądaj istniejące notatki
+- Twórz nowe notatki z tytułem, treścią i tagami
+- Edytuj i usuwaj notatki
+
+#### Przez API
 
 | Endpoint | Metoda | Opis |
 |----------|--------|------|
@@ -635,6 +593,10 @@ Notatki zapisywane są w folderze `notes/` jako pliki Markdown oraz w bazie dany
 | `/notes/{id}` | GET | Pobierz notatkę |
 | `/notes/{id}` | PUT | Zaktualizuj notatkę |
 | `/notes/{id}` | DELETE | Usuń notatkę |
+
+### Gdzie znajdę notatki?
+
+Notatki zapisywane są w bazie danych PostgreSQL oraz opcjonalnie jako pliki Markdown w folderze `notes/` (Obsidian).
 
 ---
 
@@ -651,40 +613,20 @@ Na paragonach produkty mają często **skrócone nazwy**:
 | `SER.GOUD.PL` | Ser Gouda plastry |
 | `JABŁ.ZŁOT.1KG` | Jabłka Golden 1kg |
 
+### Zarządzanie słownikiem
+
+W Web UI sekcja **Słownik** (`/app/dictionary`) umożliwia:
+- Przeglądanie znanych produktów i ich mapowań
+- Dodawanie nowych skrótów i produktów
+- Edycję istniejących wpisów
+
 ### Uczenie nowych produktów
 
 Jeśli system **nie rozpozna** produktu:
 
 1. Zapisuje go na liście "nieznanych"
 2. Po kilku wystąpieniach (3+) proponuje dodanie
-3. Możesz zaakceptować lub poprawić nazwę
-
-**Komenda do sprawdzenia nieznanych produktów:**
-```
-/unknown
-```
-
----
-
-## Interfejs webowy
-
-System posiada interfejs webowy dostępny pod adresem `http://localhost:8000/app/`.
-
-### Dostępne widoki
-
-| Widok | Opis |
-|-------|------|
-| Dashboard | Przegląd systemu |
-| Paragony | Przeglądanie i zarządzanie paragonami |
-| Spiżarnia | Stan zapasów |
-| Analityka | Statystyki i wykresy wydatków |
-| Artykuły | Pobrane i podsumowane artykuły |
-| Transkrypcje | Lista transkrypcji z notatkami |
-| Notatki | Przeglądanie i edycja notatek |
-| Zakładki | Zarządzanie zakładkami |
-| Chat | Interfejs Chat AI |
-| Słownik | Zarządzanie słownikiem produktów |
-| Wyszukiwanie | Wyszukiwanie unified po całej bazie |
+3. Możesz zaakceptować lub poprawić nazwę w słowniku
 
 ---
 
@@ -692,14 +634,14 @@ System posiada interfejs webowy dostępny pod adresem `http://localhost:8000/app
 
 ### Czy moje dane są bezpieczne?
 
-✅ **Tak.** Wszystkie dane są przechowywane **lokalnie** na Twoim komputerze. Przy użyciu lokalnych backendów OCR (`vision`, `paddle`, `deepseek`) modele AI działają lokalnie przez Ollama. Przy backendach `google` lub `openai` zdjęcia paragonów są przesyłane do zewnętrznych API (Google Vision, OpenAI) w celu przetworzenia.
+**Tak.** Wszystkie dane są przechowywane **lokalnie** na Twoim komputerze. Przy użyciu lokalnych backendów OCR (`vision`, `paddle`, `deepseek`) modele AI działają lokalnie przez Ollama. Przy backendach `google` lub `openai` zdjęcia paragonów są przesyłane do zewnętrznych API (Google Vision, OpenAI) w celu przetworzenia.
 
 ### Czy potrzebuję internetu?
 
 Potrzebujesz internetu tylko do:
-- Komunikacji przez Telegram
 - Pierwszego pobrania modeli AI
 - Pobierania artykułów RSS i transkrypcji z YouTube
+- Wyszukiwania internetowego w Chat AI (SearXNG)
 
 Po skonfigurowaniu przetwarzanie paragonów i pytania do bazy wiedzy działają w pełni lokalnie.
 
@@ -711,7 +653,7 @@ Po skonfigurowaniu przetwarzanie paragonów i pytania do bazy wiedzy działają 
 | Średni (10-30 produktów) | ~1-2 minuty |
 | Długi (30+ produktów) | ~2-4 minuty |
 
-### Ile czasu zajmuje odpowiedź na pytanie (/ask)?
+### Ile czasu zajmuje odpowiedź na pytanie?
 
 Zwykle 2-5 sekund - zależy od liczby fragmentów do przeszukania i wydajności GPU.
 
@@ -722,75 +664,31 @@ Zwykle 2-5 sekund - zależy od liczby fragmentów do przeszukania i wydajności 
 
 ### Czy mogę edytować zapisane paragony?
 
-Obecnie edycja wymaga dostępu do plików. Funkcja edycji przez Telegram jest planowana.
-
-### Jak usunąć błędny paragon?
-
-Skontaktuj się z administratorem lub użyj komendy:
-```
-/delete [nazwa_pliku]
-```
+Tak - w Web UI w sekcji **Paragony** (`/app/receipts`) możesz przeglądać szczegóły paragonów.
 
 ### Baza wiedzy nie zwraca wyników
 
-Jeśli `/ask` nie znajduje odpowiedzi:
-1. Upewnij się, że dane zostały zindeksowane (sprawdź: `curl http://localhost:8000/ask/stats`)
-2. Jeśli indeks jest pusty, uruchom reindeksację: `curl -X POST http://localhost:8000/ask/reindex`
+Jeśli Chat lub "Zapytaj" nie znajduje odpowiedzi:
+1. Upewnij się, że dane zostały zindeksowane (sprawdź: `http://localhost:8000/ask/stats`)
+2. Jeśli indeks jest pusty, uruchom reindeksację przez API: `POST /ask/reindex`
 3. Spróbuj zadać pytanie innymi słowami
-
-### Jak działa chat bez komendy /chat?
-
-Chat jest teraz **always-on**. Wystarczy napisać wiadomość do bota, a system automatycznie:
-1. Utworzy sesję rozmowy (jeśli nie istnieje)
-2. Przeanalizuje czy to pytanie czy polecenie akcji
-3. Odpowie lub wykona akcję
-
-Użyj `/endchat` aby zresetować rozmowę i zacząć od nowa.
 
 ### Agent nie wykonuje akcji
 
 Jeśli agent nie rozpoznaje Twoich poleceń:
-1. Upewnij się, że `CHAT_AGENT_ENABLED=true` jest ustawione
+1. Upewnij się, że `CHAT_AGENT_ENABLED=true` jest ustawione w konfiguracji
 2. Spróbuj bardziej bezpośredniego polecenia: "Zanotuj: ..." zamiast "może warto by zapisać..."
 3. Sprawdź logi systemu czy nie ma błędów
 
----
+### Jak uzyskać dostęp z telefonu?
 
-## Wszystkie komendy Telegram
+Otwórz `http://<adres-serwera>:8000/m/` w przeglądarce na telefonie. Możesz zainstalować aplikację jako PWA - wybierz "Dodaj do ekranu głównego" w menu przeglądarki.
 
-| Komenda | Opis |
-|---------|------|
-| `/help` | Pokaż pomoc |
-| `/start` | Uruchom bota |
-| `/recent [N]` | Ostatnie N paragonów |
-| `/pending` | Paragony do weryfikacji |
-| `/reprocess <plik>` | Ponowne przetwarzanie |
-| `/pantry [kategoria]` | Zawartość spiżarni |
-| `/use <produkt>` | Oznacz jako zużyty |
-| `/remove <produkt>` | Usuń ze spiżarni |
-| `/search <fraza>` | Szukaj produktu |
-| `/q <fraza>` | Szybkie wyszukiwanie |
-| `/stats [week/month]` | Statystyki wydatków |
-| `/stores` | Wydatki wg sklepów |
-| `/categories` | Wydatki wg kategorii |
-| `/rabaty` | Raport rabatów |
-| `/errors` | Lista błędów OCR |
-| `/clearerrors` | Wyczyść błędy |
-| `/feeds` | Lista kanałów RSS |
-| `/subscribe <URL>` | Dodaj kanał RSS |
-| `/unsubscribe <ID>` | Usuń kanał RSS |
-| `/summarize <URL>` | Podsumuj stronę |
-| `/refresh` | Pobierz nowe artykuły |
-| `/articles [feed_id]` | Lista artykułów |
-| `/transcribe <URL>` | Transkrybuj YouTube |
-| `/transcriptions` | Lista transkrypcji |
-| `/note <ID>` | Notatka z transkrypcji |
-| `/n <tekst>` | Szybka notatka |
-| `/ask <pytanie>` | Zapytaj bazę wiedzy |
-| `/find <fraza>` | Szukaj w bazie wiedzy |
-| Wiadomość tekstowa | Chat AI + Agent (always-on) |
-| `/endchat` | Zresetuj sesję Chat AI |
-| `/settings` | Ustawienia bota |
+### Jak zabezpieczyć dostęp?
+
+Ustaw zmienną `AUTH_TOKEN` w konfiguracji. Po włączeniu:
+- Web UI wymaga logowania (sesja 8h)
+- API wymaga nagłówka `Authorization: Bearer <token>`
 
 ---
 
@@ -799,7 +697,7 @@ Jeśli agent nie rozpoznaje Twoich poleceń:
 Jeśli masz problemy lub pytania:
 
 1. Sprawdź sekcję [FAQ](#najczęstsze-pytania-faq)
-2. Użyj komendy `/help` w Telegram
+2. Zajrzyj do dokumentacji API: `http://localhost:8000/docs`
 3. Skontaktuj się z administratorem systemu
 
 ---
