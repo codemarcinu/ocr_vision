@@ -30,6 +30,11 @@ async def dashboard(
     recent_articles = await article_repo.get_recent(limit=5)
     unread_count = await article_repo.get_unread_count()
 
+    is_new_user = (
+        receipt_stats.get("total_receipts", 0) == 0
+        and unread_count == 0
+    )
+
     return templates.TemplateResponse("dashboard/index.html", {
         "request": request,
         "receipt_stats": receipt_stats,
@@ -38,4 +43,5 @@ async def dashboard(
         "unread_articles": unread_count,
         "recent_receipts": recent_receipts,
         "recent_articles": recent_articles,
+        "is_new_user": is_new_user,
     })

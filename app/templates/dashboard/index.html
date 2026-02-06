@@ -4,6 +4,28 @@
 {% block content %}
 <h4 class="mb-4">Dashboard</h4>
 
+{% if is_new_user %}
+<!-- Welcome screen for new users -->
+<div class="card mb-4">
+    <div class="card-body text-center py-5">
+        <div class="fs-1 mb-3">🧠</div>
+        <h5 class="mb-2">Witaj w Second Brain!</h5>
+        <p class="text-muted mb-4">Zacznij od jednej z poniższych akcji:</p>
+        <div class="d-flex flex-wrap justify-content-center gap-3">
+            <a href="/app/paragony/upload" class="btn btn-primary">
+                <i class="bi bi-upload me-1"></i> Upload paragonu
+            </a>
+            <a href="/app/notatki/" class="btn btn-outline-primary">
+                <i class="bi bi-journal-text me-1"></i> Stwórz notatkę
+            </a>
+            <a href="/app/czat/" class="btn btn-outline-primary">
+                <i class="bi bi-chat-dots me-1"></i> Czat AI
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Metric cards -->
 <div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-4">
     <div class="col">

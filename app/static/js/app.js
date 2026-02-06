@@ -134,11 +134,112 @@
         }
     };
 
+    // ===== Skeleton Screens =====
+    window.showSkeleton = function(targetId, rowCount) {
+        var target = document.getElementById(targetId);
+        if (!target) return;
+        var html = '';
+        for (var i = 0; i < (rowCount || 5); i++) {
+            html += '<div class="skeleton-row">' +
+                '<div class="skeleton skeleton-text" style="width:' + (50 + Math.random() * 30) + '%"></div>' +
+                '<div class="skeleton skeleton-text-sm" style="width:' + (30 + Math.random() * 20) + '%"></div>' +
+                '<div class="skeleton skeleton-badge"></div>' +
+                '</div>';
+        }
+        target.innerHTML = html;
+    };
+
+    window.showSkeletonCards = function(targetId, count) {
+        var target = document.getElementById(targetId);
+        if (!target) return;
+        var html = '';
+        for (var i = 0; i < (count || 4); i++) {
+            html += '<div class="skeleton skeleton-card"></div>';
+        }
+        target.innerHTML = html;
+    };
+
+    // ===== Progress Toasts =====
+    window.showProgressToast = function(id, message) {
+        var container = document.getElementById('toast-container');
+        if (!container) return;
+        var existing = document.getElementById('progress-toast-' + id);
+        if (existing) existing.remove();
+
+        var el = document.createElement('div');
+        el.id = 'progress-toast-' + id;
+        el.className = 'toast text-bg-primary show';
+        el.setAttribute('role', 'status');
+        el.innerHTML = '<div class="d-flex align-items-center">' +
+            '<div class="toast-body d-flex align-items-center gap-2">' +
+            '<span class="spinner-border spinner-border-sm"></span> ' +
+            '<span class="progress-toast-msg"></span>' +
+            '</div></div>';
+        el.querySelector('.progress-toast-msg').textContent = message;
+        container.appendChild(el);
+    };
+
+    window.updateProgressToast = function(id, message) {
+        var el = document.getElementById('progress-toast-' + id);
+        if (!el) return;
+        var msg = el.querySelector('.progress-toast-msg');
+        if (msg) msg.textContent = message;
+    };
+
+    window.hideProgressToast = function(id) {
+        var el = document.getElementById('progress-toast-' + id);
+        if (el) {
+            el.classList.remove('show');
+            setTimeout(function() { el.remove(); }, 300);
+        }
+    };
+
+    // ===== Recently Visited =====
+    function trackRecentPage() {
+        var path = window.location.pathname;
+        var ignorePaths = ['/login', '/logout', '/static/', '/api/', '/app/command-palette'];
+        if (ignorePaths.some(function(p) { return path.startsWith(p); })) return;
+        if (path === '/app/' || path === '/app') return;
+
+        var key = 'sb-recent-pages';
+        var recent = [];
+        try { recent = JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) {}
+        var title = document.title.replace(' - Second Brain', '').trim();
+        if (!title) return;
+
+        recent = recent.filter(function(r) { return r.path !== path; });
+        recent.unshift({ path: path, title: title, ts: Date.now() });
+        recent = recent.slice(0, 5);
+        localStorage.setItem(key, JSON.stringify(recent));
+        renderRecentPages();
+    }
+
+    function renderRecentPages() {
+        var container = document.getElementById('recent-pages');
+        var section = document.getElementById('recent-section');
+        if (!container) return;
+        var recent = [];
+        try { recent = JSON.parse(localStorage.getItem('sb-recent-pages') || '[]'); } catch(e) {}
+        if (recent.length === 0) {
+            if (section) section.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+        if (section) section.style.display = '';
+        container.innerHTML = recent.map(function(r) {
+            return '<a href="' + r.path + '" class="sidebar-link" title="' + r.title + '">' +
+                '<span class="sidebar-icon"><i class="bi bi-clock-history"></i></span>' +
+                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + r.title + '</span></a>';
+        }).join('');
+    }
+
     // ===== Init =====
     document.addEventListener('DOMContentLoaded', function() {
         initDarkMode();
         initSidebar();
         initActiveNav();
         initHtmx();
+        trackRecentPage();
+        renderRecentPages();
     });
 })();

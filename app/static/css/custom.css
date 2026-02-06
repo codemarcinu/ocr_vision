@@ -294,6 +294,33 @@ body {
     100% { background-position: -200% 0; }
 }
 
+.skeleton-text { height: 1rem; width: 70%; margin-bottom: 0.5rem; }
+.skeleton-text-sm { height: 0.75rem; width: 50%; }
+.skeleton-badge { height: 1.2rem; width: 3rem; display: inline-block; border-radius: 0.25rem; }
+.skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.skeleton-card {
+    height: 72px;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Confidence badges */
+.confidence-high { background: #198754; }
+.confidence-medium { background: #ffc107; color: #000; }
+.confidence-low { background: #dc3545; }
+
+/* Breadcrumbs */
+.breadcrumb {
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
 /* ===== Upload ===== */
 .upload-dropzone {
     border: 2px dashed var(--bs-border-color);
