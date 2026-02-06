@@ -1,0 +1,92 @@
+{
+  "name": "Second Brain",
+  "short_name": "2Brain",
+  "description": "Personal knowledge management - paragony, notatki, zakładki, czat AI",
+  "start_url": "/m/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#212529",
+  "theme_color": "#212529",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-152.png",
+      "sizes": "152x152",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Nowy paragon",
+      "short_name": "Paragon",
+      "url": "/m/?action=camera",
+      "icons": [{"src": "/static/icons/shortcut-receipt.png", "sizes": "96x96"}]
+    },
+    {
+      "name": "Szybka notatka",
+      "short_name": "Notatka",
+      "url": "/m/?action=note",
+      "icons": [{"src": "/static/icons/shortcut-note.png", "sizes": "96x96"}]
+    },
+    {
+      "name": "Wiadomość głosowa",
+      "short_name": "Głos",
+      "url": "/m/?action=voice",
+      "icons": [{"src": "/static/icons/shortcut-mic.png", "sizes": "96x96"}]
+    }
+  ],
+  "share_target": {
+    "action": "/m/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "image",
+          "accept": ["image/*"]
+        }
+      ]
+    }
+  }
+}
