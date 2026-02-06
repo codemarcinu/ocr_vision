@@ -228,14 +228,17 @@ class TranscriptionNoteWriter:
         logger.info(f"Created transcription note: {output_path}")
         return output_path
 
-    def write_index(self) -> Path:
+    def write_moc(self) -> Path:
         """
-        Write/update index file listing all transcription notes.
+        Write Map of Content file grouping transcriptions by category.
+
+        Parses YAML frontmatter from each transcription note to extract
+        the category, then generates a grouped index with counts.
 
         Returns:
-            Path to index file
+            Path to MOC file
         """
-        index_path = self.output_dir / "index.md"
+        moc_path = self.output_dir / "index.md"
 
         # Get all transcription notes (sorted by modification time, newest first)
         note_files = sorted(
@@ -244,31 +247,103 @@ class TranscriptionNoteWriter:
             reverse=True,
         )
 
-        # Build index content
+        # Parse categories from frontmatter
+        by_category: dict[str, list[dict]] = {}
+        uncategorized: list[dict] = []
+
+        for f in note_files:
+            meta = self._parse_frontmatter(f)
+            category = meta.get("category")
+            entry = {
+                "stem": f.stem,
+                "title": meta.get("title", f.stem),
+                "source_type": meta.get("source_type", ""),
+                "duration": meta.get("duration", ""),
+            }
+
+            if category:
+                by_category.setdefault(category, []).append(entry)
+            else:
+                uncategorized.append(entry)
+
+        # Build MOC content
         lines = [
             "---",
             f"updated: {datetime.now().isoformat()}",
+            "type: moc",
+            "tags: [moc, transcription]",
             "---",
             "",
             "# Transkrypcje",
             "",
-            "## Ostatnie notatki",
+            f"Łącznie: **{len(note_files)}** notatek",
             "",
         ]
 
-        for f in note_files[:30]:  # Show last 30
-            lines.append(f"- [[{f.stem}]]")
+        # Category overview table
+        if by_category or uncategorized:
+            lines.extend([
+                "## Kategorie",
+                "",
+                "| Kategoria | Liczba |",
+                "| --- | --- |",
+            ])
+            for cat in sorted(by_category.keys()):
+                lines.append(f"| {cat} | {len(by_category[cat])} |")
+            if uncategorized:
+                lines.append(f"| Bez kategorii | {len(uncategorized)} |")
+            lines.append("")
 
-        lines.append("")
-        lines.append(f"Łącznie: {len(note_files)} notatek")
+        # Sections per category
+        for cat in sorted(by_category.keys()):
+            entries = by_category[cat]
+            lines.append(f"## {cat} ({len(entries)})")
+            lines.append("")
+            for entry in entries:
+                duration_str = f" ({entry['duration']})" if entry["duration"] else ""
+                lines.append(f"- [[{entry['stem']}|{entry['title']}]]{duration_str}")
+            lines.append("")
+
+        # Uncategorized section
+        if uncategorized:
+            lines.append(f"## Bez kategorii ({len(uncategorized)})")
+            lines.append("")
+            for entry in uncategorized:
+                duration_str = f" ({entry['duration']})" if entry["duration"] else ""
+                lines.append(f"- [[{entry['stem']}|{entry['title']}]]{duration_str}")
+            lines.append("")
 
         content = "\n".join(lines)
 
-        with open(index_path, "w", encoding="utf-8") as f:
+        with open(moc_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        logger.info(f"Updated transcription index: {index_path}")
-        return index_path
+        logger.info(f"Updated transcription MOC: {moc_path} ({len(note_files)} files)")
+        return moc_path
+
+    def _parse_frontmatter(self, path: Path) -> dict:
+        """Parse YAML frontmatter from a markdown file.
+
+        Returns:
+            Dict of frontmatter fields, or empty dict on failure.
+        """
+        try:
+            content = path.read_text(encoding="utf-8")
+            if not content.startswith("---"):
+                return {}
+
+            parts = content.split("---", 2)
+            if len(parts) < 3:
+                return {}
+
+            return yaml.safe_load(parts[1]) or {}
+        except Exception as e:
+            logger.debug(f"Failed to parse frontmatter from {path}: {e}")
+            return {}
+
+    def write_index(self) -> Path:
+        """Alias for write_moc() (backward compatibility)."""
+        return self.write_moc()
 
 
 def write_transcription_note(

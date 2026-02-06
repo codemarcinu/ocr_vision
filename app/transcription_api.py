@@ -342,6 +342,7 @@ async def generate_note(job_id: UUID, data: GenerateNoteRequest = None):
                 include_transcription=data.include_transcription,
             )
             note.obsidian_file_path = str(file_path)
+            writer.write_moc()
 
         await session.commit()
 
@@ -488,6 +489,7 @@ async def process_job(job_id: UUID):
                             duration_seconds=job.duration_seconds,
                         )
                         note.obsidian_file_path = str(file_path)
+                        writer.write_moc()
 
                     await session.commit()
 
