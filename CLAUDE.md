@@ -35,6 +35,12 @@ curl -X POST http://localhost:8000/process-receipt -F "file=@receipt.png"
 
 # Database shell
 docker exec -it pantry-db psql -U pantry -d pantry
+
+# HTTPS with Caddy (auto Let's Encrypt)
+docker compose --profile https up -d
+
+# Cloudflare Tunnel for external access
+bash scripts/setup_cloudflare.sh
 ```
 
 ### Local Development (without Docker)
@@ -80,7 +86,7 @@ FastAPI (app/main.py) ──→ Ollama LLMs (host:11434)
 PostgreSQL + pgvector ──→ Obsidian vault/ markdown
 ```
 
-Docker services: `postgres` (pgvector/pgvector:pg16), `fastapi` (pantry-api, CUDA GPU), `searxng` (metasearch for Chat AI), optional monitoring (prometheus/grafana/loki).
+Docker services: `postgres` (pgvector/pgvector:pg16), `fastapi` (pantry-api, CUDA GPU), `searxng` (metasearch for Chat AI), optional `caddy` (HTTPS reverse proxy with auto-SSL, `--profile https`), optional monitoring (prometheus/grafana/loki).
 
 Ollama runs on the host machine, accessed from Docker via `host.docker.internal:11434`.
 
@@ -121,7 +127,7 @@ Each module follows a consistent pattern:
 - **Telegram handler** (`app/telegram/handlers/*.py`) - Bot commands
 - **Telegram menu** (`app/telegram/handlers/menu_*.py`) - Inline keyboard navigation
 
-Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, agent (tool-calling), analytics, dictionary, search, reports.
+Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, agent (tool-calling), analytics, dictionary, search, reports, user profiles, push notifications, mobile PWA.
 
 ### Unified Search (`app/search_api.py`)
 
@@ -137,10 +143,16 @@ Analytics endpoints at `/reports/*`:
 - `/reports/summary` - Full overview with date range
 - `/reports/classifier-ab` - A/B test results for classifier models
 
+### User Profiles (`app/profile_api.py`)
+
+Per-user preferences stored in `UserProfile` model: preferred stores, city (for weather), display settings. API at `/profile/*`. Telegram handler: `/settings` → profile menu.
+
 ### Operational Endpoints
 
 - `/health` - Basic health check
 - `/models/status` - VRAM usage, loaded models, eviction metrics (when `MODEL_COORDINATION_ENABLED=true`)
+- `/metrics` - Prometheus metrics (via `prometheus-fastapi-instrumentator`)
+- `/docs` - Swagger UI (FastAPI auto-docs)
 
 ### Docker Volume Mounts
 
@@ -173,7 +185,9 @@ async def list_products(repo: ProductRepoDep):
 ```
 All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository classes accept `AsyncSession` and use `await session.execute()`. Never use synchronous SQLAlchemy calls.
 
-**Telegram callback router** (`app/telegram/callback_router.py`): Prefix-based routing instead of monolithic if/elif. Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`).
+**Telegram callback router** (`app/telegram/callback_router.py`): Prefix-based routing instead of monolithic if/elif. Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`). Registered prefixes: `receipts:`, `articles:`, `transcriptions:`, `stats:`, `notes:`, `bookmarks:`, `settings:`, `chat:`, `url:`, `review:`, `profile:`.
+
+**Telegram schedulers**: `rss_scheduler.py` (fetch RSS every 4h), `transcription_scheduler.py` (process queued jobs), `notifications.py` (notification scheduler). Voice notes processed on interval (`VOICE_NOTE_PROCESS_INTERVAL_MINUTES`).
 
 **RAG auto-indexing** (`app/rag/hooks.py`): Fire-and-forget hooks in notes_api, bookmarks_api, rss_api, transcription_api auto-index new content for `/ask` queries. If embeddings table is empty on startup, triggers background `reindex_all()`.
 
@@ -192,12 +206,6 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 **OCR backend conditional imports** (`app/main.py`): Backend selection happens at import time via `settings.OCR_BACKEND`, loading the appropriate module (paddle_ocr, deepseek_ocr, google_ocr_backend, openai_ocr_backend, or default vision ocr).
 
 **Error messages in Polish**: User-facing error text uses Polish (e.g., "Wystąpił błąd"). Keep this convention in Telegram handlers and web UI.
-
-**Authentication** (`app/auth.py`): Optional token-based auth controlled by `AUTH_TOKEN` env var. When set:
-- API endpoints require `Authorization: Bearer <token>` header
-- Web UI uses session cookies with `/login` and `/logout` routes
-- Telegram bot has separate `@authorized_only` decorator based on `TELEGRAM_CHAT_ID`
-- Public paths (`/health`, `/docs`, `/metrics`) bypass auth
 
 ### Product Normalization Chain (`app/dictionaries/`)
 
@@ -261,6 +269,8 @@ router.register_executor("create_note", my_note_handler)
 response = await router.process("Zapisz notatkę: jutro spotkanie o 10")
 # response.tool = "create_note", response.arguments = {"title": "...", "content": "..."}
 ```
+
+**Multi-tool chains**: Agent supports chaining up to 3 action tools (`MAX_TOOLS_IN_CHAIN`). LLM returns Format B with `"tools": [...]` array. `execute_tool_chain()` runs tools sequentially, passing context via `ToolChainContext`. `_inject_chain_context()` maps outputs between tools (e.g., `summarize_url` → `create_note`: summary → content). Only `ACTION_TOOLS` can chain; `ORCHESTRATOR_TOOLS` break the chain and delegate to orchestrator.
 
 All agent calls are logged to `agent_call_logs` table (AgentCallLog model) for debugging and security monitoring.
 
@@ -329,6 +339,28 @@ DEEPSEEK_OCR_TIMEOUT=90               # DeepSeek timeout (increased for slow GPU
 # Web search (SearXNG)
 WEB_SEARCH_NUM_RESULTS=6              # Results per search query
 WEB_SEARCH_EXPAND_NEWS=false          # Expand news categories in search
+
+# Receipt batching (group receipts to minimize model switches)
+RECEIPT_BATCH_ENABLED=false
+RECEIPT_BATCH_MAX_WAIT_SEC=30
+RECEIPT_BATCH_MAX_SIZE=5
+
+# Push notifications (Web Push API for PWA)
+PUSH_ENABLED=false
+PUSH_VAPID_PUBLIC_KEY=                # Generate with scripts/generate_vapid_keys.py
+PUSH_VAPID_PRIVATE_KEY=
+PUSH_VAPID_SUBJECT=mailto:admin@localhost
+
+# Weather (for agent get_weather tool)
+OPENWEATHER_API_KEY=
+WEATHER_CITY=Kraków
+
+# Database pool
+DATABASE_POOL_SIZE=5
+DATABASE_MAX_OVERFLOW=10
+
+# Base URL for notification links
+BASE_URL=http://localhost:8000
 ```
 
 ### Ollama Models Required
@@ -345,7 +377,24 @@ VRAM estimates are used by the ModelCoordinator for intelligent model switching.
 
 ## Web UI
 
-HTMX + Jinja2 templates at `http://localhost:8000/app/`. Templates in `app/templates/` organized by feature with `partials/` subdirectories for HTMX partial responses. Toast notifications via HX-Trigger headers.
+HTMX + Jinja2 templates at `http://localhost:8000/app/`. Templates in `app/templates/` organized by feature with `partials/` subdirectories for HTMX partial responses. Toast notifications via HX-Trigger headers. Static JS libs: `htmx.min.js`, `marked.min.js` (markdown), `purify.min.js` (XSS sanitization).
+
+### Mobile PWA (`app/mobile_routes.py`)
+
+Chat-centric mobile interface at `/m/` with offline support:
+- `/m/` - Dashboard, `/m/chat` - Chat, `/m/receipts`, `/m/notes`, `/m/bookmarks` - Content browsers
+- `/m/share` - Web Share Target API (share images/text from other apps)
+- Service worker (`app/static/sw.js`) with offline caching and request queue (`app/static/js/offline-queue.js`)
+- PWA installable via `manifest.json` with shortcuts (camera, note, voice)
+- Templates in `app/templates/mobile/` with separate `base.html`
+
+### Push Notifications (`app/push/`)
+
+Web Push API via `pywebpush` with VAPID key authentication:
+- `app/push_api.py` - Subscribe/unsubscribe endpoints at `/push/*`
+- `app/services/push_service.py` - Notification sender hooked into content creation flows
+- Generate VAPID keys: `python scripts/generate_vapid_keys.py`
+- Config: `PUSH_ENABLED`, `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT`
 
 ## Output Files
 
@@ -368,19 +417,29 @@ PostgreSQL 16 with `pg_trgm` (fuzzy text) and `pgvector` (embeddings) extensions
 
 Set all feature flags to `false` to revert to file-only mode (no database).
 
-## Security Considerations
+## Security
 
-See `PROJECT_AUDIT.md` for full security audit. Key known issues:
+**Authentication** (`app/auth.py`): Optional, controlled by `AUTH_TOKEN` env var. When set:
+- API: `Authorization: Bearer <token>` header
+- Web UI: session cookies (8h expiry) with `/login` and `/logout` routes
+- Telegram bot: separate `@authorized_only` decorator based on `TELEGRAM_CHAT_ID`
+- Public paths bypassing auth: `/health`, `/docs`, `/metrics`, `/login`, `/logout`, `/sw.js`, `/manifest.json`
 
-**Critical/High:**
-- **SEC-001**: No authentication on FastAPI/Web UI (Telegram bot has `@authorized_only`)
-- **SEC-002**: SQL injection via f-string in `app/db/repositories/embeddings.py` (use parameterized queries with `ANY(:types)`)
+**Rate limiting**: `slowapi` on login (5/min) and sensitive endpoints.
+
+**Security headers middleware** (`app/main.py`): CSP, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, Referrer-Policy.
+
+**SSRF protection** (`app/url_validator.py`): URL validation blocks private IP ranges for web scraper/RSS fetcher.
+
+**Agent input validation** (`app/agent/validator.py`): Prompt injection detection with low/medium/high risk classification. Logs suspicious inputs to `agent_call_logs`.
+
+**Known issues** (see `PROJECT_AUDIT.md`):
+- **SEC-002**: SQL injection via f-string in `app/db/repositories/embeddings.py` (use parameterized queries)
 - **SEC-003**: Path traversal in file uploads (sanitize with `PurePosixPath(filename).name`)
-- **SEC-005**: SSRF in web scraper/RSS fetcher (validate URLs, block private IP ranges)
 
 **Mitigating factor:** Docker Compose binds ports to `127.0.0.1` only, limiting exposure to localhost.
 
-When adding new endpoints: use FastAPI's parameterized queries, sanitize user-provided filenames, validate external URLs.
+When adding new endpoints: use parameterized queries, sanitize user-provided filenames, validate external URLs, apply `verify_api_token` or `verify_web_session` dependencies.
 
 ## Extending the Codebase
 
