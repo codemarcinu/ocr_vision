@@ -79,6 +79,7 @@ class AgentExecutionResult:
     executed_tools: list[str] = None  # List of executed tools in order
     results: list[str] = None  # Results from each tool in order
     partial_success: bool = False  # True if some tools succeeded before failure
+    tool_metadata: Optional[dict] = None  # Structured data for UI action cards
 
     def __post_init__(self):
         if self.executed_tools is None:
@@ -97,6 +98,47 @@ class ToolChainContext:
 
 
 # =============================================================================
+# Action Detection (shared by web API and Telegram)
+# =============================================================================
+
+# Keywords that suggest user wants an ACTION (not just a search/conversation)
+_ACTION_KEYWORDS = [
+    # Note creation
+    "zanotuj", "zapisz notatkę", "notatka:", "dodaj notatkę", "note:",
+    "zapamiętaj", "przypomnij mi",
+    # Bookmarks
+    "zapisz link", "dodaj zakładkę", "bookmark", "zachowaj link",
+    # Summarization (with URL)
+    "streść", "podsumuj", "streszczenie",
+    # List recent
+    "pokaż ostatnie", "ostatnie notatki", "ostatnie zakładki",
+    "ostatnie paragony", "ostatnie artykuły", "lista notatek",
+    "wyświetl ostatnie", "co ostatnio",
+]
+
+
+def looks_like_action(message: str) -> bool:
+    """Check if message looks like an action command (heuristic pre-filter).
+
+    This avoids invoking the agent (and model switch) for regular questions.
+    Shared between web API and Telegram handlers.
+    """
+    msg_lower = message.lower()
+
+    for keyword in _ACTION_KEYWORDS:
+        if keyword in msg_lower:
+            return True
+
+    has_url = "http://" in msg_lower or "https://" in msg_lower or "www." in msg_lower
+    if has_url:
+        action_verbs = ["zapisz", "dodaj", "streść", "podsumuj", "zachowaj"]
+        if any(verb in msg_lower for verb in action_verbs):
+            return True
+
+    return False
+
+
+# =============================================================================
 # Tool Executors
 # =============================================================================
 
@@ -105,8 +147,8 @@ async def execute_create_note(
     tool_name: str,
     args: CreateNoteArgs,
     db_session: AsyncSession,
-) -> str:
-    """Execute create_note tool."""
+) -> tuple[str, dict]:
+    """Execute create_note tool. Returns (result_text, metadata)."""
     from app.db.repositories.notes import NoteRepository
     from app.notes_writer import write_note_file
     from app.rag.hooks import index_note_hook
@@ -135,15 +177,20 @@ async def execute_create_note(
 
     await db_session.commit()
 
-    return f"Utworzono notatkę: **{note.title}**"
+    return f"Utworzono notatkę: **{note.title}**", {
+        "card_type": "note_created",
+        "id": str(note.id),
+        "title": note.title,
+        "content_preview": (args.content or "")[:100],
+    }
 
 
 async def execute_create_bookmark(
     tool_name: str,
     args: CreateBookmarkArgs,
     db_session: AsyncSession,
-) -> str:
-    """Execute create_bookmark tool."""
+) -> tuple[str, dict]:
+    """Execute create_bookmark tool. Returns (result_text, metadata)."""
     from app.db.repositories.bookmarks import BookmarkRepository
     from app.bookmarks_writer import write_bookmarks_index
     from app.rag.hooks import index_bookmark_hook
@@ -153,7 +200,12 @@ async def execute_create_bookmark(
     # Check for duplicate
     existing = await repo.get_by_url(args.url)
     if existing:
-        return f"Zakładka już istnieje: **{existing.title or args.url}**"
+        return f"Zakładka już istnieje: **{existing.title or args.url}**", {
+            "card_type": "bookmark_exists",
+            "id": str(existing.id),
+            "title": existing.title or args.url,
+            "url": args.url,
+        }
 
     bookmark = await repo.create_from_url(
         url=args.url,
@@ -179,7 +231,12 @@ async def execute_create_bookmark(
     await db_session.commit()
 
     title = bookmark.title or args.url[:50]
-    return f"Zapisano zakładkę: **{title}**"
+    return f"Zapisano zakładkę: **{title}**", {
+        "card_type": "bookmark_created",
+        "id": str(bookmark.id),
+        "title": title,
+        "url": args.url,
+    }
 
 
 async def execute_summarize_url(
@@ -386,24 +443,24 @@ async def execute_tool_chain(
         validated_args = _inject_chain_context(tool, validated_args, context)
 
         try:
-            result = await _execute_single_tool(tool, validated_args, db_session)
+            result_text, _meta = await _execute_single_tool(tool, validated_args, db_session)
 
-            if result is None:
+            if result_text is None:
                 error_msg = f"Narzędzie '{tool}' zwróciło pusty wynik"
                 logger.warning(error_msg)
                 # Continue with warning, don't abort chain
-                result = f"(brak wyniku z {tool})"
+                result_text = f"(brak wyniku z {tool})"
 
             executed_tools.append(tool)
-            results.append(result)
+            results.append(result_text)
 
             # Update context for next tool
-            context.previous_results[tool] = result
-            context.last_result = result
+            context.previous_results[tool] = result_text
+            context.last_result = result_text
             context.last_tool = tool
 
             # Build history entry
-            history_entries.append(f"[TOOL_RESULT: {tool}]\n{result}")
+            history_entries.append(f"[TOOL_RESULT: {tool}]\n{result_text}")
 
         except Exception as e:
             logger.exception(f"Tool '{tool}' failed in chain")
@@ -482,8 +539,8 @@ async def _execute_single_tool(
     tool: str,
     validated_args: BaseModel,
     db_session: AsyncSession,
-) -> Optional[str]:
-    """Execute a single ACTION_TOOL and return result text.
+) -> tuple[Optional[str], Optional[dict]]:
+    """Execute a single ACTION_TOOL and return (result_text, metadata).
 
     Args:
         tool: Tool name
@@ -491,26 +548,35 @@ async def _execute_single_tool(
         db_session: Database session
 
     Returns:
-        Result text or None on failure
+        Tuple of (result text, metadata dict) or (None, None) on failure.
     """
     if tool == "create_note":
+        # Returns (str, dict) with note ID
         return await execute_create_note(tool, validated_args, db_session)
 
     elif tool == "create_bookmark":
+        # Returns (str, dict) with bookmark ID
         return await execute_create_bookmark(tool, validated_args, db_session)
 
     elif tool == "summarize_url":
-        return await execute_summarize_url(tool, validated_args, db_session)
+        text = await execute_summarize_url(tool, validated_args, db_session)
+        return text, {"card_type": "summary", "url": validated_args.url}
 
     elif tool == "list_recent":
-        return await execute_list_recent(tool, validated_args, db_session)
+        text = await execute_list_recent(tool, validated_args, db_session)
+        return text, {"card_type": "list", "content_type": validated_args.content_type}
 
     elif tool == "ask_clarification":
-        return execute_ask_clarification(validated_args)
+        text = execute_ask_clarification(validated_args)
+        return text, {
+            "card_type": "clarification",
+            "question": validated_args.question,
+            "options": validated_args.options or [],
+        }
 
     else:
         logger.warning(f"Unknown action tool: {tool}")
-        return None
+        return None, None
 
 
 # =============================================================================
@@ -663,29 +729,21 @@ class ChatAgentProcessor:
                 search_query=search_query,
             )
 
-        # Execute action tool
+        # Validate arguments
         try:
+            validated_args = None
             if tool == "create_note" and args:
                 validated_args = CreateNoteArgs.model_validate(args)
-                result = await execute_create_note(tool, validated_args, db_session)
-
             elif tool == "create_bookmark" and args:
                 validated_args = CreateBookmarkArgs.model_validate(args)
-                result = await execute_create_bookmark(tool, validated_args, db_session)
-
             elif tool == "summarize_url" and args:
                 validated_args = SummarizeUrlArgs.model_validate(args)
-                result = await execute_summarize_url(tool, validated_args, db_session)
-
             elif tool == "list_recent" and args:
                 validated_args = ListRecentArgs.model_validate(args)
-                result = await execute_list_recent(tool, validated_args, db_session)
-
             elif tool == "ask_clarification" and args:
                 validated_args = AskClarificationArgs.model_validate(args)
-                result = execute_ask_clarification(validated_args)
 
-            else:
+            if validated_args is None:
                 await self._save_log(response, db_session, execution_error="Missing arguments")
                 return AgentExecutionResult(
                     executed=False,
@@ -693,12 +751,20 @@ class ChatAgentProcessor:
                     error="Missing arguments",
                 )
 
-            # Success - save log with execution_success=True
+            # Execute tool
+            result, metadata = await _execute_single_tool(tool, validated_args, db_session)
+
+            if result is None:
+                await self._save_log(response, db_session, execution_error="Tool returned no result")
+                return AgentExecutionResult(
+                    executed=False,
+                    tool=tool,
+                    error="Tool returned no result",
+                )
+
+            # Success
             await self._save_log(response, db_session, execution_success=True)
 
-            # Create history entry for agent context in future messages
-            # Format: [TOOL_RESULT: tool_name]\n<result>
-            # This allows agent to use the result in follow-up requests
             history_entry = {
                 "role": "assistant",
                 "content": f"[TOOL_RESULT: {tool}]\n{result}",
@@ -708,6 +774,7 @@ class ChatAgentProcessor:
                 executed=True,
                 tool=tool,
                 result_text=result,
+                tool_metadata=metadata,
                 history_entry=history_entry,
             )
 

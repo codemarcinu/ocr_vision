@@ -6,7 +6,9 @@ eliminating the overhead of creating new connections for each request.
 Performance improvement: ~50-100ms per request (300-600ms total per receipt).
 """
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Optional
 
 import httpx
@@ -181,6 +183,68 @@ async def post_chat(
             return "", f"Timeout after {timeout}s"
         except httpx.HTTPError as e:
             return "", f"HTTP error: {e}"
+    finally:
+        await coordinator.release_model(model)
+
+
+async def post_chat_stream(
+    model: str,
+    messages: list[dict],
+    options: Optional[dict] = None,
+    timeout: float = 120.0,
+    keep_alive: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Stream tokens from Ollama /api/chat endpoint.
+
+    Yields individual token strings as they arrive.
+    Integrates with ModelCoordinator for VRAM management.
+    """
+    from app.model_coordinator import get_coordinator
+
+    coordinator = get_coordinator()
+
+    if not await coordinator.acquire_model(model, timeout=timeout):
+        yield ""
+        return
+
+    try:
+        client = await get_client()
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+        }
+        if options:
+            payload["options"] = options
+        if keep_alive:
+            payload["keep_alive"] = keep_alive
+
+        try:
+            async with client.stream(
+                "POST",
+                "/api/chat",
+                json=payload,
+                timeout=timeout,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                        token = chunk.get("message", {}).get("content", "")
+                        if token:
+                            yield token
+                        if chunk.get("done"):
+                            coordinator.mark_model_loaded(model)
+                            break
+                    except json.JSONDecodeError:
+                        continue
+        except httpx.TimeoutException:
+            logger.error(f"Stream timeout after {timeout}s")
+        except httpx.HTTPError as e:
+            logger.error(f"Stream HTTP error: {e}")
     finally:
         await coordinator.release_model(model)
 

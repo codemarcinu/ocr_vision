@@ -1,8 +1,10 @@
 """Chat orchestrator - ties together intent classification, search, and LLM."""
 
 import asyncio
+import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Optional
 from uuid import UUID
@@ -468,3 +470,119 @@ async def process_message(
         model_used=model,
         processing_time_sec=round(time.time() - start_time, 2),
     )
+
+
+async def process_message_stream(
+    message: str,
+    session_id: UUID,
+    db_session: AsyncSession,
+    max_history: Optional[int] = None,
+    agent_search_strategy: Optional[str] = None,
+    agent_search_query: Optional[str] = None,
+) -> AsyncIterator[str]:
+    """Stream a chat response as SSE events.
+
+    Yields SSE-formatted lines: 'event: <type>\\ndata: <json>\\n\\n'
+    Events: status (search phase), token (LLM tokens), done (final metadata)
+    """
+    start_time = time.time()
+    model = settings.CHAT_MODEL or settings.CLASSIFIER_MODEL
+    max_hist = max_history or settings.CHAT_MAX_HISTORY
+
+    def sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    # 1. Load history
+    chat_repo = ChatRepository(db_session)
+    recent_messages = await chat_repo.get_recent_messages(session_id, limit=max_hist)
+    history = [{"role": msg.role, "content": msg.content} for msg in recent_messages]
+    history = await history_manager.prepare_history(history)
+
+    # 2. Classify intent
+    if agent_search_strategy:
+        intent = agent_search_strategy
+        search_query = agent_search_query or message
+        confidence = "high"
+    else:
+        yield sse("status", {"phase": "classifying"})
+        classified = await intent_classifier.classify_intent(message, history)
+        intent = classified.intent
+        search_query = classified.query or message
+        confidence = classified.confidence
+
+    lang = _detect_language(message)
+
+    # 3. Search
+    if intent != "direct":
+        yield sse("status", {"phase": "searching", "intent": intent})
+
+    search = await _execute_search(
+        intent=intent,
+        search_query=search_query,
+        confidence=confidence,
+        db_session=db_session,
+        language=lang,
+    )
+
+    # 4. Build context (same as non-streaming)
+    context_parts = []
+    if search.tool_context:
+        context_parts.append(search.tool_context)
+    if search.weather_data or search.forecast_data:
+        context_parts.append(_format_weather_context(search.weather_data, search.forecast_data))
+    if search.rag_results:
+        context_parts.append("=== OSOBISTA BAZA WIEDZY ===\n" + _format_rag_context(search.rag_results))
+    if search.web_results:
+        context_parts.append("=== WYNIKI Z INTERNETU ===\n" + _format_web_context(search.web_results))
+
+    context = "\n\n".join(context_parts)
+    if not context and intent != "direct":
+        if intent == "weather":
+            context = "BRAK DANYCH POGODOWYCH - nie udało się pobrać pogody z OpenWeatherMap."
+        elif intent == "spending":
+            context = "BRAK DANYCH O WYDATKACH - nie znaleziono danych spełniających kryteria."
+        elif intent == "inventory":
+            context = "BRAK DANYCH O SPIŻARNI - spiżarnia jest pusta lub nie znaleziono pasujących produktów."
+        elif intent in ("rag", "both"):
+            context = "BRAK WYNIKÓW WYSZUKIWANIA - nie znaleziono pasujących danych w bazie wiedzy ani w internecie."
+        elif intent == "web":
+            context = "BRAK WYNIKÓW - wyszukiwanie internetowe nie zwróciło wyników."
+        else:
+            context = "BRAK WYNIKÓW - nie znaleziono pasujących danych."
+
+    # 5. Build messages
+    system_prompt = CHAT_SYSTEM_PROMPT_PL if lang == "pl" else CHAT_SYSTEM_PROMPT_EN
+    if context:
+        system_prompt += f"\n\nKONTEKST WYSZUKIWANIA:\n{context}"
+
+    messages_list = [{"role": "system", "content": system_prompt}]
+    for h in history:
+        messages_list.append({"role": h["role"], "content": h["content"]})
+    messages_list.append({"role": "user", "content": message})
+
+    # 6. Stream LLM response
+    yield sse("status", {"phase": "generating"})
+
+    full_response = []
+    async for token in ollama_client.post_chat_stream(
+        model=model,
+        messages=messages_list,
+        options={"temperature": 0.4, "num_predict": 2048},
+        timeout=120.0,
+        keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
+    ):
+        full_response.append(token)
+        yield sse("token", {"text": token})
+
+    answer = "".join(full_response).strip()
+
+    # 7. Done event with metadata
+    sources = _extract_sources(search.rag_results, search.web_results)
+
+    yield sse("done", {
+        "answer": answer,
+        "sources": sources,
+        "search_type": search.final_intent,
+        "model_used": model,
+        "processing_time_sec": round(time.time() - start_time, 2),
+    })

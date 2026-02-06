@@ -17,45 +17,6 @@ from app.telegram.middleware import authorized_only
 logger = logging.getLogger(__name__)
 
 
-# Keywords that suggest user wants an ACTION (not just a search/conversation)
-# Agent will only be invoked if message contains one of these patterns
-_ACTION_KEYWORDS = [
-    # Note creation
-    "zanotuj", "zapisz notatkę", "notatka:", "dodaj notatkę", "note:",
-    "zapamiętaj", "przypomnij mi",
-    # Bookmarks
-    "zapisz link", "dodaj zakładkę", "bookmark", "zachowaj link",
-    # Summarization (with URL)
-    "streść", "podsumuj", "streszczenie",
-    # List recent
-    "pokaż ostatnie", "ostatnie notatki", "ostatnie zakładki",
-    "ostatnie paragony", "ostatnie artykuły", "lista notatek",
-    "wyświetl ostatnie", "co ostatnio",
-]
-
-
-def _looks_like_action(message: str) -> bool:
-    """Check if message looks like an action command (heuristic pre-filter).
-
-    This avoids invoking the agent (and model switch) for regular questions.
-    """
-    msg_lower = message.lower()
-
-    # Check for action keywords
-    for keyword in _ACTION_KEYWORDS:
-        if keyword in msg_lower:
-            return True
-
-    # Check for URL + action verb (suggests summarize or bookmark)
-    has_url = "http://" in msg_lower or "https://" in msg_lower or "www." in msg_lower
-    if has_url:
-        action_verbs = ["zapisz", "dodaj", "streść", "podsumuj", "zachowaj"]
-        if any(verb in msg_lower for verb in action_verbs):
-            return True
-
-    return False
-
-
 async def _try_agent_action(
     message: str,
     db_session,
@@ -80,7 +41,8 @@ async def _try_agent_action(
 
     # Heuristic pre-filter: skip agent if message doesn't look like an action
     # This avoids model switching for regular questions
-    if not _looks_like_action(message):
+    from app.chat.agent_executor import looks_like_action
+    if not looks_like_action(message):
         return None
 
     try:
