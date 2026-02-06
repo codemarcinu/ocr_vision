@@ -5,7 +5,7 @@
 </div>
 <script>
 (function() {
-    var data = {{ trends_json|safe }};
+    var data = {{ trends|tojson }};
     if (data && data.length) {
         var labels = data.map(function(t) { return t.date || t.purchase_date || ''; });
         var values = data.map(function(t) { return t.price || t.avg_price || 0; });

@@ -44,9 +44,9 @@ from app.reports import router as reports_router
 from app.services.obsidian_sync import obsidian_sync
 from app import ollama_client
 from prometheus_fastapi_instrumentator import Instrumentator
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from app.rate_limit import limiter
 from app.telegram.bot import bot
 from app.auth import web_auth_middleware, create_session, destroy_session
 
@@ -66,8 +66,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address)
-
 app = FastAPI(
     title="Second Brain",
     description="Personal knowledge management system",
@@ -83,6 +81,16 @@ async def security_headers(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' cdn.jsdelivr.net; "
+        "connect-src 'self'"
+    )
     return response
 
 # Authentication middleware
@@ -99,6 +107,7 @@ async def login_page(request: Request):
 
 
 @app.post("/login")
+@limiter.limit("5/minute")
 async def login_submit(request: Request, token: str = Form(...)):
     """Validate token and set session cookie."""
     if not secrets.compare_digest(token, settings.AUTH_TOKEN):
@@ -112,7 +121,7 @@ async def login_submit(request: Request, token: str = Form(...)):
         value=session_token,
         httponly=True,
         samesite="lax",
-        max_age=86400 * 30,  # 30 days
+        max_age=8 * 3600,  # 8 hours (synced with SESSION_MAX_AGE)
     )
     return response
 

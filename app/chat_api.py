@@ -5,12 +5,13 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.chat import orchestrator
 from app.config import settings
 from app.dependencies import ChatRepoDep, DbSession
+from app.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,10 @@ class ChatSessionDetailResponse(BaseModel):
 # Endpoints
 
 @router.post("/message", response_model=ChatMessageResponse)
+@limiter.limit("20/minute")
 async def send_message(
-    request: ChatMessageRequest,
+    request: Request,
+    data: ChatMessageRequest,
     session: DbSession,
     chat_repo: ChatRepoDep,
 ):
@@ -70,8 +73,8 @@ async def send_message(
         raise HTTPException(status_code=503, detail="Chat jest wyłączony")
 
     # Create or get session
-    if request.session_id:
-        chat_session = await chat_repo.get_by_id(request.session_id)
+    if data.session_id:
+        chat_session = await chat_repo.get_by_id(data.session_id)
         if not chat_session:
             raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
     else:
@@ -82,13 +85,13 @@ async def send_message(
     await chat_repo.add_message(
         session_id=chat_session.id,
         role="user",
-        content=request.message,
+        content=data.message,
     )
     await session.commit()
 
     # Process through orchestrator
     response = await orchestrator.process_message(
-        message=request.message,
+        message=data.message,
         session_id=chat_session.id,
         db_session=session,
     )

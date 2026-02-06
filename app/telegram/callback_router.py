@@ -58,7 +58,7 @@ class CallbackRouter:
                 except Exception as e:
                     logger.error(f"Callback handler error for {prefix}: {e}", exc_info=True)
                     try:
-                        await query.edit_message_text(f"Wystąpił błąd: {e}")
+                        await query.edit_message_text("Wystąpił błąd. Spróbuj ponownie później.")
                     except Exception:
                         pass
                 return True

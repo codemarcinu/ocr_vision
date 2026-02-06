@@ -3,17 +3,19 @@
 import hashlib
 import logging
 import secrets
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import Cookie, Depends, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # In-memory session store (single-user app, no need for DB)
-_active_sessions: set[str] = set()
+SESSION_MAX_AGE = 8 * 3600  # 8 hours
+_active_sessions: dict[str, datetime] = {}  # token -> creation time
 
 
 def _auth_enabled() -> bool:
@@ -41,7 +43,7 @@ def verify_web_session(request: Request) -> None:
         return
 
     session_token = request.cookies.get("session_token", "")
-    if not session_token or session_token not in _active_sessions:
+    if not session_token or not _is_session_valid(session_token):
         raise HTTPException(
             status_code=303,
             headers={"Location": "/login"},
@@ -57,8 +59,7 @@ async def web_auth_middleware(request: Request, call_next):
 
     # Public paths - no auth required
     public_paths = (
-        "/health", "/login", "/logout", "/static", "/metrics",
-        "/docs", "/openapi.json", "/redoc",
+        "/health", "/login", "/logout", "/static",
         "/sw.js", "/offline.html", "/manifest.json",  # PWA files
         "/api/push/vapid-key"  # Push subscription key (public for PWA)
     )
@@ -76,24 +77,35 @@ async def web_auth_middleware(request: Request, call_next):
             token = auth_header[7:]
             if secrets.compare_digest(token, settings.AUTH_TOKEN):
                 return await call_next(request)
-        raise HTTPException(status_code=401, detail="Brak autoryzacji")
+        return JSONResponse(status_code=401, content={"detail": "Brak autoryzacji"})
 
     # Web UI: check session cookie
     session_token = request.cookies.get("session_token", "")
-    if session_token and session_token in _active_sessions:
+    if session_token and _is_session_valid(session_token):
         return await call_next(request)
 
     # Redirect to login
     return RedirectResponse(url="/login", status_code=303)
 
 
+def _is_session_valid(token: str) -> bool:
+    """Check if session token is valid and not expired."""
+    if token not in _active_sessions:
+        return False
+    created = _active_sessions[token]
+    if (datetime.utcnow() - created).total_seconds() > SESSION_MAX_AGE:
+        _active_sessions.pop(token, None)
+        return False
+    return True
+
+
 def create_session() -> str:
     """Create a new session token."""
     token = secrets.token_urlsafe(32)
-    _active_sessions.add(token)
+    _active_sessions[token] = datetime.utcnow()
     return token
 
 
 def destroy_session(token: str) -> None:
     """Destroy a session."""
-    _active_sessions.discard(token)
+    _active_sessions.pop(token, None)

@@ -3,8 +3,11 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+
+from app.auth import verify_web_session
+from app.rate_limit import limiter
 
 from app.config import settings
 from app.dependencies import DbSession
@@ -98,8 +101,10 @@ async def unsubscribe(
         return {"status": "not_found"}
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[Depends(verify_web_session)])
+@limiter.limit("3/minute")
 async def send_test_notification(
+    request: Request,
     data: TestNotificationRequest,
     session: DbSession,
 ):
@@ -144,7 +149,7 @@ async def send_test_notification(
     return {"status": "sent", "sent": success, "failed": failed}
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(verify_web_session)])
 async def get_push_status(session: DbSession):
     """Get push notification system status."""
     repo = PushSubscriptionRepository(session)

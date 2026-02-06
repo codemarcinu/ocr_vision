@@ -481,7 +481,7 @@ async def analytics_trends(
     trends = await repo.get_price_trends(product_id, months)
     return templates.TemplateResponse("analytics/partials/trends_chart.html", {
         "request": request, "product_id": product_id,
-        "trends": trends, "trends_json": json.dumps(trends, default=str),
+        "trends": trends,
     })
 
 
