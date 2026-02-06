@@ -19,6 +19,7 @@ from app.writers.summary import (
     write_summary_file_simple,
     write_feed_index,
 )
+from app.writers.daily import DailyNoteWriter
 
 __all__ = [
     "log_error",
@@ -37,4 +38,5 @@ __all__ = [
     "write_summary_file",
     "write_summary_file_simple",
     "write_feed_index",
+    "DailyNoteWriter",
 ]

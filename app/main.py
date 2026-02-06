@@ -144,6 +144,11 @@ app.include_router(dictionary_router)
 app.include_router(reports_router)
 app.include_router(rss_router)
 app.include_router(transcription_router)
+
+# Legacy URL compat: old mobile.js (cached by service worker) uses /transcriptions/quick
+from app.transcription_api import quick_transcribe
+app.post("/transcriptions/quick")(quick_transcribe)
+
 app.include_router(notes_router)
 app.include_router(bookmarks_router)
 app.include_router(ask_router)
@@ -221,6 +226,110 @@ async def startup_event():
                 except Exception as e:
                     logger.warning(f"Failed to preload model {model}: {e}")
 
+    # Start voice queue processor (every 30 minutes)
+    if settings.TRANSCRIPTION_ENABLED:
+        asyncio.create_task(_voice_queue_loop())
+
+
+async def _voice_queue_loop():
+    """Background loop: process queued voice messages every 30 minutes."""
+    INTERVAL = 30 * 60  # 30 minutes
+    await asyncio.sleep(60)  # Wait 1 min after startup before first check
+    while True:
+        try:
+            await _process_voice_queue()
+        except Exception as e:
+            logger.exception(f"Voice queue processing failed: {e}")
+        await asyncio.sleep(INTERVAL)
+
+
+async def _process_voice_queue():
+    """Find pending voice jobs, transcribe them in batch, create notes."""
+    from app.db.connection import get_session
+    from app.db.repositories.transcription import TranscriptionJobRepository
+
+    async for session in get_session():
+        repo = TranscriptionJobRepository(session)
+        jobs = await repo.get_recent_jobs(limit=50, status="pending")
+        voice_jobs = [j for j in jobs if j.source_type == "voice"]
+
+        if not voice_jobs:
+            return
+
+        logger.info(f"Voice queue: {len(voice_jobs)} messages to process")
+
+        # Free VRAM and load Whisper once for the whole batch
+        try:
+            from app.model_coordinator import get_coordinator
+            coordinator = get_coordinator()
+            await coordinator.free_vram_for_external(8000)
+        except Exception:
+            pass
+
+        from app.transcription.transcriber import TranscriberService, _unload_whisper_model
+        transcriber = TranscriberService()
+
+        for job in voice_jobs:
+            audio_path = job.temp_audio_path
+            if not audio_path or not Path(audio_path).exists():
+                logger.warning(f"Voice job {job.id}: audio file missing, skipping")
+                await repo.update_status(job.id, "failed", error="Audio file missing")
+                await session.commit()
+                continue
+
+            try:
+                await repo.update_status(job.id, "transcribing", progress=10)
+                await session.commit()
+
+                full_text, segments, info = await transcriber.transcribe(audio_path)
+
+                # Save transcription
+                await repo.add_transcription(
+                    job_id=job.id,
+                    full_text=full_text,
+                    segments=segments,
+                    detected_language=info["detected_language"],
+                    confidence=info["confidence"],
+                    word_count=info["word_count"],
+                    processing_time_sec=info["processing_time_sec"],
+                )
+
+                # Create a note from the transcription
+                if settings.NOTES_ENABLED:
+                    from app.db.repositories.notes import NoteRepository
+                    note_repo = NoteRepository(session)
+                    title = job.title or "Notatka głosowa"
+                    await note_repo.create_quick(title=title, content=full_text)
+
+                    # Write to daily note (aggregated) instead of individual files
+                    if settings.GENERATE_OBSIDIAN_FILES:
+                        try:
+                            from app.writers.daily import DailyNoteWriter
+                            daily_writer = DailyNoteWriter()
+                            memo_time = getattr(job, "created_at", None)
+                            daily_writer.append_voice_memo(
+                                title=title,
+                                content=full_text,
+                                timestamp=memo_time,
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to write daily note: {e}")
+
+                await repo.update_status(job.id, "completed", progress=100)
+                await session.commit()
+
+                # Clean up audio file
+                Path(audio_path).unlink(missing_ok=True)
+                logger.info(f"Voice job {job.id} completed: {info['word_count']} words")
+
+            except Exception as e:
+                logger.error(f"Voice job {job.id} failed: {e}")
+                await repo.update_status(job.id, "failed", error=str(e))
+                await session.commit()
+
+        # Unload Whisper after batch to free VRAM
+        await _unload_whisper_model()
+        logger.info("Voice queue batch complete, Whisper unloaded")
 
 
 @app.on_event("shutdown")

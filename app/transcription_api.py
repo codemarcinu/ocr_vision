@@ -557,7 +557,7 @@ async def get_stats():
 
 @router.post("/quick")
 async def quick_transcribe(audio: UploadFile = File(...)):
-    """Quick voice transcription - returns text immediately without creating a job."""
+    """Queue a voice message for batch transcription (processed every 30 min)."""
     if not settings.TRANSCRIPTION_ENABLED:
         raise HTTPException(status_code=503, detail="Transcription is disabled")
 
@@ -566,22 +566,27 @@ async def quick_transcribe(audio: UploadFile = File(...)):
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail=f"Invalid file type: {file_ext}")
 
-    # Save to temp file
-    settings.TRANSCRIPTION_TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = tempfile.NamedTemporaryFile(
-        dir=settings.TRANSCRIPTION_TEMP_DIR, suffix=file_ext, delete=False
-    )
-    try:
-        content = await audio.read()
-        tmp.write(content)
-        tmp.close()
+    # Save audio to persistent voice queue directory
+    voice_dir = Path("/tmp/voice_queue")
+    voice_dir.mkdir(parents=True, exist_ok=True)
 
-        transcriber = TranscriberService()
-        full_text, segments, info = await transcriber.transcribe(tmp.name)
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"voice_{timestamp}{file_ext}"
+    audio_path = voice_dir / filename
 
-        return {"text": full_text, "language": info.get("detected_language", "unknown")}
-    except Exception as e:
-        logger.exception(f"Quick transcription failed: {e}")
-        raise HTTPException(status_code=500, detail="Transkrypcja nie powiodła się")
-    finally:
-        Path(tmp.name).unlink(missing_ok=True)
+    content = await audio.read()
+    audio_path.write_bytes(content)
+
+    # Create a transcription job in DB
+    async for session in get_session():
+        repo = TranscriptionJobRepository(session)
+        job = await repo.create_job(
+            source_type="voice",
+            source_filename=filename,
+            title=f"Notatka głosowa {timestamp}",
+            temp_audio_path=str(audio_path),
+        )
+        await session.commit()
+        logger.info(f"Voice message queued: {filename} (job {job.id})")
+        return {"status": "queued", "job_id": str(job.id)}

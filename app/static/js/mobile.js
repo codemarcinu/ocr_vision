@@ -1229,12 +1229,6 @@ class MobileApp {
   }
 
   async sendVoiceMessage(audioBlob) {
-    const empty = document.querySelector('.empty-state');
-    if (empty) empty.remove();
-
-    this.addMessage('\ud83c\udfa4 Przetwarzam nagranie...', 'user');
-    const typingId = this.showTyping();
-
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'voice.webm');
@@ -1245,32 +1239,13 @@ class MobileApp {
       });
 
       if (response.ok) {
-        const result = await response.json();
-        const text = result.text || result.transcription;
-
-        if (text) {
-          // Update the "processing" message with actual transcription
-          const messages = this.chatContainer.querySelectorAll('.message.user');
-          const lastUserMsg = messages[messages.length - 1];
-          if (lastUserMsg) {
-            lastUserMsg.querySelector('.message-content').innerHTML = this.renderMarkdown(text);
-          }
-
-          this.hideTyping(typingId);
-
-          // Now send as chat message
-          this.input.value = text;
-          await this.sendMessage();
-        } else {
-          throw new Error('No transcription');
-        }
+        this.showToast('Notatka g\u0142osowa dodana do kolejki', 'success');
       } else {
-        throw new Error('Transcription failed');
+        throw new Error('Queue failed');
       }
     } catch (error) {
       console.error('Voice error:', error);
-      this.hideTyping(typingId);
-      this.showToast('Nie uda\u0142o si\u0119 przetworzy\u0107 nagrania', 'error');
+      this.showToast('Nie uda\u0142o si\u0119 wys\u0142a\u0107 nagrania', 'error');
     }
   }
 
