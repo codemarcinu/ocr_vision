@@ -831,3 +831,28 @@ class AgentCallLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )
+
+
+# =============================================================================
+# PUSH NOTIFICATIONS (Web Push API for PWA)
+# =============================================================================
+
+
+class PushSubscription(Base):
+    """Web Push subscription for PWA notifications."""
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    endpoint: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    auth_key: Mapped[str] = mapped_column(String(100))
+    p256dh_key: Mapped[str] = mapped_column(String(100))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.current_timestamp()
+    )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

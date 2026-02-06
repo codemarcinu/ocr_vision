@@ -18,6 +18,7 @@ from app.db.repositories.chat import ChatRepository
 from app.db.repositories.embeddings import EmbeddingRepository
 from app.db.repositories.stores import StoreRepository
 from app.db.repositories.user_profile import UserProfileRepository
+from app.db.repositories.push import PushSubscriptionRepository
 
 
 # Session dependency
@@ -97,6 +98,11 @@ async def get_user_profile_repo(session: DbSession) -> UserProfileRepository:
     return UserProfileRepository(session)
 
 
+async def get_push_subscription_repo(session: DbSession) -> PushSubscriptionRepository:
+    """Get push subscription repository."""
+    return PushSubscriptionRepository(session)
+
+
 # Type aliases for repository dependencies
 ProductRepoDep = Annotated[ProductRepository, Depends(get_product_repo)]
 StoreRepoDep = Annotated[StoreRepository, Depends(get_store_repo)]
@@ -111,3 +117,4 @@ BookmarkRepoDep = Annotated[BookmarkRepository, Depends(get_bookmark_repo)]
 EmbeddingRepoDep = Annotated[EmbeddingRepository, Depends(get_embedding_repo)]
 ChatRepoDep = Annotated[ChatRepository, Depends(get_chat_repo)]
 UserProfileRepoDep = Annotated[UserProfileRepository, Depends(get_user_profile_repo)]
+PushSubscriptionRepoDep = Annotated[PushSubscriptionRepository, Depends(get_push_subscription_repo)]

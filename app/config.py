@@ -268,6 +268,14 @@ class Settings:
     # Base URL for links in notifications (e.g., Telegram)
     BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
+    # ==========================================================================
+    # Push Notifications (Web Push API for PWA)
+    # ==========================================================================
+    PUSH_ENABLED: bool = os.getenv("PUSH_ENABLED", "false").lower() == "true"
+    PUSH_VAPID_PUBLIC_KEY: str = os.getenv("PUSH_VAPID_PUBLIC_KEY", "")
+    PUSH_VAPID_PRIVATE_KEY: str = os.getenv("PUSH_VAPID_PRIVATE_KEY", "")
+    PUSH_VAPID_SUBJECT: str = os.getenv("PUSH_VAPID_SUBJECT", "mailto:admin@localhost")
+
     # Telegram Bot configuration
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: int = int(os.getenv("TELEGRAM_CHAT_ID", "0"))

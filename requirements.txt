@@ -39,3 +39,5 @@ faster-whisper>=1.0.0
 pgvector>=0.2.5
 yt-dlp>=2024.1.0
 mutagen>=1.47.0
+# Web Push notifications for PWA
+pywebpush>=2.0.0
