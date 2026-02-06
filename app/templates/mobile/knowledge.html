@@ -1,0 +1,86 @@
+{% extends "mobile/base.html" %}
+
+{% block title %}Wiedza - Second Brain{% endblock %}
+
+{% block page_toolbar %}
+<div style="position:fixed;top:var(--header-height);left:0;right:0;z-index:98;background:var(--bg-secondary)">
+  <!-- Tabs -->
+  <div class="mobile-tabs">
+    <button class="mobile-tab {{ 'active' if tab == 'bookmarks' }}" id="tab-bookmarks"
+            onclick="switchTab('bookmarks')">📚 Zakładki</button>
+    <button class="mobile-tab {{ 'active' if tab == 'search' }}" id="tab-search"
+            onclick="switchTab('search')">🔍 Szukaj</button>
+  </div>
+  <!-- Search bar (bookmarks) -->
+  <div class="page-toolbar" id="toolbar-bookmarks" style="position:static;{% if tab == 'search' %}display:none{% endif %}">
+    <div class="filter-chips" id="status-filters">
+      <button class="filter-chip {{ 'active' if not status or status == 'all' }}"
+              hx-get="/m/wiedza?tab=bookmarks" hx-target="#bookmark-list"
+              hx-indicator="#bk-spinner">Wszystkie</button>
+      <button class="filter-chip {{ 'active' if status == 'pending' }}"
+              hx-get="/m/wiedza?tab=bookmarks&status=pending" hx-target="#bookmark-list"
+              hx-indicator="#bk-spinner">Oczekujące</button>
+      <button class="filter-chip {{ 'active' if status == 'read' }}"
+              hx-get="/m/wiedza?tab=bookmarks&status=read" hx-target="#bookmark-list"
+              hx-indicator="#bk-spinner">Przeczytane</button>
+      <button class="filter-chip {{ 'active' if status == 'archived' }}"
+              hx-get="/m/wiedza?tab=bookmarks&status=archived" hx-target="#bookmark-list"
+              hx-indicator="#bk-spinner">Archiwum</button>
+      <span class="mobile-spinner htmx-indicator" id="bk-spinner"></span>
+    </div>
+  </div>
+  <!-- Search bar (RAG) -->
+  <div class="page-toolbar" id="toolbar-search" style="position:static;{% if tab != 'search' %}display:none{% endif %}">
+    <form style="display:flex;gap:0.5rem;width:100%" hx-post="/m/wiedza/szukaj" hx-target="#rag-results" hx-indicator="#rag-spinner">
+      <input type="text" name="question" class="search-input" placeholder="Zadaj pytanie..." required>
+      <button type="submit" class="mobile-btn mobile-btn-primary" style="padding:0.5rem 1rem;flex-shrink:0">Szukaj</button>
+    </form>
+    <span class="mobile-spinner htmx-indicator" id="rag-spinner"></span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Bookmarks view -->
+<div id="view-bookmarks" {% if tab == 'search' %}style="display:none"{% endif %}>
+  <div class="mobile-list" id="bookmark-list">
+    {% include "mobile/partials/bookmark_list.html" %}
+  </div>
+</div>
+
+<!-- RAG search view -->
+<div id="view-search" {% if tab != 'search' %}style="display:none"{% endif %}>
+  <div id="rag-results">
+    {% include "mobile/partials/rag_results.html" %}
+  </div>
+</div>
+{% endblock %}
+
+{% block quick_actions %}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.body.classList.add('has-nav');
+  // Extra top offset for tabs + toolbar
+  document.querySelector('.app-main').style.top = 'calc(var(--header-height) + 96px)';
+
+  function switchTab(tab) {
+    document.querySelectorAll('.mobile-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+
+    const isBk = tab === 'bookmarks';
+    document.getElementById('toolbar-bookmarks').style.display = isBk ? '' : 'none';
+    document.getElementById('toolbar-search').style.display = isBk ? 'none' : '';
+    document.getElementById('view-bookmarks').style.display = isBk ? '' : 'none';
+    document.getElementById('view-search').style.display = isBk ? 'none' : '';
+  }
+
+  // Highlight active filter chip
+  document.getElementById('status-filters').addEventListener('click', (e) => {
+    const chip = e.target.closest('.filter-chip');
+    if (!chip) return;
+    document.querySelectorAll('#status-filters .filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+  });
+</script>
+{% endblock %}

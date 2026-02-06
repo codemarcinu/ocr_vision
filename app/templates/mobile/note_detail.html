@@ -1,0 +1,56 @@
+{% extends "mobile/base.html" %}
+
+{% block title %}{{ note.title }} - Second Brain{% endblock %}
+
+{% block page_toolbar %}
+<div class="detail-header">
+  <a href="/m/notatki" class="detail-back">← Notatki</a>
+  <span class="detail-title">{{ note.title }}</span>
+  <button class="mobile-btn mobile-btn-danger" style="padding:0.3rem 0.6rem;font-size:0.8rem"
+          hx-post="/m/notatki/{{ note.id }}/delete" hx-confirm="Usunąć notatkę?">Usuń</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="note-content">
+  <form class="mobile-form" hx-post="/m/notatki/{{ note.id }}/update" hx-target="#note-content" hx-swap="innerHTML">
+    <div class="mobile-form-group">
+      <label>Tytuł</label>
+      <input type="text" name="title" class="mobile-form-input" value="{{ note.title }}">
+    </div>
+    <div class="mobile-form-group">
+      <label>Treść</label>
+      <textarea name="content" class="mobile-form-textarea" rows="12">{{ note.content or "" }}</textarea>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;align-items:center">
+      {% if note.tags %}
+      <div style="flex:1;display:flex;gap:0.25rem;flex-wrap:wrap">
+        {% for tag in note.tags %}<span class="mobile-badge mobile-badge-tag">{{ tag }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      <button type="submit" class="mobile-btn mobile-btn-primary">Zapisz</button>
+    </div>
+  </form>
+
+  <div class="detail-section">
+    <div class="detail-info-row">
+      <span class="detail-info-label">Utworzono</span>
+      <span class="detail-info-value">{{ note.created_at.strftime("%d.%m.%Y %H:%M") if note.created_at else "-" }}</span>
+    </div>
+    {% if note.category %}
+    <div class="detail-info-row">
+      <span class="detail-info-label">Kategoria</span>
+      <span class="detail-info-value">{{ note.category }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block quick_actions %}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.body.classList.add('has-toolbar', 'has-nav');
+</script>
+{% endblock %}

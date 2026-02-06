@@ -1,0 +1,20 @@
+{% for n in notes %}
+<a class="mobile-card" href="/m/notatki/{{ n.id }}">
+  <div class="mobile-card-header">
+    <span class="mobile-card-title">{{ n.title }}</span>
+  </div>
+  {% if n.content %}
+  <div class="mobile-card-preview">{{ n.content[:100] }}{% if n.content|length > 100 %}...{% endif %}</div>
+  {% endif %}
+  <div class="mobile-card-meta">
+    <span>{{ n.created_at.strftime("%d.%m.%Y") if n.created_at else "" }}</span>
+    {% if n.category %}<span class="mobile-badge mobile-badge-tag">{{ n.category }}</span>{% endif %}
+    {% for tag in (n.tags or [])[:3] %}<span class="mobile-badge mobile-badge-tag">{{ tag }}</span>{% endfor %}
+  </div>
+</a>
+{% else %}
+<div class="mobile-empty">
+  <div class="mobile-empty-icon">📝</div>
+  <div class="mobile-empty-text">Brak notatek{% if search %} dla "{{ search }}"{% endif %}. Utwórz pierwszą notatkę przyciskiem +</div>
+</div>
+{% endfor %}

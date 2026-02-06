@@ -1,0 +1,69 @@
+{% extends "mobile/base.html" %}
+
+{% block title %}Notatki - Second Brain{% endblock %}
+
+{% block page_toolbar %}
+<div class="page-toolbar">
+  <input type="search" class="search-input" name="search" placeholder="Szukaj notatek..."
+         value="{{ search or '' }}"
+         hx-get="/m/notatki" hx-target="#note-list" hx-trigger="keyup changed delay:500ms"
+         hx-indicator="#search-spinner">
+  <span class="mobile-spinner htmx-indicator" id="search-spinner"></span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="mobile-list" id="note-list">
+  {% include "mobile/partials/note_list.html" %}
+</div>
+
+<!-- FAB: new note -->
+<button class="fab" id="fab-new-note" title="Nowa notatka">+</button>
+
+<!-- New note bottom sheet -->
+<div class="sheet-backdrop" id="note-backdrop"></div>
+<div class="bottom-sheet" id="note-sheet">
+  <div class="sheet-handle"></div>
+  <h3 class="sheet-title">Nowa notatka</h3>
+  <form class="mobile-form" hx-post="/m/notatki/create" hx-target="#note-list" hx-on::after-request="closeNoteSheet()">
+    <div class="mobile-form-group">
+      <label>Tytuł</label>
+      <input type="text" name="title" class="mobile-form-input" placeholder="Tytuł notatki" required>
+    </div>
+    <div class="mobile-form-group">
+      <label>Treść</label>
+      <textarea name="content" class="mobile-form-textarea" placeholder="Treść..." rows="4"></textarea>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+      <button type="button" class="mobile-btn mobile-btn-ghost" onclick="closeNoteSheet()">Anuluj</button>
+      <button type="submit" class="mobile-btn mobile-btn-primary">Zapisz</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block quick_actions %}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.body.classList.add('has-toolbar', 'has-nav');
+
+  const fabBtn = document.getElementById('fab-new-note');
+  const noteSheet = document.getElementById('note-sheet');
+  const noteBackdrop = document.getElementById('note-backdrop');
+
+  fabBtn.addEventListener('click', () => {
+    noteSheet.classList.add('open');
+    noteBackdrop.classList.add('open');
+    noteSheet.querySelector('input[name="title"]').focus();
+  });
+
+  noteBackdrop.addEventListener('click', closeNoteSheet);
+
+  function closeNoteSheet() {
+    noteSheet.classList.remove('open');
+    noteBackdrop.classList.remove('open');
+    noteSheet.querySelector('form').reset();
+  }
+</script>
+{% endblock %}

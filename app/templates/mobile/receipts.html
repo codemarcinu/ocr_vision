@@ -1,0 +1,41 @@
+{% extends "mobile/base.html" %}
+
+{% block title %}Paragony - Second Brain{% endblock %}
+
+{% block page_toolbar %}
+<div class="page-toolbar" style="flex-direction:column;align-items:stretch;gap:0.4rem">
+  <div class="filter-chips" id="store-filters">
+    <button class="filter-chip {{ 'active' if not filters.store_id }}"
+            hx-get="/m/paragony" hx-target="#receipt-list"
+            hx-indicator="#filter-spinner">Wszystkie</button>
+    {% for s in stores %}
+    <button class="filter-chip {{ 'active' if filters.store_id == s.id }}"
+            hx-get="/m/paragony?store_id={{ s.id }}" hx-target="#receipt-list"
+            hx-indicator="#filter-spinner">{{ store_emoji(s.name) }} {{ s.name }}</button>
+    {% endfor %}
+    <span class="mobile-spinner htmx-indicator" id="filter-spinner"></span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="mobile-list" id="receipt-list">
+  {% include "mobile/partials/receipt_list.html" %}
+</div>
+{% endblock %}
+
+{% block quick_actions %}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.body.classList.add('has-toolbar', 'has-nav');
+
+  // Highlight active filter chip on click
+  document.getElementById('store-filters').addEventListener('click', (e) => {
+    const chip = e.target.closest('.filter-chip');
+    if (!chip) return;
+    document.querySelectorAll('#store-filters .filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+  });
+</script>
+{% endblock %}

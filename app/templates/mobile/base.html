@@ -37,12 +37,16 @@
   <!-- Sync banner -->
   <div class="sync-banner"><span class="sync-spinner"></span> Synchronizacja...</div>
 
+  <!-- Page toolbar (search, filters) - overridden by subpages -->
+  {% block page_toolbar %}{% endblock %}
+
   <!-- Main content -->
   <main class="app-main">
     {% block content %}{% endblock %}
   </main>
 
-  <!-- Quick actions bar -->
+  <!-- Quick actions bar (chat input) - hidden on subpages -->
+  {% block quick_actions %}
   <div class="quick-actions" id="quick-actions">
     <button class="action-btn" data-action="camera" title="Zdjęcie paragonu">
       <span>📷</span>
@@ -57,19 +61,20 @@
       <span>➤</span>
     </button>
   </div>
+  {% endblock %}
 
-  <!-- Bottom navigation (hidden by default, can be enabled) -->
-  <nav class="bottom-nav hidden" id="bottom-nav">
-    <a href="/m/" class="nav-item active" data-page="chat">
+  <!-- Bottom navigation -->
+  <nav class="bottom-nav {% if not active_page or active_page == 'chat' %}hidden{% endif %}" id="bottom-nav">
+    <a href="/m/" class="nav-item {{ 'active' if active_page == 'chat' or not active_page }}" data-page="chat">
       <span>💬</span><small>Czat</small>
     </a>
-    <a href="/m/notatki" class="nav-item" data-page="notes">
+    <a href="/m/notatki" class="nav-item {{ 'active' if active_page == 'notes' }}" data-page="notes">
       <span>📝</span><small>Notatki</small>
     </a>
-    <a href="/m/paragony" class="nav-item" data-page="receipts">
+    <a href="/m/paragony" class="nav-item {{ 'active' if active_page == 'receipts' }}" data-page="receipts">
       <span>🛒</span><small>Zakupy</small>
     </a>
-    <a href="/m/wiedza" class="nav-item" data-page="knowledge">
+    <a href="/m/wiedza" class="nav-item {{ 'active' if active_page == 'knowledge' }}" data-page="knowledge">
       <span>📚</span><small>Wiedza</small>
     </a>
     <button class="nav-item" id="nav-more">

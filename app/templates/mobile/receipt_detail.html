@@ -1,0 +1,80 @@
+{% extends "mobile/base.html" %}
+
+{% block title %}{{ store_emoji(receipt.store.name if receipt.store else receipt.store_raw) }} {{ receipt.store.name if receipt.store else receipt.store_raw or "Paragon" }} - Second Brain{% endblock %}
+
+{% block page_toolbar %}
+<div class="detail-header">
+  <a href="/m/paragony" class="detail-back">← Paragony</a>
+  <span class="detail-title">{{ store_emoji(receipt.store.name if receipt.store else receipt.store_raw) }} {{ receipt.store.name if receipt.store else receipt.store_raw or "Paragon" }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Receipt info -->
+<div class="detail-section">
+  <div class="detail-info-row">
+    <span class="detail-info-label">Data</span>
+    <span class="detail-info-value">{{ receipt.receipt_date.strftime("%d.%m.%Y") if receipt.receipt_date else "-" }}</span>
+  </div>
+  {% if receipt.total_ocr %}
+  <div class="detail-info-row">
+    <span class="detail-info-label">Suma OCR</span>
+    <span class="detail-info-value">{{ "%.2f"|format(receipt.total_ocr|float) }} zł</span>
+  </div>
+  {% endif %}
+  {% if receipt.total_calculated %}
+  <div class="detail-info-row">
+    <span class="detail-info-label">Suma obliczona</span>
+    <span class="detail-info-value">{{ "%.2f"|format(receipt.total_calculated|float) }} zł</span>
+  </div>
+  {% endif %}
+  <div class="detail-info-row">
+    <span class="detail-info-label">Suma końcowa</span>
+    <span class="detail-info-value big">{{ "%.2f"|format(receipt.total_final|float) if receipt.total_final else "-" }} zł</span>
+  </div>
+</div>
+
+{% if receipt.needs_review %}
+<div class="detail-section" style="background:rgba(255,193,7,0.1)">
+  <div style="color:var(--warning);font-weight:600;font-size:0.9rem">⚠️ Wymaga przeglądu</div>
+  {% for reason in receipt.review_reasons or [] %}
+  <div style="font-size:0.85rem;color:var(--text-secondary)">{{ reason }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Products -->
+<div class="detail-section">
+  <div class="detail-section-title">Produkty ({{ receipt.items|length if receipt.items else 0 }})</div>
+  {% for item in receipt.items or [] %}
+  <div class="product-row">
+    <span class="product-name" title="{{ item.name_normalized or item.name_raw }}">
+      {{ item.name_normalized or item.name_raw }}
+    </span>
+    {% if item.quantity and item.quantity != 1 %}
+    <span class="product-qty">× {{ item.quantity }}</span>
+    {% endif %}
+    <span class="product-price">{{ "%.2f"|format(item.price_final|float) if item.price_final else "%.2f"|format(item.price_raw|float) if item.price_raw else "-" }} zł</span>
+  </div>
+  {% else %}
+  <div style="color:var(--text-secondary);font-size:0.9rem;padding:0.5rem 0">Brak produktów</div>
+  {% endfor %}
+</div>
+
+{% if receipt.source_file %}
+<div class="detail-section">
+  <div class="detail-info-row">
+    <span class="detail-info-label">Plik źródłowy</span>
+    <span class="detail-info-value" style="font-size:0.8rem">{{ receipt.source_file }}</span>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block quick_actions %}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.body.classList.add('has-toolbar', 'has-nav');
+</script>
+{% endblock %}

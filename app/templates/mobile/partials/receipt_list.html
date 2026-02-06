@@ -1,0 +1,35 @@
+{% for r in receipts %}
+<a class="mobile-card horizontal" href="/m/paragony/{{ r.id }}">
+  <span class="mobile-card-icon">{{ store_emoji(r.store.name if r.store else r.store_raw) }}</span>
+  <div class="mobile-card-body">
+    <div class="mobile-card-header">
+      <span class="mobile-card-title">{{ r.store.name if r.store else r.store_raw or "Paragon" }}</span>
+      <span class="mobile-card-amount">{{ "%.2f"|format(r.total_final|float) if r.total_final else "-" }} zł</span>
+    </div>
+    <div class="mobile-card-meta">
+      <span>{{ r.receipt_date.strftime("%d.%m.%Y") if r.receipt_date else "-" }}</span>
+      <span>{{ r.items|length if r.items else "0" }} poz.</span>
+      {% if r.needs_review %}<span class="mobile-badge mobile-badge-review">Przegląd</span>
+      {% else %}<span class="mobile-badge mobile-badge-ok">OK</span>{% endif %}
+    </div>
+  </div>
+</a>
+{% else %}
+<div class="mobile-empty">
+  <div class="mobile-empty-icon">🛒</div>
+  <div class="mobile-empty-text">Brak paragonów{% if filters and filters.store_id %} dla wybranego sklepu{% endif %}. Zrób zdjęcie paragonu w widoku czatu.</div>
+</div>
+{% endfor %}
+
+{% if receipts|length >= limit %}
+<div class="load-more">
+  <button class="load-more-btn"
+          hx-get="/m/paragony?offset={{ offset + limit }}{% if filters.store_id %}&store_id={{ filters.store_id }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}"
+          hx-target="#receipt-list"
+          hx-swap="innerHTML"
+          hx-indicator="#load-spinner">
+    Pokaż więcej
+  </button>
+  <span class="mobile-spinner htmx-indicator" id="load-spinner"></span>
+</div>
+{% endif %}

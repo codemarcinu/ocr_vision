@@ -164,6 +164,7 @@ class MobileApp {
   }
 
   addMessage(content, role, sources = []) {
+    if (!this.chatContainer) return;
     const msg = document.createElement('div');
     msg.className = `message ${role}`;
 
@@ -433,13 +434,14 @@ class MobileApp {
       });
     }
 
-    // Bottom nav toggle
+    // Bottom nav toggle (only controls chat page; subpages always show nav)
     if (toggleNav) {
       const bottomNav = document.getElementById('bottom-nav');
+      const isSubpage = document.body.classList.contains('has-nav');
       const navVisible = localStorage.getItem('nav_visible') === 'true';
 
-      toggleNav.checked = navVisible;
-      if (navVisible && bottomNav) {
+      toggleNav.checked = navVisible || isSubpage;
+      if ((navVisible || isSubpage) && bottomNav) {
         bottomNav.classList.remove('hidden');
         document.body.classList.add('nav-visible');
       }
@@ -490,6 +492,7 @@ class MobileApp {
 
   // === SUGGESTIONS ===
   setupSuggestions() {
+    if (!this.input) return;
     document.querySelectorAll('.suggestion-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const text = chip.dataset.text || chip.textContent;

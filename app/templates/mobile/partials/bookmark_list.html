@@ -1,0 +1,30 @@
+{% for b in bookmarks %}
+<div class="mobile-card">
+  <div class="mobile-card-header">
+    <span class="mobile-card-title">
+      <a href="{{ b.url }}" target="_blank" class="mobile-url" style="color:var(--text-primary);font-weight:600;display:inline">
+        {{ b.title or b.url[:50] }}
+      </a>
+    </span>
+    {% set status_map = {"pending": "mobile-badge-pending", "read": "mobile-badge-read", "archived": "mobile-badge-archived"} %}
+    <span class="mobile-badge {{ status_map.get(b.status, 'mobile-badge-tag') }}">{{ b.status }}</span>
+  </div>
+  <a href="{{ b.url }}" target="_blank" class="mobile-url">{{ b.url[:60] }}{% if b.url|length > 60 %}...{% endif %}</a>
+  <div class="mobile-card-meta">
+    <span>{{ b.created_at.strftime("%d.%m.%Y") if b.created_at else "" }}</span>
+    {% for tag in (b.tags or [])[:3] %}<span class="mobile-badge mobile-badge-tag">{{ tag }}</span>{% endfor %}
+    {% if b.status != "read" %}
+    <button class="mobile-badge mobile-badge-ok" style="cursor:pointer;border:none"
+            hx-post="/m/wiedza/{{ b.id }}/status" hx-vals='{"status":"read"}'
+            hx-target="#bookmark-list" hx-swap="innerHTML">
+      ✓ Przeczytane
+    </button>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="mobile-empty">
+  <div class="mobile-empty-icon">📚</div>
+  <div class="mobile-empty-text">Brak zakładek{% if status and status != 'all' %} w kategorii "{{ status }}"{% endif %}. Wyślij URL przez czat, aby zapisać zakładkę.</div>
+</div>
+{% endfor %}
