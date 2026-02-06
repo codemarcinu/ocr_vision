@@ -133,6 +133,19 @@ User: "Pokaż ostatnie notatki i paragony"
     {{"tool":"list_recent","arguments":{{"content_type":"receipts","limit":5}}}}
 ],"confidence":0.9}}
 
+### 🗂️ ORGANIZACJA NOTATEK:
+User: "Posprzątaj notatki" / "Raport notatek" / "Stan notatek"
+→ {{"tool":"organize_notes","arguments":{{"action":"report"}},"confidence":0.9}}
+
+User: "Otaguj moje notatki" / "Dodaj tagi do notatek"
+→ {{"tool":"organize_notes","arguments":{{"action":"auto_tag","dry_run":false}},"confidence":0.9}}
+
+User: "Zaproponuj tagi" / "Jakie tagi pasują do notatek?"
+→ {{"tool":"organize_notes","arguments":{{"action":"auto_tag","dry_run":true}},"confidence":0.9}}
+
+User: "Znajdź duplikaty w notatkach" / "Czy mam powtórzone notatki?"
+→ {{"tool":"organize_notes","arguments":{{"action":"find_duplicates"}},"confidence":0.9}}
+
 ═══════════════════════════════════════════════════════════════════════════════
 ZASADY WYBORU:
 ═══════════════════════════════════════════════════════════════════════════════
@@ -155,6 +168,7 @@ WYBÓR NARZĘDZIA:
 - Osobiste dane (notatki, co czytałem) → search_knowledge
 - Aktualne informacje z internetu → search_web
 - Powitania, smalltalk, matematyka → answer_directly
+- Porządkowanie/organizacja notatek → organize_notes
 
 KIEDY MULTI-TOOL (format B):
 - "Podsumuj i zapisz" → summarize_url + create_bookmark

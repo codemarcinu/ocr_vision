@@ -1,12 +1,15 @@
 """REST API for personal notes."""
 
+import logging
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.dependencies import NoteRepoDep
+from app.dependencies import DbSession, NoteRepoDep
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/notes", tags=["Notes"])
 
@@ -158,3 +161,67 @@ async def delete_note(note_id: UUID, repo: NoteRepoDep):
         await session.commit()
 
     return {"deleted": True}
+
+
+# =============================================================================
+# Notes Organizer Endpoints
+# =============================================================================
+
+
+@router.post("/organize/report")
+async def organize_report(session: DbSession):
+    """Generate a health report on notes — tags, categories, duplicates."""
+    from app.services.notes_organizer import generate_report
+
+    report = await generate_report(session)
+    return report.to_dict()
+
+
+@router.post("/organize/auto-tag")
+async def organize_auto_tag(session: DbSession, dry_run: bool = True, limit: int = 20):
+    """Auto-tag notes without tags using LLM.
+
+    Args:
+        dry_run: If true, only suggest tags without saving (default: true)
+        limit: Max notes to process (default: 20)
+    """
+    from app.services.notes_organizer import auto_tag
+
+    limit = max(1, min(limit, 50))
+    suggestions = await auto_tag(session, dry_run=dry_run, limit=limit)
+    return {
+        "dry_run": dry_run,
+        "processed": len(suggestions),
+        "suggestions": [
+            {
+                "note_id": s.note_id,
+                "title": s.title,
+                "suggested_tags": s.suggested_tags,
+                "applied": s.applied,
+            }
+            for s in suggestions
+        ],
+    }
+
+
+@router.post("/organize/duplicates")
+async def organize_duplicates(session: DbSession, threshold: float = 0.85):
+    """Find potentially duplicate notes using embedding similarity."""
+    from app.services.notes_organizer import find_duplicates
+
+    threshold = max(0.7, min(threshold, 0.99))
+    pairs = await find_duplicates(session, threshold=threshold)
+    return {
+        "threshold": threshold,
+        "duplicate_pairs": len(pairs),
+        "pairs": [
+            {
+                "note_a_id": p.note_a_id,
+                "note_a_title": p.note_a_title,
+                "note_b_id": p.note_b_id,
+                "note_b_title": p.note_b_title,
+                "similarity": p.similarity,
+            }
+            for p in pairs
+        ],
+    }

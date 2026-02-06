@@ -21,6 +21,7 @@ from app.agent.tools import (
     GetWeatherArgs,
     AnswerDirectlyArgs,
     AskClarificationArgs,
+    OrganizeNotesArgs,
 )
 from app.config import settings
 
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 # Tools that should be executed directly (actions)
-ACTION_TOOLS = {"create_note", "create_bookmark", "summarize_url", "list_recent", "ask_clarification"}
+ACTION_TOOLS = {"create_note", "create_bookmark", "summarize_url", "list_recent", "ask_clarification", "organize_notes"}
 
 # Tools that should fall through to orchestrator (searches/conversations)
 ORCHESTRATOR_TOOLS = {
@@ -93,8 +94,13 @@ class ToolChainContext:
     """Context passed between tools in a chain."""
 
     previous_results: dict[str, str]  # tool_name -> result_text
+    previous_metadata: dict[str, dict] = None  # tool_name -> metadata dict
     last_result: Optional[str] = None  # Result of the most recent tool
     last_tool: Optional[str] = None  # Name of the most recent tool
+
+    def __post_init__(self):
+        if self.previous_metadata is None:
+            self.previous_metadata = {}
 
 
 # =============================================================================
@@ -108,12 +114,14 @@ _ACTION_KEYWORDS = [
     "zapamiętaj", "przypomnij mi",
     # Bookmarks
     "zapisz link", "dodaj zakładkę", "bookmark", "zachowaj link",
-    # Summarization (with URL)
-    "streść", "podsumuj", "streszczenie",
+    # Summarization — only with URL (handled in URL branch below)
     # List recent
     "pokaż ostatnie", "ostatnie notatki", "ostatnie zakładki",
     "ostatnie paragony", "ostatnie artykuły", "lista notatek",
     "wyświetl ostatnie", "co ostatnio",
+    # Organize notes
+    "posprzątaj notatki", "otaguj notatki", "organizuj notatki",
+    "raport notatek", "duplikaty notatek", "porządek w notatkach",
 ]
 
 
@@ -155,6 +163,9 @@ async def execute_create_note(
 
     repo = NoteRepository(db_session)
 
+    # Check for summary backlink from chain context
+    summary_backlink = getattr(args, "_summary_backlink_stem", None)
+
     note = await repo.create(
         title=args.title,
         content=args.content,
@@ -164,7 +175,7 @@ async def execute_create_note(
     # Write to Obsidian
     if settings.GENERATE_OBSIDIAN_FILES:
         try:
-            write_note_file(note)
+            write_note_file(note, summary_backlink=summary_backlink)
         except Exception as e:
             logger.warning(f"Failed to write note file: {e}")
 
@@ -243,19 +254,40 @@ async def execute_summarize_url(
     tool_name: str,
     args: SummarizeUrlArgs,
     db_session: AsyncSession,
-) -> str:
-    """Execute summarize_url tool."""
-    from app.summarizer import summarize_url
+) -> tuple[str, dict]:
+    """Execute summarize_url tool. Returns (result_text, metadata)."""
+    from app.web_scraper import scrape_url
+    from app.summarizer import summarize_content
 
-    result, error = await summarize_url(args.url)
+    metadata = {"card_type": "summary", "url": args.url}
 
-    if error:
-        return f"Błąd podsumowania: {error}"
+    scraped, scrape_error = await scrape_url(args.url)
+    if scrape_error or not scraped:
+        return f"Błąd podsumowania: {scrape_error or 'Nie udało się pobrać'}", metadata
 
-    if not result:
-        return "Nie udało się pobrać treści ze strony."
+    result, error = await summarize_content(scraped.content)
+    if error or not result:
+        return f"Błąd podsumowania: {error}", metadata
 
-    # Format summary
+    # Write summary file to Obsidian (creates a linkable file)
+    if settings.GENERATE_OBSIDIAN_FILES:
+        try:
+            from app.writers.summary import write_summary_file_simple
+            summary_path = write_summary_file_simple(
+                title=scraped.title or args.url[:60],
+                url=args.url,
+                summary_text=result.summary_text,
+                model_used=result.model_used,
+                author=scraped.author,
+                tags=result.tags,
+                category=result.category,
+                entities=result.entities,
+            )
+            metadata["summary_stem"] = summary_path.stem
+        except Exception as e:
+            logger.warning(f"Failed to write summary file: {e}")
+
+    # Format summary text
     parts = [f"**Podsumowanie:**\n{result.summary_text}"]
 
     if result.tags:
@@ -264,7 +296,7 @@ async def execute_summarize_url(
     if result.category:
         parts.append(f"**Kategoria:** {result.category}")
 
-    return "\n".join(parts)
+    return "\n".join(parts), metadata
 
 
 def execute_ask_clarification(args: AskClarificationArgs) -> str:
@@ -286,6 +318,53 @@ def execute_ask_clarification(args: AskClarificationArgs) -> str:
             parts.append(f"{i}. {opt}")
 
     return "\n".join(parts)
+
+
+async def execute_organize_notes(
+    tool_name: str,
+    args: OrganizeNotesArgs,
+    db_session: AsyncSession,
+) -> tuple[str, dict]:
+    """Execute organize_notes tool — report, auto_tag, or find_duplicates."""
+    from app.services.notes_organizer import generate_report, auto_tag, find_duplicates
+
+    action = args.action
+    metadata = {"card_type": "organize", "action": action}
+
+    if action == "report":
+        report = await generate_report(db_session)
+        return report.to_text(), metadata
+
+    elif action == "auto_tag":
+        suggestions = await auto_tag(db_session, dry_run=args.dry_run)
+        if not suggestions:
+            return "Wszystkie notatki mają już tagi.", metadata
+
+        lines = []
+        if args.dry_run:
+            lines.append(f"**Propozycje tagów** ({len(suggestions)} notatek):")
+        else:
+            lines.append(f"**Otagowano {len(suggestions)} notatek:**")
+
+        for s in suggestions:
+            tags_str = ", ".join(s.suggested_tags)
+            status = " ✅" if s.applied else ""
+            lines.append(f"- {s.title} → [{tags_str}]{status}")
+
+        return "\n".join(lines), metadata
+
+    elif action == "find_duplicates":
+        pairs = await find_duplicates(db_session)
+        if not pairs:
+            return "Nie znaleziono duplikatów.", metadata
+
+        lines = [f"**Potencjalne duplikaty** ({len(pairs)} par):"]
+        for p in pairs:
+            lines.append(f"- **{p.note_a_title}** ↔ **{p.note_b_title}** ({p.similarity:.0%})")
+
+        return "\n".join(lines), metadata
+
+    return "Nieznana akcja.", metadata
 
 
 async def execute_list_recent(
@@ -443,7 +522,7 @@ async def execute_tool_chain(
         validated_args = _inject_chain_context(tool, validated_args, context)
 
         try:
-            result_text, _meta = await _execute_single_tool(tool, validated_args, db_session)
+            result_text, meta = await _execute_single_tool(tool, validated_args, db_session)
 
             if result_text is None:
                 error_msg = f"Narzędzie '{tool}' zwróciło pusty wynik"
@@ -456,6 +535,8 @@ async def execute_tool_chain(
 
             # Update context for next tool
             context.previous_results[tool] = result_text
+            if meta:
+                context.previous_metadata[tool] = meta
             context.last_result = result_text
             context.last_tool = tool
 
@@ -519,7 +600,7 @@ def _inject_chain_context(
     if not context.last_result or not context.last_tool:
         return validated_args
 
-    # summarize_url -> create_note: inject summary as content
+    # summarize_url -> create_note: inject summary as content + backlink
     if tool == "create_note" and context.last_tool == "summarize_url":
         if hasattr(validated_args, "content"):
             # Check if content is a placeholder or very short
@@ -528,6 +609,13 @@ def _inject_chain_context(
                 # Inject the summary
                 validated_args.content = context.last_result
                 logger.info("Injected summarize_url result into create_note content")
+
+        # Pass summary_stem for Obsidian backlink
+        summary_meta = context.previous_metadata.get("summarize_url", {})
+        summary_stem = summary_meta.get("summary_stem")
+        if summary_stem:
+            validated_args._summary_backlink_stem = summary_stem
+            logger.info(f"Injected summary backlink stem: {summary_stem}")
 
     # summarize_url -> create_bookmark: both use same URL, no injection needed
     # The URL should already be in both tool arguments
@@ -559,8 +647,7 @@ async def _execute_single_tool(
         return await execute_create_bookmark(tool, validated_args, db_session)
 
     elif tool == "summarize_url":
-        text = await execute_summarize_url(tool, validated_args, db_session)
-        return text, {"card_type": "summary", "url": validated_args.url}
+        return await execute_summarize_url(tool, validated_args, db_session)
 
     elif tool == "list_recent":
         text = await execute_list_recent(tool, validated_args, db_session)
@@ -573,6 +660,9 @@ async def _execute_single_tool(
             "question": validated_args.question,
             "options": validated_args.options or [],
         }
+
+    elif tool == "organize_notes":
+        return await execute_organize_notes(tool, validated_args, db_session)
 
     else:
         logger.warning(f"Unknown action tool: {tool}")
@@ -742,6 +832,8 @@ class ChatAgentProcessor:
                 validated_args = ListRecentArgs.model_validate(args)
             elif tool == "ask_clarification" and args:
                 validated_args = AskClarificationArgs.model_validate(args)
+            elif tool == "organize_notes" and args:
+                validated_args = OrganizeNotesArgs.model_validate(args)
 
             if validated_args is None:
                 await self._save_log(response, db_session, execution_error="Missing arguments")

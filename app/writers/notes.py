@@ -3,6 +3,7 @@
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from app.config import settings
 
@@ -14,11 +15,12 @@ def _sanitize_filename(title: str) -> str:
     return sanitized.strip("_")[:50]
 
 
-def write_note_file(note) -> Path:
+def write_note_file(note, summary_backlink: Optional[str] = None) -> Path:
     """Write a personal note to Obsidian vault.
 
     Args:
         note: Note model instance (from DB).
+        summary_backlink: Optional stem of a summary file to link back to.
 
     Returns:
         Path to the written file.
@@ -70,6 +72,11 @@ def write_note_file(note) -> Path:
         "",
         note.content,
     ]
+
+    # Add summary backlink if present
+    if summary_backlink:
+        content_lines.extend(["", "## Źródło", ""])
+        content_lines.append(f"Podsumowanie artykułu: [[{summary_backlink}]]")
 
     # Add source references if any
     if note.source_refs:

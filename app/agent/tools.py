@@ -25,6 +25,7 @@ class ToolName(str, Enum):
     CREATE_BOOKMARK = "create_bookmark"
     ANSWER_DIRECTLY = "answer_directly"
     ASK_CLARIFICATION = "ask_clarification"
+    ORGANIZE_NOTES = "organize_notes"
 
 
 TOOL_NAMES = [t.value for t in ToolName]
@@ -327,6 +328,36 @@ class AskClarificationArgs(BaseModel):
         return s[:200] if s else None
 
 
+class OrganizeNotesArgs(BaseModel):
+    """Arguments for organize_notes tool."""
+
+    action: Literal["report", "auto_tag", "find_duplicates"] = Field(
+        ...,
+        description="Akcja: report, auto_tag, find_duplicates",
+    )
+    dry_run: bool = Field(
+        default=True,
+        description="Dla auto_tag: true=tylko propozycje, false=zapisz tagi",
+    )
+
+    @field_validator("action", mode="before")
+    @classmethod
+    def normalize_action(cls, v: Any) -> str:
+        if v is None:
+            return "report"
+        s = str(v).strip().lower()
+        mappings = {
+            "raport": "report",
+            "tagi": "auto_tag",
+            "taguj": "auto_tag",
+            "otaguj": "auto_tag",
+            "auto-tag": "auto_tag",
+            "duplikaty": "find_duplicates",
+            "duplicates": "find_duplicates",
+        }
+        return mappings.get(s, s)
+
+
 # =============================================================================
 # Tool Call Model
 # =============================================================================
@@ -345,6 +376,7 @@ ToolArguments = Union[
     CreateBookmarkArgs,
     AnswerDirectlyArgs,
     AskClarificationArgs,
+    OrganizeNotesArgs,
 ]
 
 # Mapping from tool name to argument model
@@ -360,6 +392,7 @@ TOOL_ARG_MODELS: dict[str, type[BaseModel]] = {
     "create_bookmark": CreateBookmarkArgs,
     "answer_directly": AnswerDirectlyArgs,
     "ask_clarification": AskClarificationArgs,
+    "organize_notes": OrganizeNotesArgs,
 }
 
 
@@ -619,6 +652,20 @@ TOOL_DEFINITIONS = [
             "context": "Krótki kontekst dlaczego pytasz (opcjonalne)",
         },
         "required": ["question"],
+    },
+    {
+        "name": "organize_notes",
+        "description": (
+            "Organizuj i porządkuj notatki. Trzy akcje: "
+            "report = raport stanu (ile bez tagów, duplikaty), "
+            "auto_tag = automatyczne tagowanie notatek bez tagów przez LLM, "
+            "find_duplicates = znajdź podobne/zduplikowane notatki."
+        ),
+        "parameters": {
+            "action": "Akcja: report, auto_tag, find_duplicates (wymagane)",
+            "dry_run": "Dla auto_tag: true=tylko propozycje, false=zapisz (opcjonalne, domyślnie true)",
+        },
+        "required": ["action"],
     },
 ]
 
