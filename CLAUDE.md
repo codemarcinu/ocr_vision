@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Second Brain - personal knowledge management system with modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, RAG knowledge base, and Chat AI (multi-turn with RAG + SearXNG web search). Uses Ollama LLMs, PostgreSQL + pgvector, and outputs to Obsidian markdown. Telegram bot with inline menus and human-in-the-loop validation.
+Second Brain - personal knowledge management system with modules: OCR receipt processing, RSS/web summarization, audio/video transcription, personal notes, bookmarks, RAG knowledge base, and Chat AI (multi-turn with RAG + SearXNG web search). Uses Ollama LLMs, PostgreSQL + pgvector, and outputs to Obsidian markdown. Web UI, mobile PWA, and REST API interfaces.
 
 Polish grocery receipts are the primary OCR target. Field names and UI text are in Polish (nazwa=name, cena=price, sklep=store, suma=total, rabat=discount, paragony=receipts, spiżarnia=pantry).
 
@@ -50,7 +50,7 @@ pip install -r requirements.txt
 OLLAMA_BASE_URL=http://localhost:11434 uvicorn app.main:app --reload
 ```
 
-No automated tests exist. No linting or formatting tools configured. Testing is manual via API calls and Telegram bot.
+No automated tests exist. No linting or formatting tools configured. Testing is manual via API calls and web UI.
 
 FastAPI auto-docs available at `http://localhost:8000/docs` (Swagger UI).
 
@@ -79,7 +79,7 @@ The ORM source of truth is `app/db/models.py`. Alembic's `env.py` is configured 
 ### High-Level Data Flow
 
 ```
-Inputs (Telegram/API/Web UI)
+Inputs (API/Web UI/Mobile PWA)
     ↓
 FastAPI (app/main.py) ──→ Ollama LLMs (host:11434)
     ↓
@@ -112,7 +112,7 @@ Receipt (photo/PDF) → OCR Backend → Store Detection → Store-Specific Promp
 
 **Category cache** (`CLASSIFIER_CACHE_TTL`): Caches product→category mappings to skip LLM calls for recently seen products. Set to 0 to disable.
 
-**Human-in-the-loop review** triggers when extracted total vs product sum differs by >5 PLN AND >10%. User approves, corrects total, or rejects via Telegram inline keyboard.
+**Human-in-the-loop review** triggers when extracted total vs product sum differs by >5 PLN AND >10%. User approves, corrects total, or rejects via web UI.
 
 **Multi-page PDF**: Pages processed in parallel (`PDF_MAX_PARALLEL_PAGES`), products combined, per-page verification skipped (would corrupt partial totals).
 
@@ -124,8 +124,6 @@ Each module follows a consistent pattern:
 - **Repository** (`app/db/repositories/*.py`) - Data access layer
 - **Service** (`app/services/*.py`) - Business logic orchestration (emerging pattern)
 - **Writer** (`app/*_writer.py`) - Obsidian markdown generation
-- **Telegram handler** (`app/telegram/handlers/*.py`) - Bot commands
-- **Telegram menu** (`app/telegram/handlers/menu_*.py`) - Inline keyboard navigation
 
 Modules: receipts, RSS/summarizer, transcription, notes, bookmarks, RAG (/ask), chat, agent (tool-calling), analytics, dictionary, search, reports, user profiles, push notifications, mobile PWA.
 
@@ -145,7 +143,7 @@ Analytics endpoints at `/reports/*`:
 
 ### User Profiles (`app/profile_api.py`)
 
-Per-user preferences stored in `UserProfile` model: preferred stores, city (for weather), display settings. API at `/profile/*`. Telegram handler: `/settings` → profile menu.
+Per-user preferences stored in `UserProfile` model: preferred stores, city (for weather), display settings. API at `/profile/*`.
 
 ### Operational Endpoints
 
@@ -185,15 +183,9 @@ async def list_products(repo: ProductRepoDep):
 ```
 All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository classes accept `AsyncSession` and use `await session.execute()`. Never use synchronous SQLAlchemy calls.
 
-**Telegram callback router** (`app/telegram/callback_router.py`): Prefix-based routing instead of monolithic if/elif. Handlers registered by prefix (e.g., `"receipts:"`, `"notes:"`). Registered prefixes: `receipts:`, `articles:`, `transcriptions:`, `stats:`, `notes:`, `bookmarks:`, `settings:`, `chat:`, `url:`, `review:`, `profile:`.
-
-**Telegram schedulers**: `rss_scheduler.py` (fetch RSS every 4h), `transcription_scheduler.py` (process queued jobs), `notifications.py` (notification scheduler). Voice notes processed on interval (`VOICE_NOTE_PROCESS_INTERVAL_MINUTES`).
-
 **RAG auto-indexing** (`app/rag/hooks.py`): Fire-and-forget hooks in notes_api, bookmarks_api, rss_api, transcription_api auto-index new content for `/ask` queries. If embeddings table is empty on startup, triggers background `reindex_all()`.
 
 **Chat AI intent classification** (`app/chat/intent_classifier.py`): LLM classifies each message as `"rag"` (personal data), `"web"` (internet search via SearXNG), `"both"`, or `"direct"` (no search needed).
-
-**Telegram chat always-on** (`app/telegram/bot.py`): Chat sessions are created automatically when user sends a text message. No explicit `/chat` command needed—just type and the bot responds with RAG + web search context. Message routing priority: (1) manual total input, (2) URL → action picker, (3) note creation flow, (4) fallback to chat. The `_ensure_chat_session()` helper creates or retrieves active sessions on demand. `/endchat` resets the conversation (archives old session, creates new one) rather than disabling chat.
 
 **Language detection**: Multiple modules auto-detect Polish vs English based on Polish characters (ą,ć,ę...) and keyword matching. Polish → Bielik 11B model, English → qwen2.5:7b.
 
@@ -205,7 +197,7 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 
 **OCR backend conditional imports** (`app/main.py`): Backend selection happens at import time via `settings.OCR_BACKEND`, loading the appropriate module (paddle_ocr, deepseek_ocr, google_ocr_backend, openai_ocr_backend, or default vision ocr).
 
-**Error messages in Polish**: User-facing error text uses Polish (e.g., "Wystąpił błąd"). Keep this convention in Telegram handlers and web UI.
+**Error messages in Polish**: User-facing error text uses Polish (e.g., "Wystąpił błąd"). Keep this convention in web UI.
 
 ### Product Normalization Chain (`app/dictionaries/`)
 
@@ -292,10 +284,6 @@ OPENAI_OCR_MODEL=gpt-4o-mini         # OpenAI model for structuring
 
 # Database
 DATABASE_URL=postgresql+asyncpg://pantry:pantry123@postgres:5432/pantry
-
-# Telegram
-TELEGRAM_BOT_TOKEN=xxx
-TELEGRAM_CHAT_ID=123456  # 0 = allow all users
 
 # Authentication (optional)
 AUTH_TOKEN=                           # Set to enable API/Web auth (empty = no auth)
@@ -422,7 +410,6 @@ Set all feature flags to `false` to revert to file-only mode (no database).
 **Authentication** (`app/auth.py`): Optional, controlled by `AUTH_TOKEN` env var. When set:
 - API: `Authorization: Bearer <token>` header
 - Web UI: session cookies (8h expiry) with `/login` and `/logout` routes
-- Telegram bot: separate `@authorized_only` decorator based on `TELEGRAM_CHAT_ID`
 - Public paths bypassing auth: `/health`, `/docs`, `/metrics`, `/login`, `/logout`, `/sw.js`, `/manifest.json`
 
 **Rate limiting**: `slowapi` on login (5/min) and sensitive endpoints.
@@ -451,14 +438,7 @@ Follow the existing module pattern:
 3. Create API router as `app/<module>_api.py` with FastAPI `APIRouter`
 4. Add dependency alias to `app/dependencies.py` (typed `Annotated` alias)
 5. Register router in `app/main.py`
-6. Optionally: add Obsidian writer (`app/<module>_writer.py`), Telegram handler, RAG auto-indexing hook
-
-### Adding a New Telegram Handler
-
-1. Create handler in `app/telegram/handlers/`
-2. For inline keyboard menus: create `menu_<module>.py`, register callback prefix in `app/telegram/bot.py` via `CallbackRouter.register("<prefix>:", handler_function)`
-3. Handler signature for callbacks: `async def handler(query: CallbackQuery, action: str, context: ContextTypes.DEFAULT_TYPE)`
-4. For command handlers: register in `bot.py` using `application.add_handler(CommandHandler(...))`
+6. Optionally: add Obsidian writer (`app/<module>_writer.py`), RAG auto-indexing hook
 
 ### Adding a New Store for OCR
 
