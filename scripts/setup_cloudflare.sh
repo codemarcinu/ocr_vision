@@ -12,7 +12,7 @@ if [ -z "$API_TOKEN" ]; then
     echo "Użycie: $0 <CLOUDFLARE_API_TOKEN>"
     echo ""
     echo "Utwórz token na: https://dash.cloudflare.com/profile/api-tokens"
-    echo "Uprawnienia: Zone Settings (Edit) + Zone WAF (Edit)"
+    echo "Uprawnienia: Zone > Zone Settings (Edit), Zone > Zone WAF (Edit), Zone > Firewall Services (Edit), Zone > Bot Management (Edit)"
     exit 1
 fi
 
@@ -75,7 +75,7 @@ check_result "$result" "Automatic HTTPS Rewrites: On"
 
 echo ""
 
-# 3. Security Settings
+# 3. Security Settings + Bot Fight Mode
 echo "[3/6] Konfiguracja Security Settings..."
 
 result=$(cf_api PATCH "/zones/$ZONE_ID/settings/security_level" '{"value":"high"}')
@@ -86,6 +86,10 @@ check_result "$result" "Browser Integrity Check: On"
 
 result=$(cf_api PATCH "/zones/$ZONE_ID/settings/challenge_ttl" '{"value":1800}')
 check_result "$result" "Challenge Passage: 30 minutes"
+
+# Bot Fight Mode (Free tier)
+result=$(cf_api PUT "/zones/$ZONE_ID/bot_management" '{"fight_mode":true}')
+check_result "$result" "Bot Fight Mode: On"
 
 echo ""
 
@@ -106,14 +110,24 @@ RULES_PAYLOAD=$(cat <<'RULES_EOF'
 {
   "rules": [
     {
-      "expression": "(http.request.uri.path contains \"/docs\") or (http.request.uri.path contains \"/redoc\") or (http.request.uri.path contains \"/openapi.json\") or (http.request.uri.path contains \"/.env\") or (http.request.uri.path contains \"/alembic\")",
+      "expression": "(http.request.uri.path contains \"/docs\") or (http.request.uri.path contains \"/redoc\") or (http.request.uri.path contains \"/openapi.json\") or (http.request.uri.path contains \"/.env\") or (http.request.uri.path contains \"/alembic\") or (http.request.uri.path contains \"/.git\") or (http.request.uri.path contains \"/.htaccess\") or (http.request.uri.path contains \"/.htpasswd\")",
       "action": "block",
       "description": "Block sensitive paths"
     },
     {
-      "expression": "(http.user_agent contains \"sqlmap\") or (http.user_agent contains \"nikto\") or (http.user_agent contains \"nmap\") or (http.user_agent contains \"masscan\") or (http.user_agent contains \"zgrab\") or (http.user_agent contains \"nuclei\") or (http.user_agent contains \"dirbuster\") or (http.user_agent contains \"gobuster\")",
+      "expression": "(http.request.uri.path contains \"/wp-admin\") or (http.request.uri.path contains \"/wp-login\") or (http.request.uri.path contains \"/wp-content\") or (http.request.uri.path contains \"/wp-includes\") or (http.request.uri.path contains \"/xmlrpc.php\") or (http.request.uri.path contains \"/phpmyadmin\") or (http.request.uri.path contains \"/administrator\") or (http.request.uri.path contains \"/config.php\") or (http.request.uri.path contains \"/backup\") or (http.request.uri.path contains \"/cgi-bin\") or (http.request.uri.path contains \"/actuator\")",
       "action": "block",
-      "description": "Block bad bots and scanners"
+      "description": "Block scanner honeypot paths (WordPress, phpMyAdmin, etc.)"
+    },
+    {
+      "expression": "(http.user_agent contains \"sqlmap\") or (http.user_agent contains \"nikto\") or (http.user_agent contains \"nmap\") or (http.user_agent contains \"masscan\") or (http.user_agent contains \"zgrab\") or (http.user_agent contains \"nuclei\") or (http.user_agent contains \"dirbuster\") or (http.user_agent contains \"gobuster\") or (http.user_agent contains \"Scrapy\") or (http.user_agent contains \"MJ12bot\") or (http.user_agent contains \"AhrefsBot\") or (http.user_agent contains \"SemrushBot\") or (http.user_agent contains \"DotBot\") or (http.user_agent contains \"PetalBot\") or (http.user_agent contains \"BLEXBot\") or (http.user_agent contains \"DataForSeoBot\") or (http.user_agent contains \"Go-http-client\") or (http.user_agent contains \"python-requests\") or (http.user_agent contains \"Python-urllib\") or (http.user_agent contains \"Headless\") or (http.user_agent contains \"PhantomJS\") or (http.user_agent contains \"Wget\")",
+      "action": "block",
+      "description": "Block bad bots, scanners and SEO crawlers"
+    },
+    {
+      "expression": "(http.user_agent eq \"\") or (not cf.client.bot and http.user_agent contains \"bot\" and not http.user_agent contains \"Googlebot\" and not http.user_agent contains \"bingbot\")",
+      "action": "managed_challenge",
+      "description": "Challenge empty User-Agent and unknown bots"
     },
     {
       "expression": "(ip.geoip.country ne \"PL\")",
@@ -135,39 +149,17 @@ if [ -n "$RULESET_ID" ]; then
     result=$(cf_api PUT "/zones/$ZONE_ID/rulesets/$RULESET_ID" "$RULES_PAYLOAD")
 else
     # Create new ruleset
-    RULES_PAYLOAD_WITH_META=$(cat <<'META_EOF'
-{
-  "name": "Security rules",
-  "kind": "zone",
-  "phase": "http_request_firewall_custom",
-  "rules": [
-    {
-      "expression": "(http.request.uri.path contains \"/docs\") or (http.request.uri.path contains \"/redoc\") or (http.request.uri.path contains \"/openapi.json\") or (http.request.uri.path contains \"/.env\") or (http.request.uri.path contains \"/alembic\")",
-      "action": "block",
-      "description": "Block sensitive paths"
-    },
-    {
-      "expression": "(http.user_agent contains \"sqlmap\") or (http.user_agent contains \"nikto\") or (http.user_agent contains \"nmap\") or (http.user_agent contains \"masscan\") or (http.user_agent contains \"zgrab\") or (http.user_agent contains \"nuclei\") or (http.user_agent contains \"dirbuster\") or (http.user_agent contains \"gobuster\")",
-      "action": "block",
-      "description": "Block bad bots and scanners"
-    },
-    {
-      "expression": "(ip.geoip.country ne \"PL\")",
-      "action": "managed_challenge",
-      "description": "Challenge non-PL traffic"
-    },
-    {
-      "expression": "(http.request.uri.path contains \"/login\" and http.request.method eq \"POST\")",
-      "action": "managed_challenge",
-      "description": "Protect login endpoint"
-    }
-  ]
-}
-META_EOF
-)
+    RULES_PAYLOAD_WITH_META=$(python3 -c "
+import json
+rules = json.loads('''$RULES_PAYLOAD''')
+rules['name'] = 'Security rules'
+rules['kind'] = 'zone'
+rules['phase'] = 'http_request_firewall_custom'
+print(json.dumps(rules))
+")
     result=$(cf_api POST "/zones/$ZONE_ID/rulesets" "$RULES_PAYLOAD_WITH_META")
 fi
-check_result "$result" "4 Custom Security Rules"
+check_result "$result" "6 Custom Security Rules"
 
 echo ""
 
@@ -212,34 +204,14 @@ RL_EOF
 if [ -n "$RL_RULESET_ID" ]; then
     result=$(cf_api PUT "/zones/$ZONE_ID/rulesets/$RL_RULESET_ID" "$RL_PAYLOAD")
 else
-    RL_PAYLOAD_WITH_META=$(cat <<'RL_META_EOF'
-{
-  "name": "Rate limiting rules",
-  "kind": "zone",
-  "phase": "http_ratelimit",
-  "rules": [
-    {
-      "expression": "(http.request.uri.path contains \"/process-receipt\") or (http.request.uri.path contains \"/ask\") or (http.request.uri.path contains \"/message\") or (http.request.uri.path contains \"/summarize\")",
-      "action": "block",
-      "action_parameters": {
-        "response": {
-          "status_code": 429,
-          "content": "{\"error\": \"Too many requests\"}",
-          "content_type": "application/json"
-        }
-      },
-      "ratelimit": {
-        "characteristics": ["ip.src"],
-        "period": 60,
-        "requests_per_period": 20,
-        "mitigation_timeout": 60
-      },
-      "description": "API rate limit (20 req/min)"
-    }
-  ]
-}
-RL_META_EOF
-)
+    RL_PAYLOAD_WITH_META=$(python3 -c "
+import json
+rules = json.loads('''$RL_PAYLOAD''')
+rules['name'] = 'Rate limiting rules'
+rules['kind'] = 'zone'
+rules['phase'] = 'http_ratelimit'
+print(json.dumps(rules))
+")
     result=$(cf_api POST "/zones/$ZONE_ID/rulesets" "$RL_PAYLOAD_WITH_META")
 fi
 check_result "$result" "Rate Limiting Rule (20 req/min)"
@@ -252,11 +224,21 @@ echo "==========================================="
 echo ""
 echo "Konfiguracja zakończona! Sprawdź wyniki powyżej."
 echo ""
+echo "Aktywne zabezpieczenia:"
+echo "  - Bot Fight Mode (automatyczna blokada znanych botów)"
+echo "  - 6 reguł WAF (sensitive paths, honeypots, bad UA, empty UA, geo, login)"
+echo "  - Rate limiting 20 req/min na API endpoints"
+echo "  - Security Level: High + Browser Integrity Check"
+echo "  - SSL Full (Strict) + TLS 1.2+"
+echo ""
 echo "Weryfikacja w dashboard:"
 echo "  https://dash.cloudflare.com/$ZONE_ID/security/security-rules"
+echo "  https://dash.cloudflare.com/$ZONE_ID/security/bots"
 echo "  https://dash.cloudflare.com/$ZONE_ID/ssl-tls"
 echo ""
 echo "Test z zewnątrz:"
-echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/health     # 200"
-echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/docs       # 403 (blocked)"
-echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/receipts   # 401 (no token)"
+echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/health      # 200"
+echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/docs        # 403 (blocked)"
+echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/wp-admin    # 403 (honeypot)"
+echo "  curl -s -o /dev/null -w '%{http_code}' -A '' https://brain.marubo.ovh/      # 403 (empty UA)"
+echo "  curl -s -o /dev/null -w '%{http_code}' https://brain.marubo.ovh/receipts    # 401 (no token)"
