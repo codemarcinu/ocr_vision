@@ -1,0 +1,33 @@
+# Second Brain - Caddy reverse proxy with automatic HTTPS
+#
+# Usage:
+#   Production: CADDY_DOMAIN=brain.example.com docker compose --profile https up -d
+#   Local dev:  CADDY_DOMAIN=localhost docker compose --profile https up -d
+#
+# For production, ensure ports 80/443 are open and DNS A record points here.
+# Caddy automatically obtains Let's Encrypt certificates for real domains.
+
+{$DOMAIN:localhost} {
+	reverse_proxy fastapi:8000
+
+	# Service Worker - must not be cached, needs proper scope header
+	header /sw.js {
+		Service-Worker-Allowed "/"
+		Cache-Control "no-cache"
+	}
+
+	# PWA manifest
+	header /static/manifest.json {
+		Cache-Control "no-cache"
+	}
+
+	# Security headers
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Compression
+	encode gzip zstd
+}

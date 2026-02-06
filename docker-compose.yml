@@ -68,6 +68,11 @@ services:
       - WEATHER_CITY=${WEATHER_CITY:-Kraków}
       # Obsidian markdown files (notes, transcriptions, summaries)
       - GENERATE_OBSIDIAN_FILES=true
+      # Push Notifications (Web Push)
+      - PUSH_ENABLED=${PUSH_ENABLED:-false}
+      - PUSH_VAPID_PUBLIC_KEY=${PUSH_VAPID_PUBLIC_KEY:-}
+      - PUSH_VAPID_PRIVATE_KEY=${PUSH_VAPID_PRIVATE_KEY:-}
+      - PUSH_VAPID_SUBJECT=${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -94,6 +99,27 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
+
+  # --- HTTPS Reverse Proxy (optional) ---
+  # Start with: docker compose --profile https up -d
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${CADDY_DOMAIN:-localhost}
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    profiles:
+      - https
 
   # --- Monitoring Stack ---
 
@@ -157,3 +183,5 @@ volumes:
   prometheus_data:
   loki_data:
   grafana_data:
+  caddy_data:
+  caddy_config:
