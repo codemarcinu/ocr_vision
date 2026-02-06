@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="pl" data-bs-theme="dark">
+<script>document.documentElement.dataset.theme=localStorage.getItem('theme_pref')||'auto';</script>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#212529">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -20,15 +21,16 @@
   <!-- Header -->
   <header class="app-header">
     <div class="header-left">
+      <button class="icon-btn" id="history-btn" title="Historia rozmów" aria-label="Historia rozmów"><span aria-hidden="true">📋</span></button>
       <span class="app-logo">🧠</span>
       <span class="app-title">Second Brain</span>
     </div>
     <div class="header-right">
       <div class="header-btn-wrapper">
-        <button class="icon-btn" id="settings-btn" title="Ustawienia"><span>⚙️</span></button>
+        <button class="icon-btn" id="settings-btn" title="Ustawienia" aria-label="Ustawienia"><span aria-hidden="true">⚙️</span></button>
         <span class="offline-badge hidden" id="offline-badge">0</span>
       </div>
-      <button class="icon-btn" id="push-toggle" title="Powiadomienia"><span>🔕</span></button>
+      <button class="icon-btn" id="push-toggle" title="Powiadomienia" aria-label="Powiadomienia"><span aria-hidden="true">🔕</span></button>
     </div>
   </header>
 
@@ -48,39 +50,79 @@
   <!-- Quick actions bar (chat input) - hidden on subpages -->
   {% block quick_actions %}
   <div class="quick-actions" id="quick-actions">
-    <button class="action-btn" data-action="camera" title="Zdjęcie paragonu">
-      <span>📷</span>
+    <button class="action-btn" data-action="camera" title="Zdjęcie paragonu" aria-label="Zdjęcie paragonu">
+      <span aria-hidden="true">📷</span>
     </button>
-    <button class="action-btn" data-action="voice" title="Wiadomość głosowa">
-      <span>🎤</span>
+    <button class="action-btn" data-action="voice" title="Wiadomość głosowa" aria-label="Wiadomość głosowa">
+      <span aria-hidden="true">🎤</span>
+    </button>
+    <button class="action-btn" data-action="attach" title="Załącznik" aria-label="Załącznik">
+      <span aria-hidden="true">📎</span>
     </button>
     <div class="input-wrapper">
       <textarea id="chat-input" placeholder="Napisz..." rows="1"></textarea>
     </div>
-    <button class="send-btn" id="send-btn" title="Wyślij">
-      <span>➤</span>
+    <div class="recording-overlay" id="recording-overlay">
+      <span class="recording-timer" id="recording-timer">0:00</span>
+      <div class="recording-waveform" id="recording-waveform">
+        <canvas id="waveform-canvas"></canvas>
+      </div>
+      <button class="recording-cancel" id="recording-cancel">Anuluj</button>
+    </div>
+    <button class="send-btn" id="send-btn" title="Wyślij" aria-label="Wyślij">
+      <span aria-hidden="true">➤</span>
     </button>
   </div>
   {% endblock %}
 
-  <!-- Bottom navigation -->
-  <nav class="bottom-nav {% if not active_page or active_page == 'chat' %}hidden{% endif %}" id="bottom-nav">
-    <a href="/m/" class="nav-item {{ 'active' if active_page == 'chat' or not active_page }}" data-page="chat">
-      <span>💬</span><small>Czat</small>
+  <!-- Bottom navigation (3 tabs) -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <a href="/m/" class="nav-item {{ 'active' if active_page == 'chat' or not active_page }}" data-page="chat" aria-label="Czat">
+      <span aria-hidden="true">💬</span><small>Czat</small>
     </a>
-    <a href="/m/notatki" class="nav-item {{ 'active' if active_page == 'notes' }}" data-page="notes">
-      <span>📝</span><small>Notatki</small>
-    </a>
-    <a href="/m/paragony" class="nav-item {{ 'active' if active_page == 'receipts' }}" data-page="receipts">
-      <span>🛒</span><small>Zakupy</small>
-    </a>
-    <a href="/m/wiedza" class="nav-item {{ 'active' if active_page == 'knowledge' }}" data-page="knowledge">
-      <span>📚</span><small>Wiedza</small>
-    </a>
-    <button class="nav-item" id="nav-more">
-      <span>⋯</span><small>Więcej</small>
+    <button class="nav-item" id="nav-history" aria-label="Historia rozmów">
+      <span aria-hidden="true">📋</span><small>Historia</small>
+    </button>
+    <button class="nav-item" id="nav-more" aria-label="Więcej opcji">
+      <span aria-hidden="true">⋯</span><small>Więcej</small>
     </button>
   </nav>
+
+  <!-- More sheet (subpages + settings) -->
+  <div class="sheet-backdrop" id="more-backdrop"></div>
+  <div class="bottom-sheet" id="more-sheet">
+    <div class="sheet-handle"></div>
+    <h3 class="sheet-title">Więcej</h3>
+    <div class="more-grid">
+      <a href="/m/notatki" class="more-item {{ 'active' if active_page == 'notes' }}">
+        <span class="more-item-icon">📝</span><span>Notatki</span>
+      </a>
+      <a href="/m/paragony" class="more-item {{ 'active' if active_page == 'receipts' }}">
+        <span class="more-item-icon">🛒</span><span>Zakupy</span>
+      </a>
+      <a href="/m/wiedza" class="more-item {{ 'active' if active_page == 'knowledge' }}">
+        <span class="more-item-icon">📚</span><span>Wiedza</span>
+      </a>
+      <a href="/app/" class="more-item">
+        <span class="more-item-icon">🖥️</span><span>Desktop</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Session history drawer -->
+  <div class="drawer-backdrop" id="history-backdrop"></div>
+  <div class="history-drawer" id="history-drawer">
+    <div class="drawer-header">
+      <h3>Historia rozmów</h3>
+      <button class="mobile-btn mobile-btn-primary" id="new-chat-btn">+ Nowa</button>
+    </div>
+    <div class="drawer-content" id="history-list">
+      <div class="mobile-empty" style="min-height: auto; padding: 2rem 1rem;">
+        <div class="mobile-empty-icon">💬</div>
+        <div class="mobile-empty-text">Ładowanie...</div>
+      </div>
+    </div>
+  </div>
 
   <!-- Settings bottom sheet -->
   <div class="sheet-backdrop" id="settings-backdrop"></div>
@@ -89,7 +131,15 @@
     <h3 class="sheet-title">Ustawienia</h3>
     <div class="settings-list">
       <div class="settings-item">
-        <span>Pokazuj nawigację dolną</span>
+        <span>Motyw</span>
+        <div class="theme-picker" id="theme-picker">
+          <button class="theme-opt" data-theme="auto" title="Automatyczny">🔄</button>
+          <button class="theme-opt" data-theme="dark" title="Ciemny">🌙</button>
+          <button class="theme-opt" data-theme="light" title="Jasny">☀️</button>
+        </div>
+      </div>
+      <div class="settings-item">
+        <span>Ukryj nawigację dolną</span>
         <label class="toggle">
           <input type="checkbox" id="toggle-nav">
           <span class="slider"></span>
@@ -99,13 +149,75 @@
         <span>Nowa sesja czatu</span>
         <button class="settings-btn" id="new-session-btn">🔄 Reset</button>
       </div>
+      <div class="settings-item">
+        <span>Blokada aplikacji</span>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-lock">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="settings-lock-options hidden" id="lock-options">
+        <div class="settings-item">
+          <span>Zmień PIN</span>
+          <button class="settings-btn" id="change-pin-btn">🔑 Zmień</button>
+        </div>
+        <div class="settings-item hidden" id="biometric-option">
+          <span>Biometria</span>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-biometric">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="settings-footer">
       <a href="/app/" class="settings-link">🖥️ Wersja desktop</a>
     </div>
   </div>
 
-  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <!-- File preview overlay -->
+  <div class="file-preview-overlay hidden" id="file-preview">
+    <div class="file-preview-card">
+      <img id="file-preview-img" src="" alt="Podgląd">
+      <div class="file-preview-name" id="file-preview-name"></div>
+      <div class="file-preview-progress hidden" id="file-preview-progress">
+        <div class="file-preview-progress-bar" id="file-preview-bar"></div>
+      </div>
+      <div class="file-preview-actions" id="file-preview-actions">
+        <button class="mobile-btn mobile-btn-primary" id="file-preview-send">🧾 Wyślij jako paragon</button>
+        <button class="mobile-btn mobile-btn-ghost" id="file-preview-cancel">Anuluj</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Attachment picker sheet -->
+  <div class="sheet-backdrop" id="attach-backdrop"></div>
+  <div class="bottom-sheet" id="attach-sheet">
+    <div class="sheet-handle"></div>
+    <h3 class="sheet-title">Załącznik</h3>
+    <div class="attach-options">
+      <button class="attach-option" id="attach-camera">
+        <span class="attach-option-icon">📷</span>
+        <span>Aparat</span>
+      </button>
+      <button class="attach-option" id="attach-gallery">
+        <span class="attach-option-icon">🖼️</span>
+        <span>Galeria</span>
+      </button>
+      <button class="attach-option" id="attach-pdf">
+        <span class="attach-option-icon">📄</span>
+        <span>PDF</span>
+      </button>
+      <button class="attach-option" id="attach-link">
+        <span class="attach-option-icon">🔗</span>
+        <span>Link</span>
+      </button>
+    </div>
+  </div>
+
+  <script src="/static/js/htmx.min.js"></script>
+  <script src="/static/js/marked.min.js"></script>
+  <script src="/static/js/purify.min.js"></script>
   <script src="/static/js/offline-queue.js"></script>
   <script src="/static/js/mobile.js"></script>
   {% block extra_scripts %}{% endblock %}

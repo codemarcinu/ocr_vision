@@ -7,12 +7,12 @@
   {% if messages %}
     {% for msg in messages %}
     <div class="message {{ msg.role }}">
-      <div class="message-content">{{ msg.content | safe }}</div>
+      <div class="message-content" data-raw="{{ msg.content | e }}"></div>
       {% if msg.sources and msg.sources | length > 0 %}
       <div class="message-sources">
         <small class="sources-label">Źródła:</small>
         {% for source in msg.sources[:3] %}
-        <a href="{{ source.url }}" class="source-link" target="_blank">{{ source.title[:30] }}{% if source.title|length > 30 %}...{% endif %}</a>
+        <a href="{{ source.url }}" class="source-link" target="_blank" rel="noopener noreferrer">{{ source.title[:30] }}{% if source.title|length > 30 %}...{% endif %}</a>
         {% endfor %}
       </div>
       {% endif %}
@@ -36,13 +36,6 @@
 
 <!-- Hidden input for file uploads -->
 <input type="file" id="file-input" accept="image/*,.pdf" capture="environment" style="display: none;">
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  // Pass session ID from server if exists
-  {% if session_id %}
-  window.initialSessionId = "{{ session_id }}";
-  {% endif %}
-</script>
+<!-- Session ID passed via data attribute (no inline script) -->
+<div id="chat-config" data-session-id="{{ session_id | default('', true) | e }}" hidden></div>
 {% endblock %}

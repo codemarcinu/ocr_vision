@@ -368,6 +368,9 @@ async def mobile_rag_search(
 # Share target
 # ============================================================================
 
+ALLOWED_SHARE_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"}
+
+
 @router.post("/share", response_class=HTMLResponse)
 async def mobile_share_target(
     request: Request,
@@ -380,6 +383,14 @@ async def mobile_share_target(
     text = form.get("text", "")
     url = form.get("url", "")
     image = form.get("image")
+
+    # Validate image MIME type if present
+    has_valid_image = False
+    if image and hasattr(image, "content_type"):
+        if image.content_type in ALLOWED_SHARE_IMAGE_TYPES:
+            has_valid_image = True
+        else:
+            logger.warning(f"Share target: rejected image with content_type={image.content_type}")
 
     parts = []
     if title:
@@ -398,7 +409,7 @@ async def mobile_share_target(
             "messages": [],
             "session_id": None,
             "prefill_message": shared_content,
-            "shared_image": image is not None,
+            "shared_image": has_valid_image,
             "active_page": "chat",
         }
     )

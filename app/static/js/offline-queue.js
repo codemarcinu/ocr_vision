@@ -77,7 +77,8 @@ class OfflineQueue {
       displayText: action.displayText || 'Oczekująca akcja',
       timestamp: Date.now(),
       retries: 0,
-      maxRetries: 3
+      maxRetries: 5,
+      nextRetryAt: 0
     };
 
     return new Promise((resolve, reject) => {
@@ -190,8 +191,13 @@ class OfflineQueue {
   }
 
   /**
-   * Process all pending actions
-   * Called when coming back online
+   * Backoff delays: 5s, 15s, 30s, 60s, 120s
+   */
+  static BACKOFF_DELAYS = [5000, 15000, 30000, 60000, 120000];
+
+  /**
+   * Process all pending actions with exponential backoff.
+   * Called when coming back online or by auto-retry timer.
    */
   async processQueue() {
     if (this.isSyncing) {
@@ -210,10 +216,18 @@ class OfflineQueue {
     const items = await this.getAll();
     let synced = 0;
     let failed = 0;
+    let earliestRetry = Infinity;
+    const now = Date.now();
 
     console.log(`OfflineQueue: Processing ${items.length} pending actions`);
 
     for (const item of items) {
+      // Skip items not yet ready for retry
+      if (item.nextRetryAt && item.nextRetryAt > now) {
+        earliestRetry = Math.min(earliestRetry, item.nextRetryAt);
+        continue;
+      }
+
       try {
         const response = await fetch(item.url, {
           method: item.method,
@@ -225,19 +239,23 @@ class OfflineQueue {
           await this.remove(item.id);
           synced++;
           console.log('OfflineQueue: Synced', item.type, item.id);
+          // Notify UI that this item was synced
+          window.dispatchEvent(new CustomEvent('offlinequeue:itemsynced', {
+            detail: { id: item.id, type: item.type }
+          }));
         } else if (response.status >= 400 && response.status < 500) {
-          // Client error - don't retry, remove
           console.warn('OfflineQueue: Client error, removing', item.type, response.status);
           await this.remove(item.id);
           failed++;
         } else {
-          // Server error - retry later
-          await this.incrementRetry(item);
+          const nextRetry = await this._scheduleRetry(item);
+          if (nextRetry) earliestRetry = Math.min(earliestRetry, nextRetry);
           failed++;
         }
       } catch (error) {
         console.warn('OfflineQueue: Sync error', item.type, error.message);
-        await this.incrementRetry(item);
+        const nextRetry = await this._scheduleRetry(item);
+        if (nextRetry) earliestRetry = Math.min(earliestRetry, nextRetry);
         failed++;
       }
     }
@@ -245,21 +263,34 @@ class OfflineQueue {
     this.isSyncing = false;
     this.notifySyncEnd(synced, failed);
 
+    // Schedule next auto-retry if there are items waiting
+    if (earliestRetry < Infinity && navigator.onLine) {
+      const delay = Math.max(1000, earliestRetry - Date.now());
+      console.log(`OfflineQueue: Auto-retry in ${Math.round(delay / 1000)}s`);
+      clearTimeout(this._retryTimer);
+      this._retryTimer = setTimeout(() => this.processQueue(), delay);
+    }
+
     return { synced, failed };
   }
 
   /**
-   * Increment retry count, remove if max exceeded
+   * Schedule retry with exponential backoff. Returns nextRetryAt or null if max exceeded.
    */
-  async incrementRetry(item) {
+  async _scheduleRetry(item) {
     const newRetries = item.retries + 1;
 
     if (newRetries >= item.maxRetries) {
       console.warn('OfflineQueue: Max retries exceeded, removing', item.type, item.id);
       await this.remove(item.id);
-    } else {
-      await this.update(item.id, { retries: newRetries });
+      return null;
     }
+
+    const delay = OfflineQueue.BACKOFF_DELAYS[Math.min(newRetries - 1, OfflineQueue.BACKOFF_DELAYS.length - 1)];
+    const nextRetryAt = Date.now() + delay;
+    await this.update(item.id, { retries: newRetries, nextRetryAt });
+    console.log(`OfflineQueue: Retry #${newRetries} for ${item.type} in ${delay / 1000}s`);
+    return nextRetryAt;
   }
 
   /**
