@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pl" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#212529">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="2Brain">
+  <title>{% block title %}Second Brain{% endblock %}</title>
+
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+
+  <!-- Minimal CSS - custom lightweight -->
+  <link rel="stylesheet" href="/static/css/mobile.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <span class="app-logo">🧠</span>
+      <span class="app-title">Second Brain</span>
+    </div>
+    <div class="header-right">
+      <div class="header-btn-wrapper">
+        <button class="icon-btn" id="settings-btn" title="Ustawienia"><span>⚙️</span></button>
+        <span class="offline-badge hidden" id="offline-badge">0</span>
+      </div>
+      <button class="icon-btn" id="push-toggle" title="Powiadomienia"><span>🔕</span></button>
+    </div>
+  </header>
+
+  <!-- Offline banner -->
+  <div class="offline-banner">📡 Tryb offline - wiadomości zostaną wysłane po połączeniu</div>
+  <!-- Sync banner -->
+  <div class="sync-banner"><span class="sync-spinner"></span> Synchronizacja...</div>
+
+  <!-- Main content -->
+  <main class="app-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Quick actions bar -->
+  <div class="quick-actions" id="quick-actions">
+    <button class="action-btn" data-action="camera" title="Zdjęcie paragonu">
+      <span>📷</span>
+    </button>
+    <button class="action-btn" data-action="voice" title="Wiadomość głosowa">
+      <span>🎤</span>
+    </button>
+    <div class="input-wrapper">
+      <textarea id="chat-input" placeholder="Napisz..." rows="1"></textarea>
+    </div>
+    <button class="send-btn" id="send-btn" title="Wyślij">
+      <span>➤</span>
+    </button>
+  </div>
+
+  <!-- Bottom navigation (hidden by default, can be enabled) -->
+  <nav class="bottom-nav hidden" id="bottom-nav">
+    <a href="/m/" class="nav-item active" data-page="chat">
+      <span>💬</span><small>Czat</small>
+    </a>
+    <a href="/m/notatki" class="nav-item" data-page="notes">
+      <span>📝</span><small>Notatki</small>
+    </a>
+    <a href="/m/paragony" class="nav-item" data-page="receipts">
+      <span>🛒</span><small>Zakupy</small>
+    </a>
+    <a href="/m/wiedza" class="nav-item" data-page="knowledge">
+      <span>📚</span><small>Wiedza</small>
+    </a>
+    <button class="nav-item" id="nav-more">
+      <span>⋯</span><small>Więcej</small>
+    </button>
+  </nav>
+
+  <!-- Settings bottom sheet -->
+  <div class="sheet-backdrop" id="settings-backdrop"></div>
+  <div class="bottom-sheet" id="settings-sheet">
+    <div class="sheet-handle"></div>
+    <h3 class="sheet-title">Ustawienia</h3>
+    <div class="settings-list">
+      <div class="settings-item">
+        <span>Pokazuj nawigację dolną</span>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-nav">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="settings-item">
+        <span>Nowa sesja czatu</span>
+        <button class="settings-btn" id="new-session-btn">🔄 Reset</button>
+      </div>
+    </div>
+    <div class="settings-footer">
+      <a href="/app/" class="settings-link">🖥️ Wersja desktop</a>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <script src="/static/js/offline-queue.js"></script>
+  <script src="/static/js/mobile.js"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends "mobile/base.html" %}
+
+{% block title %}Czat - Second Brain{% endblock %}
+
+{% block content %}
+<div class="chat-container" id="chat-container">
+  {% if messages %}
+    {% for msg in messages %}
+    <div class="message {{ msg.role }}">
+      <div class="message-content">{{ msg.content | safe }}</div>
+      {% if msg.sources and msg.sources | length > 0 %}
+      <div class="message-sources">
+        <small class="sources-label">Źródła:</small>
+        {% for source in msg.sources[:3] %}
+        <a href="{{ source.url }}" class="source-link" target="_blank">{{ source.title[:30] }}{% if source.title|length > 30 %}...{% endif %}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="message-time">{{ msg.created_at.strftime('%H:%M') if msg.created_at else '' }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state" id="empty-state">
+      <div class="icon">💬</div>
+      <h2>Cześć!</h2>
+      <p>Jestem Twoim asystentem. Pytaj o wydatki, twórz notatki, lub po prostu rozmawiaj.</p>
+      <div class="suggestions">
+        <button class="suggestion-chip" data-text="Ile wydałem w tym miesiącu?">Ile wydałem w tym miesiącu?</button>
+        <button class="suggestion-chip" data-text="Zanotuj: kupić mleko">Zanotuj: kupić mleko</button>
+        <button class="suggestion-chip" data-text="Podsumuj ostatnie artykuły">Podsumuj ostatnie artykuły</button>
+        <button class="suggestion-chip" data-text="Co nowego w AI?">Co nowego w AI?</button>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Hidden input for file uploads -->
+<input type="file" id="file-input" accept="image/*,.pdf" capture="environment" style="display: none;">
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Pass session ID from server if exists
+  {% if session_id %}
+  window.initialSessionId = "{{ session_id }}";
+  {% endif %}
+</script>
+{% endblock %}
