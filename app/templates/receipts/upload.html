@@ -1,39 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Upload paragonu - Second Brain{% endblock %}
+{% block title %}Upload paragonów - Second Brain{% endblock %}
+
+{% block breadcrumb %}
+{% set breadcrumbs = [{"label": "Paragony", "url": "/app/paragony/"}, {"label": "Upload"}] %}
+{% include "components/breadcrumbs.html" %}
+{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8 col-lg-6">
-        <a href="/app/paragony/" class="text-muted text-decoration-none small">
-            <i class="bi bi-arrow-left"></i> Paragony
-        </a>
-        <h4 class="mt-1 mb-4">Upload paragonu</h4>
+        <h4 class="mt-1 mb-4">Upload paragonów</h4>
 
         <div class="card">
             <div class="card-body">
-                <form hx-post="/app/paragony/upload" hx-target="#upload-result"
-                      hx-encoding="multipart/form-data" hx-indicator="#upload-spinner">
+                <form id="upload-form" onsubmit="handleBatchUpload(event)">
 
                     <div class="upload-dropzone" id="dropzone">
                         <div class="upload-icon"><i class="bi bi-cloud-arrow-up"></i></div>
-                        <p class="mb-1">Przeciągnij plik lub kliknij aby wybrać</p>
-                        <small class="text-muted">PNG, JPG, WEBP, PDF</small>
+                        <p class="mb-1">Przeciągnij pliki lub kliknij aby wybrać</p>
+                        <small class="text-muted">PNG, JPG, WEBP, PDF — można wybrać wiele plików</small>
                         <input type="file" name="file" id="file-input" class="d-none"
-                               accept=".png,.jpg,.jpeg,.webp,.pdf">
+                               accept=".png,.jpg,.jpeg,.webp,.pdf" multiple>
                     </div>
 
                     <div id="file-preview" style="display:none"></div>
 
-                    <button type="submit" class="btn btn-primary w-100 mt-3" id="upload-btn">
-                        <i class="bi bi-cpu me-1"></i> Przetwórz paragon
+                    <button type="submit" class="btn btn-primary w-100 mt-3" id="upload-btn" disabled>
+                        <i class="bi bi-cpu me-1"></i> Przetwórz paragony
                     </button>
                 </form>
-
-                <div id="upload-spinner" class="htmx-indicator text-center mt-3">
-                    <div class="spinner-border text-primary" role="status"></div>
-                    <p class="text-muted mt-2">Przetwarzanie paragonu...</p>
-                    <small class="text-muted">OCR + kategoryzacja może potrwać chwilę</small>
-                </div>
 
                 <div id="upload-result" class="mt-3"></div>
             </div>
@@ -46,7 +41,7 @@
 <script src="/static/js/upload.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    initUploadDropzone('dropzone', 'file-input', 'file-preview');
+    initBatchUpload('dropzone', 'file-input', 'file-preview', 'upload-btn', 'upload-result');
 });
 </script>
 {% endblock %}
