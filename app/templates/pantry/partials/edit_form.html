@@ -5,12 +5,12 @@
 <form hx-post="/app/spizarnia/{{ item.id }}/update" hx-target="#pantry-items" hx-swap="innerHTML">
     <div class="modal-body">
         <div class="mb-3">
-            <label class="form-label">Nazwa produktu</label>
-            <input type="text" name="name" class="form-control" value="{{ item.name }}" required autofocus>
+            <label class="form-label" for="pantry-edit-name">Nazwa produktu</label>
+            <input type="text" name="name" id="pantry-edit-name" class="form-control" value="{{ item.name }}" required autofocus>
         </div>
         <div class="mb-3">
-            <label class="form-label">Kategoria</label>
-            <select name="category" class="form-select">
+            <label class="form-label" for="pantry-edit-category">Kategoria</label>
+            <select name="category" id="pantry-edit-category" class="form-select">
                 <option value="">Wybierz...</option>
                 {% for cat in categories %}
                 <option value="{{ cat }}" {% if item.category and item.category.name == cat %}selected{% endif %}>

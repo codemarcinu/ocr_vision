@@ -1,5 +1,5 @@
 {% for r in receipts %}
-<tr onclick="window.location='/app/paragony/{{ r.id }}'" style="cursor:pointer">
+<tr onclick="window.location='/app/paragony/{{ r.id }}'" onkeydown="if(event.key==='Enter')window.location='/app/paragony/{{ r.id }}'" style="cursor:pointer" tabindex="0" role="link">
     <td>{{ r.receipt_date.strftime("%d.%m.%Y") if r.receipt_date else "-" }}</td>
     <td>
         <span class="store-icon">{{ store_emoji(r.store.name if r.store else r.store_raw) }}</span>

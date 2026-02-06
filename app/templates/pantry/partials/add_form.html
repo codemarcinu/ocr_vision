@@ -5,12 +5,12 @@
 <form hx-post="/app/spizarnia/add" hx-target="#pantry-items">
     <div class="modal-body">
         <div class="mb-3">
-            <label class="form-label">Nazwa produktu</label>
-            <input type="text" name="name" class="form-control" required autofocus>
+            <label class="form-label" for="pantry-add-name">Nazwa produktu</label>
+            <input type="text" name="name" id="pantry-add-name" class="form-control" required autofocus>
         </div>
         <div class="mb-3">
-            <label class="form-label">Kategoria</label>
-            <select name="category" class="form-select">
+            <label class="form-label" for="pantry-add-category">Kategoria</label>
+            <select name="category" id="pantry-add-category" class="form-select">
                 <option value="">Wybierz...</option>
                 {% for cat in categories %}
                 <option value="{{ cat }}">{{ category_emoji(cat) }} {{ cat }}</option>
