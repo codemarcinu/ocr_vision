@@ -80,21 +80,31 @@ CHAT_RAG_MIN_SCORE = 0.75
 
 
 def _detect_language(text: str) -> str:
-    """Simple Polish vs English detection."""
+    """Polish vs English detection with 3-layer heuristic."""
+    # Layer 1: Polish-specific characters (ą,ć,ę,ł,ń,ó,ś,ź,ż) → unmistakably Polish
     polish_chars = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
+    if any(c in polish_chars for c in text):
+        return "pl"
 
+    # Layer 2: Distinctly Polish words (no English overlap) → 1 match is enough
     padded = f" {text.lower()} "
-    polish_words = [
-        " i ", " w ", " się ", " na ", " do ", " z ", " co ", " jak ", " ile ",
-        " czy ", " jest ", " to ", " mi ", " mam ", " nie ", " tak ", " ze ",
-        " jaki ", " jaka ", " jakie ", " gdzie ", " kiedy ", " dlaczego ",
-        " ostatni ", " wydal ", " kupil ", " opowiedz ", " powiedz ",
+    strong_polish = [
+        " się ", " jak ", " ile ", " czy ", " jaki ", " jaka ", " jakie ",
+        " gdzie ", " kiedy ", " dlaczego ", " bardzo ", " też ", " ale ",
+        " albo ", " już ", " jeszcze ", " podsumuj ", " opowiedz ", " powiedz ",
+        " ostatni ", " ostatnie ", " kupił ", " wydał ", " chcę ", " mogę ",
+        " jestem ", " dzisiaj ", " wczoraj ", " jutro ", " proszę ",
     ]
+    if any(w in padded for w in strong_polish):
+        return "pl"
 
-    indicators = sum(1 for c in text if c in polish_chars)
-    indicators += sum(1 for w in polish_words if w in padded)
-
-    return "pl" if indicators >= 2 else "en"
+    # Layer 3: Weak indicators (overlap with English: "i"="and", "do"="to", etc.)
+    weak_polish = [
+        " i ", " w ", " na ", " do ", " z ", " co ", " jest ", " to ",
+        " mi ", " mam ", " nie ", " tak ", " ze ",
+    ]
+    weak_count = sum(1 for w in weak_polish if w in padded)
+    return "pl" if weak_count >= 2 else "en"
 
 
 def _format_rag_context(results: list[retriever.SearchResult]) -> str:
