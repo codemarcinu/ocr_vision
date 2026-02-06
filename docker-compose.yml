@@ -42,9 +42,6 @@ services:
       # A/B testing (optional)
       # - CLASSIFIER_MODEL_B=gpt-oss:20b
       # - CLASSIFIER_AB_MODE=both
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - BOT_ENABLED=true
       - DATABASE_URL=postgresql+asyncpg://pantry:${POSTGRES_PASSWORD:-pantry123}@postgres:5432/pantry
       # Google Cloud Vision (ultimate fallback - disabled by default)
       - GOOGLE_VISION_ENABLED=true

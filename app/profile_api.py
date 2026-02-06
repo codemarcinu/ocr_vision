@@ -24,7 +24,6 @@ class ProfileResponse(BaseModel):
     """User profile response."""
 
     id: UUID
-    telegram_user_id: Optional[int]
     default_city: str
     timezone: str
     preferred_language: str
@@ -48,7 +47,6 @@ async def get_profile(
 
     return {
         "id": str(profile.id),
-        "telegram_user_id": profile.telegram_user_id,
         "default_city": profile.default_city,
         "timezone": profile.timezone,
         "preferred_language": profile.preferred_language,
@@ -56,51 +54,6 @@ async def get_profile(
         "most_used_tools": profile.most_used_tools,
         "created_at": profile.created_at.isoformat(),
         "updated_at": profile.updated_at.isoformat(),
-    }
-
-
-@router.get("/telegram/{telegram_user_id}")
-async def get_profile_by_telegram(
-    telegram_user_id: int,
-    repo: UserProfileRepoDep,
-):
-    """Get user profile by Telegram user ID."""
-    profile = await repo.get_by_telegram_id(telegram_user_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profil nie znaleziony")
-
-    return {
-        "id": str(profile.id),
-        "telegram_user_id": profile.telegram_user_id,
-        "default_city": profile.default_city,
-        "timezone": profile.timezone,
-        "preferred_language": profile.preferred_language,
-        "favorite_stores": profile.favorite_stores,
-        "most_used_tools": profile.most_used_tools,
-        "created_at": profile.created_at.isoformat(),
-        "updated_at": profile.updated_at.isoformat(),
-    }
-
-
-@router.post("/telegram/{telegram_user_id}")
-async def get_or_create_profile(
-    telegram_user_id: int,
-    repo: UserProfileRepoDep,
-):
-    """Get or create profile by Telegram user ID."""
-    profile, created = await repo.get_or_create_by_telegram_id(telegram_user_id)
-
-    return {
-        "id": str(profile.id),
-        "telegram_user_id": profile.telegram_user_id,
-        "default_city": profile.default_city,
-        "timezone": profile.timezone,
-        "preferred_language": profile.preferred_language,
-        "favorite_stores": profile.favorite_stores,
-        "most_used_tools": profile.most_used_tools,
-        "created_at": profile.created_at.isoformat(),
-        "updated_at": profile.updated_at.isoformat(),
-        "created": created,
     }
 
 
@@ -123,7 +76,6 @@ async def update_profile(
 
     return {
         "id": str(profile.id),
-        "telegram_user_id": profile.telegram_user_id,
         "default_city": profile.default_city,
         "timezone": profile.timezone,
         "preferred_language": profile.preferred_language,

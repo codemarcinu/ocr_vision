@@ -47,7 +47,6 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.rate_limit import limiter
-from app.telegram.bot import bot
 from app.auth import web_auth_middleware, create_session, destroy_session
 
 # Import alternative OCR backends if configured
@@ -162,7 +161,7 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize directories, database, and start Telegram bot on startup."""
+    """Initialize directories, database, and models on startup."""
     settings.ensure_directories()
 
     # Initialize database connection
@@ -218,15 +217,11 @@ async def startup_event():
                 except Exception as e:
                     logger.warning(f"Failed to preload model {model}: {e}")
 
-    # Start Telegram bot
-    await bot.start()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Stop Telegram bot, close database and HTTP clients on shutdown."""
-    await bot.stop()
-
+    """Close database and HTTP clients on shutdown."""
     # Close Ollama HTTP client
     await ollama_client.close_client()
     logger.info("Ollama client closed")

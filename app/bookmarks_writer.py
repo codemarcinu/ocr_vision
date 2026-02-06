@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import settings
-from app.telegram.formatters import escape_html
 
 
 def write_bookmarks_index(bookmarks: list) -> Path:

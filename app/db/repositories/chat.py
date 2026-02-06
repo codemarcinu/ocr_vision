@@ -51,23 +51,6 @@ class ChatRepository(BaseRepository[ChatSession]):
 
         return chat_session
 
-    async def get_active_telegram_session(
-        self,
-        telegram_chat_id: int,
-    ) -> Optional[ChatSession]:
-        """Find the active session for a Telegram user."""
-        stmt = (
-            select(ChatSession)
-            .where(
-                ChatSession.telegram_chat_id == telegram_chat_id,
-                ChatSession.is_active == True,  # noqa: E712
-            )
-            .order_by(ChatSession.updated_at.desc())
-            .limit(1)
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-
     async def add_message(
         self,
         session_id: UUID,

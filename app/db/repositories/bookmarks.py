@@ -52,7 +52,7 @@ class BookmarkRepository(BaseRepository[Bookmark]):
         self,
         url: str,
         title: Optional[str] = None,
-        source: str = "telegram",
+        source: str = "api",
         tags: Optional[List[str]] = None,
     ) -> Bookmark:
         """Create bookmark from URL."""

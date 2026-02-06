@@ -624,8 +624,8 @@ class Bookmark(Base):
     )  # pending, read, archived
     priority: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(
-        String(20), default="telegram"
-    )  # telegram, api
+        String(20), default="api"
+    )  # api, web
     article_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("articles.id"), nullable=True
     )
@@ -657,7 +657,7 @@ class ChatSession(Base):
     title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     source: Mapped[str] = mapped_column(
         String(20), nullable=False, default="web"
-    )  # 'web' or 'telegram'
+    )  # 'web' or 'api'
     telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(

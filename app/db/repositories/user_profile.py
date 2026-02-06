@@ -16,25 +16,6 @@ class UserProfileRepository(BaseRepository[UserProfile]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, UserProfile)
 
-    async def get_by_telegram_id(self, telegram_user_id: int) -> Optional[UserProfile]:
-        """Get profile by Telegram user ID."""
-        stmt = select(UserProfile).where(
-            UserProfile.telegram_user_id == telegram_user_id
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def get_or_create_by_telegram_id(
-        self, telegram_user_id: int
-    ) -> tuple[UserProfile, bool]:
-        """Get existing profile or create a new one. Returns (profile, created)."""
-        existing = await self.get_by_telegram_id(telegram_user_id)
-        if existing:
-            return existing, False
-
-        profile = await self.create(telegram_user_id=telegram_user_id)
-        return profile, True
-
     async def update_preferences(
         self,
         profile_id: UUID,

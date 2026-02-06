@@ -629,7 +629,7 @@ class ChatAgentProcessor:
                 retry_count=response.log.retry_count,
                 total_time_ms=response.log.total_time_ms,
                 injection_risk=response.log.injection_risk,
-                source="telegram",
+                source="api",
             )
         except Exception as e:
             logger.warning(f"Failed to save agent call log: {e}")
