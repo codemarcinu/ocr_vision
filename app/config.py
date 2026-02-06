@@ -17,6 +17,7 @@ class Settings:
     USE_DB_DICTIONARIES: bool = os.getenv("USE_DB_DICTIONARIES", "true").lower() == "true"
     USE_DB_RECEIPTS: bool = os.getenv("USE_DB_RECEIPTS", "true").lower() == "true"
     GENERATE_OBSIDIAN_FILES: bool = os.getenv("GENERATE_OBSIDIAN_FILES", "true").lower() == "true"
+    GENERATE_RECEIPT_OBSIDIAN: bool = os.getenv("GENERATE_RECEIPT_OBSIDIAN", "false").lower() == "true"
 
     # Ollama configuration
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")

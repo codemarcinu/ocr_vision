@@ -39,6 +39,10 @@ class ObsidianSyncService:
         Returns:
             Path to the generated file, or None if receipt not found
         """
+        if not settings.GENERATE_RECEIPT_OBSIDIAN:
+            logger.info("Receipt Obsidian output disabled, skipping regeneration")
+            return None
+
         async with get_session_context() as session:
             repo = ReceiptRepository(session)
             receipt = await repo.get_with_items(receipt_id)
@@ -87,13 +91,17 @@ class ObsidianSyncService:
         logger.info(f"Regenerated {processed} receipts, {errors} errors")
         return {"processed": processed, "errors": errors}
 
-    async def regenerate_pantry(self) -> Path:
+    async def regenerate_pantry(self) -> Optional[Path]:
         """
         Regenerate spiżarnia.md from database.
 
         Returns:
-            Path to the generated pantry file
+            Path to the generated pantry file, or None if disabled
         """
+        if not settings.GENERATE_RECEIPT_OBSIDIAN:
+            logger.info("Receipt Obsidian output disabled, skipping pantry regeneration")
+            return None
+
         settings.ensure_directories()
 
         async with get_session_context() as session:
@@ -111,15 +119,16 @@ class ObsidianSyncService:
         """
         logger.info("Starting full Obsidian vault regeneration")
 
-        # Regenerate all receipts
-        receipts_result = await self.regenerate_all_receipts()
-
-        # Regenerate pantry
-        pantry_path = await self.regenerate_pantry()
+        if settings.GENERATE_RECEIPT_OBSIDIAN:
+            receipts_result = await self.regenerate_all_receipts()
+            pantry_path = await self.regenerate_pantry()
+        else:
+            receipts_result = {"processed": 0, "errors": 0, "skipped": "receipt output disabled"}
+            pantry_path = None
 
         return {
             "receipts": receipts_result,
-            "pantry": str(pantry_path),
+            "pantry": str(pantry_path) if pantry_path else "disabled",
             "timestamp": datetime.now().isoformat(),
         }
 

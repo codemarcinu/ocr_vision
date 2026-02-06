@@ -181,7 +181,7 @@ def write_receipt_to_obsidian(
     """
     from app.config import settings
 
-    if not settings.GENERATE_OBSIDIAN_FILES:
+    if not settings.GENERATE_OBSIDIAN_FILES or not settings.GENERATE_RECEIPT_OBSIDIAN:
         return None
 
     try:

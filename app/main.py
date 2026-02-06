@@ -802,6 +802,8 @@ async def sync_receipt(receipt_id: UUID):
     """Regenerate markdown file for a specific receipt."""
     if not settings.USE_DB_RECEIPTS:
         raise HTTPException(status_code=400, detail="Database not enabled")
+    if not settings.GENERATE_RECEIPT_OBSIDIAN:
+        return {"success": False, "message": "Receipt Obsidian output is disabled (GENERATE_RECEIPT_OBSIDIAN=false)"}
 
     path = await obsidian_sync.regenerate_receipt(receipt_id)
     if not path:
@@ -815,6 +817,8 @@ async def sync_pantry():
     """Regenerate spiżarnia.md from database."""
     if not settings.USE_DB_RECEIPTS:
         raise HTTPException(status_code=400, detail="Database not enabled")
+    if not settings.GENERATE_RECEIPT_OBSIDIAN:
+        return {"success": False, "message": "Receipt Obsidian output is disabled (GENERATE_RECEIPT_OBSIDIAN=false)"}
 
     path = await obsidian_sync.regenerate_pantry()
     return {"success": True, "file": str(path)}
