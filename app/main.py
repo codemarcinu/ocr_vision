@@ -34,7 +34,7 @@ from app.bookmarks_api import router as bookmarks_router
 from app.pantry_api import router as pantry_router
 from app.receipts_api import router as receipts_router
 from app.search_api import router as search_router
-from app.web_routes import router as web_router
+from app.web import router as web_router
 from app.profile_api import router as profile_router
 from app.mobile_routes import router as mobile_router
 from app.push_api import router as push_router
