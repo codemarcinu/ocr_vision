@@ -125,6 +125,7 @@ class ReceiptRepository(BaseRepository[Receipt]):
         raw_text: Optional[str] = None,
         needs_review: bool = False,
         review_reasons: Optional[List[str]] = None,
+        confidence_score: Optional[float] = None,
     ) -> Receipt:
         """Create a new receipt."""
         receipt = Receipt(
@@ -138,6 +139,7 @@ class ReceiptRepository(BaseRepository[Receipt]):
             raw_text=raw_text,
             needs_review=needs_review,
             review_reasons=review_reasons or [],
+            confidence_score=confidence_score,
         )
         self.session.add(receipt)
         await self.session.flush()
@@ -281,6 +283,7 @@ class ReceiptRepository(BaseRepository[Receipt]):
         store_id: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        needs_review: Optional[bool] = None,
     ) -> tuple[List[Receipt], int]:
         """Get receipts with pagination and filters. Returns (items, total_count)."""
         # Count query
@@ -291,6 +294,8 @@ class ReceiptRepository(BaseRepository[Receipt]):
             count_stmt = count_stmt.where(Receipt.receipt_date >= date_from)
         if date_to:
             count_stmt = count_stmt.where(Receipt.receipt_date <= date_to)
+        if needs_review is not None:
+            count_stmt = count_stmt.where(Receipt.needs_review == needs_review)
         total = await self.session.execute(count_stmt)
         total_count = total.scalar() or 0
 
@@ -306,10 +311,22 @@ class ReceiptRepository(BaseRepository[Receipt]):
             stmt = stmt.where(Receipt.receipt_date >= date_from)
         if date_to:
             stmt = stmt.where(Receipt.receipt_date <= date_to)
+        if needs_review is not None:
+            stmt = stmt.where(Receipt.needs_review == needs_review)
         stmt = stmt.offset(offset).limit(limit)
 
         result = await self.session.execute(stmt)
         return list(result.scalars().all()), total_count
+
+    async def approve_receipt(self, receipt_id: UUID) -> Optional[Receipt]:
+        """Approve a receipt, clearing needs_review flag."""
+        receipt = await self.get_by_id(receipt_id)
+        if not receipt:
+            return None
+        receipt.needs_review = False
+        await self.session.flush()
+        await self.session.refresh(receipt)
+        return receipt
 
     async def update_item(
         self, item_id: int, **kwargs

@@ -34,6 +34,14 @@
                     <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
                 </div>
                 <div class="col-auto">
+                    <label class="form-label form-label-sm mb-0">Status</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">Wszystkie</option>
+                        <option value="review" {% if filters.status == 'review' %}selected{% endif %}>Do przeglądu</option>
+                        <option value="ok" {% if filters.status == 'ok' %}selected{% endif %}>Zatwierdzone</option>
+                    </select>
+                </div>
+                <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-funnel"></i> Filtruj
                     </button>

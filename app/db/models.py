@@ -183,6 +183,9 @@ class Receipt(Base):
     review_reasons: Mapped[Optional[List[str]]] = mapped_column(
         ARRAY(Text), nullable=True
     )
+    confidence_score: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
     processed_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )

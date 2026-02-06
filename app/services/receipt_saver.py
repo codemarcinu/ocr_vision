@@ -87,6 +87,15 @@ async def save_receipt_to_db(
             total_calculated = Decimal(str(calculated_total)) if calculated_total else None
             total_final = total_ocr or total_calculated
 
+            # Calculate confidence score
+            confidence_score = None
+            try:
+                from app.confidence_scoring import calculate_confidence
+                confidence_report = calculate_confidence(receipt)
+                confidence_score = confidence_report.score
+            except Exception as e:
+                logger.warning(f"Confidence scoring failed: {e}")
+
             # Create receipt record
             db_receipt = await receipt_repo.create_receipt(
                 source_file=filename,
@@ -99,6 +108,7 @@ async def save_receipt_to_db(
                 raw_text=receipt.raw_text,
                 needs_review=receipt.needs_review,
                 review_reasons=receipt.review_reasons,
+                confidence_score=confidence_score,
             )
 
             # Build items for batch insert

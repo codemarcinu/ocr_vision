@@ -35,6 +35,7 @@ async def receipt_list(
     store_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    status: Optional[str] = None,
     offset: int = 0,
     limit: int = 20,
 ):
@@ -42,9 +43,16 @@ async def receipt_list(
     d_from = date.fromisoformat(date_from) if date_from and date_from.strip() else None
     d_to = date.fromisoformat(date_to) if date_to and date_to.strip() else None
 
+    needs_review = None
+    if status == "review":
+        needs_review = True
+    elif status == "ok":
+        needs_review = False
+
     receipts, total = await repo.get_recent_paginated(
         limit=limit, offset=offset, store_id=sid,
         date_from=d_from, date_to=d_to,
+        needs_review=needs_review,
     )
     stores = await store_repo.get_all_with_aliases()
 
@@ -53,7 +61,10 @@ async def receipt_list(
         "receipts": receipts,
         "total": total,
         "stores": stores,
-        "filters": {"store_id": sid or "", "date_from": date_from or "", "date_to": date_to or ""},
+        "filters": {
+            "store_id": sid or "", "date_from": date_from or "",
+            "date_to": date_to or "", "status": status or "",
+        },
         "offset": offset,
         "limit": limit,
     }
@@ -203,6 +214,35 @@ async def receipt_item_update(
     })
     response.headers.update(_htmx_trigger("Produkt zaktualizowany"))
     return response
+
+
+@router.post("/app/paragony/{receipt_id}/approve", response_class=HTMLResponse)
+async def receipt_approve(
+    request: Request, receipt_id: UUID, repo: ReceiptRepoDep,
+):
+    """Approve a receipt, clearing needs_review flag."""
+    receipt = await repo.approve_receipt(receipt_id)
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Paragon nie znaleziony")
+
+    if request.headers.get("HX-Request"):
+        response = templates.TemplateResponse("receipts/partials/approve_result.html", {
+            "request": request, "receipt": receipt,
+        })
+        response.headers.update(_htmx_trigger("Paragon zatwierdzony", "success"))
+        return response
+    return RedirectResponse(url=f"/app/paragony/{receipt_id}", status_code=303)
+
+
+@router.get("/app/paragony/review", response_class=HTMLResponse)
+async def receipt_review_queue(request: Request, repo: ReceiptRepoDep):
+    """Batch review page for receipts pending review."""
+    pending = await repo.get_pending_review()
+    return templates.TemplateResponse("receipts/review.html", {
+        "request": request,
+        "pending": pending,
+        "total_pending": len(pending),
+    })
 
 
 @router.post("/app/paragony/{receipt_id}/delete")

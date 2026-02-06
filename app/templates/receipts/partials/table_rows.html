@@ -9,7 +9,24 @@
     <td class="text-center">{{ r.items|length if r.items else "-" }}</td>
     <td>
         {% if r.needs_review %}
-        <span class="badge badge-review"><i class="bi bi-exclamation-triangle"></i> Przeglad</span>
+        <span class="badge badge-review" title="Wymaga przeglądu">
+            <i class="bi bi-exclamation-triangle"></i> Przeglad
+            {% if r.confidence_score is not none %} {{ "%.0f"|format(r.confidence_score * 100) }}%{% endif %}
+        </span>
+        {% elif r.confidence_score is not none %}
+            {% if r.confidence_score >= 0.8 %}
+            <span class="badge confidence-high" title="Pewnosc: {{ "%.0f"|format(r.confidence_score * 100) }}%">
+                <i class="bi bi-check-circle"></i> {{ "%.0f"|format(r.confidence_score * 100) }}%
+            </span>
+            {% elif r.confidence_score >= 0.5 %}
+            <span class="badge confidence-medium" title="Pewnosc: {{ "%.0f"|format(r.confidence_score * 100) }}%">
+                <i class="bi bi-dash-circle"></i> {{ "%.0f"|format(r.confidence_score * 100) }}%
+            </span>
+            {% else %}
+            <span class="badge confidence-low" title="Pewnosc: {{ "%.0f"|format(r.confidence_score * 100) }}%">
+                <i class="bi bi-x-circle"></i> {{ "%.0f"|format(r.confidence_score * 100) }}%
+            </span>
+            {% endif %}
         {% else %}
         <span class="badge badge-ok">OK</span>
         {% endif %}
@@ -22,8 +39,14 @@
 </tr>
 {% else %}
 <tr>
-    <td colspan="6" class="text-center text-muted py-4">
-        Brak paragonow
+    <td colspan="6" class="p-0">
+        {% set es_icon = '<i class="bi bi-receipt"></i>' %}
+        {% set es_title = 'Brak paragonow' %}
+        {% set es_description = 'Zeskanuj pierwszy paragon, aby rozpoczac' %}
+        {% set es_action_url = '/app/paragony/upload' %}
+        {% set es_action_icon = 'upload' %}
+        {% set es_action_label = 'Upload paragonu' %}
+        {% include "components/empty_state.html" %}
     </td>
 </tr>
 {% endfor %}

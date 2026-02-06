@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Przeglad paragonow - Second Brain{% endblock %}
+
+{% block breadcrumb %}
+{% set breadcrumbs = [{"label": "Paragony", "url": "/app/paragony/"}, {"label": "Przeglad"}] %}
+{% include "components/breadcrumbs.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">Przeglad paragonow <span class="badge bg-warning text-dark">{{ total_pending }}</span></h4>
+    <a href="/app/paragony/" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Wszystkie paragony
+    </a>
+</div>
+
+{% if pending %}
+<div id="review-queue">
+    {% for r in pending %}
+    <div class="card mb-3 review-card" data-receipt-id="{{ r.id }}" {% if not loop.first %}style="display:none"{% endif %}>
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <span class="fw-bold">
+                    {{ store_emoji(r.store.name if r.store else r.store_raw) }}
+                    {{ r.store.name if r.store else r.store_raw or "Nieznany sklep" }}
+                </span>
+                <span class="text-muted ms-2">{{ r.receipt_date.strftime("%d.%m.%Y") if r.receipt_date else "" }}</span>
+                {% if r.confidence_score is not none %}
+                <span class="badge {% if r.confidence_score >= 0.5 %}confidence-medium{% else %}confidence-low{% endif %} ms-2">
+                    {{ "%.0f"|format(r.confidence_score * 100) }}%
+                </span>
+                {% endif %}
+            </div>
+            <span class="text-muted small" id="review-counter">{{ loop.index }}/{{ total_pending }}</span>
+        </div>
+        <div class="card-body">
+            {% if r.review_reasons %}
+            <div class="alert alert-warning py-2 mb-3">
+                <small class="fw-bold">Powody przeglądu:</small>
+                <ul class="mb-0 ps-3 small">
+                    {% for reason in r.review_reasons %}<li>{{ reason }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="small text-muted">Suma OCR</div>
+                    <div class="fw-bold">{{ "%.2f"|format(r.total_ocr|float) if r.total_ocr else "-" }} zl</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="small text-muted">Suma obliczona</div>
+                    <div class="fw-bold">{{ "%.2f"|format(r.total_calculated|float) if r.total_calculated else "-" }} zl</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="small text-muted">Suma finalna</div>
+                    <div class="fw-bold text-primary">{{ "%.2f"|format(r.total_final|float) if r.total_final else "-" }} zl</div>
+                </div>
+            </div>
+
+            {% if r.items %}
+            <table class="table table-sm mt-3 mb-0">
+                <thead>
+                    <tr><th>Produkt</th><th class="text-end">Cena</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in r.items %}
+                    <tr>
+                        <td>{{ item.name_normalized or item.name_raw }}</td>
+                        <td class="text-end">{{ "%.2f"|format(item.price_final|float) }} zl</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+        <div class="card-footer d-flex gap-2">
+            <button class="btn btn-success btn-sm"
+                    hx-post="/app/paragony/{{ r.id }}/approve"
+                    hx-swap="none"
+                    hx-on::after-request="reviewNext()">
+                <i class="bi bi-check-lg me-1"></i> Zatwierdz <kbd class="ms-1">A</kbd>
+            </button>
+            <a href="/app/paragony/{{ r.id }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-pencil me-1"></i> Edytuj <kbd class="ms-1">E</kbd>
+            </a>
+            <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="reviewNext()">
+                Pomin <i class="bi bi-arrow-right"></i> <kbd class="ms-1">&rarr;</kbd>
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="review-done" style="display:none">
+    {% set es_icon = '<i class="bi bi-check-circle text-success"></i>' %}
+    {% set es_title = 'Wszystkie paragony przejrzane!' %}
+    {% set es_action_url = '/app/paragony/' %}
+    {% set es_action_icon = 'arrow-left' %}
+    {% set es_action_label = 'Wroc do listy' %}
+    {% include "components/empty_state.html" %}
+</div>
+
+{% else %}
+{% set es_icon = '<i class="bi bi-check-circle text-success"></i>' %}
+{% set es_title = 'Brak paragonow do przeglądu' %}
+{% set es_description = 'Wszystkie paragony sa zatwierdzone' %}
+{% set es_action_url = '/app/paragony/' %}
+{% set es_action_icon = 'arrow-left' %}
+{% set es_action_label = 'Wroc do listy' %}
+{% include "components/empty_state.html" %}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+var currentReview = 0;
+var reviewCards = document.querySelectorAll('.review-card');
+
+function reviewNext() {
+    if (reviewCards.length === 0) return;
+    reviewCards[currentReview].style.display = 'none';
+    currentReview++;
+    if (currentReview < reviewCards.length) {
+        reviewCards[currentReview].style.display = '';
+    } else {
+        document.getElementById('review-queue').style.display = 'none';
+        document.getElementById('review-done').style.display = '';
+    }
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'a' || e.key === 'A') {
+        var card = reviewCards[currentReview];
+        if (card) card.querySelector('[hx-post*="approve"]').click();
+    } else if (e.key === 'e' || e.key === 'E') {
+        var card = reviewCards[currentReview];
+        if (card) card.querySelector('a[href*="paragony"]').click();
+    } else if (e.key === 'ArrowRight') {
+        reviewNext();
+    }
+});
+</script>
+{% endblock %}

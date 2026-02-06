@@ -1,23 +1,67 @@
 {% extends "base.html" %}
 {% block title %}Paragon - {{ receipt.store.name if receipt.store else receipt.store_raw }} - Second Brain{% endblock %}
 
+{% block breadcrumb %}
+{% set breadcrumbs = [
+    {"label": "Paragony", "url": "/app/paragony/"},
+    {"label": (receipt.store.name if receipt.store else receipt.store_raw or "Paragon") ~ " " ~ (receipt.receipt_date.strftime("%d.%m") if receipt.receipt_date else "")}
+] %}
+{% include "components/breadcrumbs.html" %}
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <a href="/app/paragony/" class="text-muted text-decoration-none small">
-            <i class="bi bi-arrow-left"></i> Paragony
-        </a>
-        <h4 class="mb-0 mt-1">
+        <h4 class="mb-0">
             {{ store_emoji(receipt.store.name if receipt.store else receipt.store_raw) }}
             {{ receipt.store.name if receipt.store else receipt.store_raw or "Paragon" }}
         </h4>
     </div>
-    <form hx-post="/app/paragony/{{ receipt.id }}/delete" hx-confirm="Na pewno usunąć ten paragon?">
-        <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-trash"></i> Usuń
+    <div class="d-flex gap-2">
+        {% if receipt.needs_review %}
+        <button class="btn btn-sm btn-success"
+                hx-post="/app/paragony/{{ receipt.id }}/approve"
+                hx-swap="none"
+                hx-on::after-request="location.reload()">
+            <i class="bi bi-check-lg me-1"></i> Zatwierdz
         </button>
-    </form>
+        {% endif %}
+        <form hx-post="/app/paragony/{{ receipt.id }}/delete" hx-confirm="Na pewno usunąć ten paragon?">
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash"></i> Usuń
+            </button>
+        </form>
+    </div>
 </div>
+
+{% if receipt.confidence_score is not none or receipt.needs_review %}
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-3">
+            {% if receipt.confidence_score is not none %}
+            <div class="d-flex align-items-center gap-2">
+                <div class="progress" style="width:120px;height:8px">
+                    <div class="progress-bar {% if receipt.confidence_score >= 0.8 %}bg-success{% elif receipt.confidence_score >= 0.5 %}bg-warning{% else %}bg-danger{% endif %}"
+                         style="width:{{ (receipt.confidence_score * 100)|int }}%"></div>
+                </div>
+                <span class="small fw-bold">{{ "%.0f"|format(receipt.confidence_score * 100) }}%</span>
+            </div>
+            <span class="small text-muted">pewnosc ekstrakcji OCR</span>
+            {% endif %}
+            {% if receipt.needs_review %}
+            <span class="badge badge-review ms-auto"><i class="bi bi-exclamation-triangle"></i> Wymaga przeglądu</span>
+            {% endif %}
+        </div>
+        {% if receipt.review_reasons %}
+        <div class="mt-2">
+            {% for reason in receipt.review_reasons %}
+            <span class="badge bg-light text-dark me-1 small">{{ reason }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 <div class="receipt-split{% if has_image %} receipt-split--has-image{% endif %}">
     {% if has_image %}
