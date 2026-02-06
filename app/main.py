@@ -36,6 +36,8 @@ from app.receipts_api import router as receipts_router
 from app.search_api import router as search_router
 from app.web_routes import router as web_router
 from app.profile_api import router as profile_router
+from app.mobile_routes import router as mobile_router
+from app.push_api import router as push_router
 from app.ocr import extract_products_from_image, extract_total_from_text
 from app.pdf_converter import convert_pdf_to_images
 from app.reports import router as reports_router
@@ -138,6 +140,8 @@ app.include_router(pantry_router)
 app.include_router(receipts_router)
 app.include_router(search_router)
 app.include_router(profile_router)
+app.include_router(mobile_router)
+app.include_router(push_router)
 app.include_router(web_router)
 
 # Mount static files for web UI
@@ -749,6 +753,25 @@ async def root():
     """Root endpoint - redirect to web UI."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/app/")
+
+
+# --- PWA Endpoints ---
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve Service Worker with correct scope header."""
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        Path(__file__).parent / "static" / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"}
+    )
+
+
+@app.get("/offline.html")
+async def offline_page(request: Request):
+    """Offline fallback page for PWA."""
+    return _auth_templates.TemplateResponse("offline.html", {"request": request})
 
 
 # --- Obsidian Sync Endpoints ---

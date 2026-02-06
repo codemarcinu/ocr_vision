@@ -56,12 +56,21 @@ async def web_auth_middleware(request: Request, call_next):
     path = request.url.path
 
     # Public paths - no auth required
-    public_paths = ("/health", "/login", "/logout", "/static", "/metrics", "/docs", "/openapi.json", "/redoc")
+    public_paths = (
+        "/health", "/login", "/logout", "/static", "/metrics",
+        "/docs", "/openapi.json", "/redoc",
+        "/sw.js", "/offline.html", "/manifest.json",  # PWA files
+        "/api/push/vapid-key"  # Push subscription key (public for PWA)
+    )
     if any(path.startswith(p) for p in public_paths):
         return await call_next(request)
 
+    # Web UI paths: check session cookie (includes /app/, /m/, and API calls from PWA)
+    web_ui_paths = ("/app/", "/m/", "/", "/api/push/")
+    is_web_ui = any(path == p or path.startswith(p.rstrip("/") + "/") for p in web_ui_paths if p != "/") or path == "/"
+
     # API endpoints: check Bearer token
-    if not path.startswith("/app/") and path != "/":
+    if not is_web_ui:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
