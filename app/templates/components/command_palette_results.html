@@ -1,0 +1,46 @@
+{% if not has_query %}
+{# Static commands - actions first, then navigation #}
+<div class="cp-section">Akcje</div>
+{% for item in items if item.section == "Akcje" %}
+<a href="{{ item.url }}" class="cp-item" data-cp-item>
+    <i class="bi {{ item.icon }} cp-item-icon"></i>
+    <span class="cp-item-label">{{ item.label }}</span>
+    {% if item.hint %}<span class="cp-item-hint">{{ item.hint }}</span>{% endif %}
+</a>
+{% endfor %}
+<div class="cp-section">Nawigacja</div>
+{% for item in items if item.section == "Nawigacja" %}
+<a href="{{ item.url }}" class="cp-item" data-cp-item>
+    <i class="bi {{ item.icon }} cp-item-icon"></i>
+    <span class="cp-item-label">{{ item.label }}</span>
+</a>
+{% endfor %}
+
+{% elif items or content_items %}
+{# Search results #}
+{% if items %}
+<div class="cp-section">Komendy</div>
+{% for cmd in items %}
+<a href="{{ cmd.url }}" class="cp-item" data-cp-item>
+    <i class="bi {{ cmd.icon }} cp-item-icon"></i>
+    <span class="cp-item-label">{{ cmd.label }}</span>
+</a>
+{% endfor %}
+{% endif %}
+
+{% if content_items %}
+<div class="cp-section">Wyniki</div>
+{% for item in content_items %}
+<a href="{{ item.url }}" class="cp-item" data-cp-item>
+    <i class="bi {{ item.icon }} cp-item-icon"></i>
+    <span class="cp-item-label">{{ item.label }}</span>
+    <span class="cp-item-hint">{{ item.section }}{% if item.hint %} · {{ item.hint }}{% endif %}</span>
+</a>
+{% endfor %}
+{% endif %}
+
+{% else %}
+<div class="cp-empty">
+    <i class="bi bi-search"></i> Brak wynikow dla "{{ query }}"
+</div>
+{% endif %}

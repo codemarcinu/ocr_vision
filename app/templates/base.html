@@ -28,12 +28,12 @@
             </button>
 
             <div class="topbar-search">
-                <form action="/app/szukaj/" method="get">
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="search" name="q" class="form-control" placeholder="Szukaj..." value="{{ search_query|default('') }}">
-                    </div>
-                </form>
+                <button class="btn btn-sm btn-outline-secondary w-100 text-start d-flex align-items-center gap-2"
+                        onclick="openCommandPalette()" type="button">
+                    <i class="bi bi-search"></i>
+                    <span class="text-muted flex-grow-1">Szukaj...</span>
+                    <kbd class="cp-kbd">Ctrl+K</kbd>
+                </button>
             </div>
 
             <div class="topbar-actions">
@@ -66,10 +66,28 @@
     <!-- Toast container -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- Command Palette -->
+    <dialog id="command-palette">
+        <div class="cp-container">
+            <div class="cp-header">
+                <i class="bi bi-search"></i>
+                <input type="text" class="cp-input" placeholder="Szukaj komend, stron, tresci..." autocomplete="off" spellcheck="false">
+                <kbd class="cp-kbd">Esc</kbd>
+            </div>
+            <div class="cp-results"></div>
+            <div class="cp-footer">
+                <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> nawigacja</span>
+                <span><kbd>Enter</kbd> otworz</span>
+                <span><kbd>Esc</kbd> zamknij</span>
+            </div>
+        </div>
+    </dialog>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/static/js/htmx.min.js"></script>
     <script src="/static/js/app.js"></script>
+    <script src="/static/js/command-palette.js"></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

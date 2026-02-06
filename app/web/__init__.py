@@ -7,6 +7,7 @@ from app.web.articles import router as articles_router
 from app.web.ask import router as ask_router
 from app.web.bookmarks import router as bookmarks_router
 from app.web.chat import router as chat_router
+from app.web.command_palette import router as command_palette_router
 from app.web.dashboard import router as dashboard_router
 from app.web.dictionary import router as dictionary_router
 from app.web.notes import router as notes_router
@@ -30,4 +31,5 @@ router.include_router(dictionary_router)
 router.include_router(search_router)
 router.include_router(ask_router)
 router.include_router(chat_router)
+router.include_router(command_palette_router)
 router.include_router(redirects_router)
