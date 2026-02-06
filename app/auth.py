@@ -61,31 +61,33 @@ async def web_auth_middleware(request: Request, call_next):
     public_paths = (
         "/health", "/login", "/logout", "/static",
         "/sw.js", "/offline.html", "/manifest.json",  # PWA files
-        "/api/push/vapid-key"  # Push subscription key (public for PWA)
+        "/api/push/vapid-key",  # Push subscription key (public for PWA)
+        "/metrics",  # Prometheus scraping
+        "/favicon.ico",
     )
     if any(path.startswith(p) for p in public_paths):
         return await call_next(request)
 
-    # Web UI paths: check session cookie (includes /app/, /m/, and API calls from PWA)
-    web_ui_paths = ("/app/", "/m/", "/", "/api/push/")
-    is_web_ui = any(path == p or path.startswith(p.rstrip("/") + "/") for p in web_ui_paths if p != "/") or path == "/"
+    # Accept Bearer token on any path (API clients + scripts)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        if secrets.compare_digest(token, settings.AUTH_TOKEN):
+            return await call_next(request)
 
-    # API endpoints: check Bearer token
-    if not is_web_ui:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            if secrets.compare_digest(token, settings.AUTH_TOKEN):
-                return await call_next(request)
-        return JSONResponse(status_code=401, content={"detail": "Brak autoryzacji"})
-
-    # Web UI: check session cookie
+    # Accept session cookie on any path (browser / mobile PWA)
     session_token = request.cookies.get("session_token", "")
     if session_token and _is_session_valid(session_token):
         return await call_next(request)
 
-    # Redirect to login
-    return RedirectResponse(url="/login", status_code=303)
+    # Unauthenticated: web UI paths get redirect, API paths get 401 JSON
+    web_ui_paths = ("/app", "/m")
+    is_web_ui = any(path == p or path.startswith(p + "/") for p in web_ui_paths) or path == "/"
+
+    if is_web_ui:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return JSONResponse(status_code=401, content={"detail": "Brak autoryzacji"})
 
 
 def _is_session_valid(token: str) -> bool:
