@@ -168,20 +168,15 @@
                 <div class="text-center">
                     <i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>
                     <p class="mt-2 mb-3">Rozpocznij rozmowę - mam dostęp do Twojej bazy wiedzy i internetu.</p>
-                    <div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions">
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydałem w tym miesiącu?</button>
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuły</button>
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuję najczęściej?</button>
-                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Co nowego w technologii?</button>
+                    <div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions"
+                         hx-get="/app/czat/suggestions" hx-trigger="load" hx-swap="innerHTML">
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="chat-input-area">
-            <form id="chat-form" hx-post="/app/czat/send" hx-target="#chat-messages"
-                  hx-swap="beforeend" hx-indicator="#chat-loading"
-                  hx-on::after-request="afterChatSend(event)">
+            <form id="chat-form" onsubmit="handleChatSubmit(event)">
                 <input type="hidden" name="session_id" id="session-id" value="">
                 <div class="input-group align-items-end">
                     <textarea name="message" class="form-control"
@@ -194,13 +189,6 @@
                     </button>
                 </div>
             </form>
-            <div id="chat-loading" class="htmx-indicator mt-2">
-                <div class="chat-bubble chat-assistant d-inline-flex align-items-center" style="max-width: fit-content;">
-                    <div class="typing-dots">
-                        <span></span><span></span><span></span>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 </div>
@@ -211,6 +199,14 @@
 <script src="/static/js/purify.min.js"></script>
 <script>
 marked.setOptions({ breaks: true, gfm: true });
+
+var PHASE_LABELS = {
+    'classifying': 'Klasyfikuje pytanie...',
+    'searching': 'Przeszukuje baze wiedzy...',
+    'generating': 'Generuje odpowiedz...',
+    'agent': 'Wykonuje akcje...',
+    'web_search': 'Przeszukuje internet...',
+};
 
 // Auto-resize textarea
 var chatInput = document.getElementById('chat-input');
@@ -229,19 +225,6 @@ chatInput.addEventListener('keydown', function(e) {
     }
 });
 
-// Disable input area during request
-document.body.addEventListener('htmx:beforeRequest', function(evt) {
-    if (evt.detail.elt.id === 'chat-form') {
-        document.querySelector('.chat-input-area').classList.add('is-sending');
-    }
-});
-document.body.addEventListener('htmx:afterRequest', function(evt) {
-    if (evt.detail.elt.id === 'chat-form') {
-        document.querySelector('.chat-input-area').classList.remove('is-sending');
-        document.getElementById('chat-input').focus();
-    }
-});
-
 function renderMarkdown() {
     document.querySelectorAll('.chat-md[data-raw]').forEach(function(el) {
         if (el.dataset.rendered) return;
@@ -249,6 +232,11 @@ function renderMarkdown() {
         el.innerHTML = DOMPurify.sanitize(html);
         el.dataset.rendered = '1';
     });
+}
+
+function renderMarkdownInline(el, text) {
+    var html = marked.parse(text);
+    el.innerHTML = DOMPurify.sanitize(html);
 }
 
 function copyMessage(btn) {
@@ -259,27 +247,198 @@ function copyMessage(btn) {
         var icon = btn.querySelector('i');
         icon.className = 'bi bi-check-lg';
         btn.style.opacity = '1';
-        setTimeout(function() {
-            icon.className = 'bi bi-clipboard';
-            btn.style.opacity = '';
-        }, 1500);
+        setTimeout(function() { icon.className = 'bi bi-clipboard'; btn.style.opacity = ''; }, 1500);
     });
 }
 
+function scrollToBottom() {
+    var msgs = document.getElementById('chat-messages');
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ===== Streaming Chat =====
+var _isSending = false;
+
+function handleChatSubmit(e) {
+    e.preventDefault();
+    var input = document.getElementById('chat-input');
+    var message = input.value.trim();
+    if (!message || _isSending) return;
+
+    _isSending = true;
+    document.querySelector('.chat-input-area').classList.add('is-sending');
+
+    // Remove empty state
+    var empty = document.getElementById('chat-empty');
+    if (empty) empty.remove();
+
+    // Add user bubble
+    var msgs = document.getElementById('chat-messages');
+    var userBubble = document.createElement('div');
+    userBubble.className = 'chat-bubble chat-user';
+    userBubble.textContent = message;
+    msgs.appendChild(userBubble);
+
+    // Add assistant bubble with typing indicator
+    var wrapper = document.createElement('div');
+    wrapper.className = 'chat-msg-wrapper';
+    wrapper.innerHTML =
+        '<div class="chat-bubble chat-assistant">' +
+        '<div class="d-flex align-items-center gap-2" id="streaming-indicator">' +
+        '<div class="typing-dots"><span></span><span></span><span></span></div>' +
+        '<small class="text-muted" id="phase-label"></small>' +
+        '</div>' +
+        '<div class="chat-md" id="streaming-content" style="display:none"></div>' +
+        '</div>' +
+        '<button class="chat-copy-btn" onclick="copyMessage(this)" title="Kopiuj" style="display:none">' +
+        '<i class="bi bi-clipboard"></i></button>';
+    msgs.appendChild(wrapper);
+
+    input.value = '';
+    input.style.height = 'auto';
+    scrollToBottom();
+
+    // Build form data
+    var formData = new FormData();
+    formData.append('message', message);
+    var sessionId = document.getElementById('session-id').value;
+    if (sessionId) formData.append('session_id', sessionId);
+
+    // Stream via fetch
+    var streamContent = '';
+    fetch('/chat/stream', { method: 'POST', body: formData })
+        .then(function(response) {
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+
+            function processChunk() {
+                return reader.read().then(function(result) {
+                    if (result.done) {
+                        finishStreaming(wrapper);
+                        return;
+                    }
+                    buffer += decoder.decode(result.value, { stream: true });
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop(); // keep incomplete line
+
+                    var eventType = '';
+                    for (var i = 0; i < lines.length; i++) {
+                        var line = lines[i];
+                        if (line.startsWith('event: ')) {
+                            eventType = line.substring(7).trim();
+                        } else if (line.startsWith('data: ') && eventType) {
+                            try {
+                                var data = JSON.parse(line.substring(6));
+                                handleSSEEvent(eventType, data, wrapper);
+                                if (eventType === 'token') {
+                                    streamContent += (data.text || '');
+                                }
+                            } catch(e) {}
+                            eventType = '';
+                        }
+                    }
+                    return processChunk();
+                });
+            }
+            return processChunk();
+        })
+        .catch(function(err) {
+            console.error('[chat] Stream error:', err);
+            var content = wrapper.querySelector('#streaming-content');
+            if (content) {
+                content.style.display = '';
+                content.innerHTML = '<span class="text-danger">Wystąpił błąd połączenia</span>';
+            }
+            var indicator = wrapper.querySelector('#streaming-indicator');
+            if (indicator) indicator.style.display = 'none';
+            finishStreaming(wrapper);
+        });
+}
+
+function handleSSEEvent(type, data, wrapper) {
+    var indicator = wrapper.querySelector('#streaming-indicator');
+    var content = wrapper.querySelector('#streaming-content');
+    var phaseLabel = wrapper.querySelector('#phase-label');
+
+    if (type === 'session') {
+        document.getElementById('session-id').value = data.session_id;
+        htmx.ajax('GET', '/app/czat/sessions', {target: '#session-list', swap: 'innerHTML'});
+    } else if (type === 'status') {
+        if (phaseLabel) {
+            phaseLabel.textContent = PHASE_LABELS[data.phase] || data.phase || '';
+        }
+    } else if (type === 'token') {
+        if (indicator) indicator.style.display = 'none';
+        content.style.display = '';
+        // Append text and render
+        var raw = (content.dataset.raw || '') + (data.text || '');
+        content.dataset.raw = raw;
+        renderMarkdownInline(content, raw);
+        scrollToBottom();
+    } else if (type === 'tool_result') {
+        if (indicator) indicator.style.display = 'none';
+        content.style.display = '';
+        var raw = (content.dataset.raw || '') + '\n\n' + (data.text || '');
+        content.dataset.raw = raw;
+        renderMarkdownInline(content, raw);
+        scrollToBottom();
+    } else if (type === 'done') {
+        if (indicator) indicator.style.display = 'none';
+        content.style.display = '';
+        // Final answer
+        if (data.answer) {
+            content.dataset.raw = data.answer;
+            renderMarkdownInline(content, data.answer);
+        }
+        // Sources
+        if (data.sources && data.sources.length > 0) {
+            var sourcesHtml = '<div class="chat-sources mt-2"><div class="d-flex flex-wrap gap-1">';
+            data.sources.forEach(function(s) {
+                var icon = s.type === 'web' ? 'globe' : 'archive';
+                var title = s.title || s.url || 'Zrodlo';
+                if (title.length > 40) title = title.substring(0, 40) + '...';
+                sourcesHtml += '<span class="badge text-bg-light border chat-source-link"><i class="bi bi-' + icon + ' me-1"></i>' + title + '</span>';
+            });
+            sourcesHtml += '</div></div>';
+            content.insertAdjacentHTML('afterend', sourcesHtml);
+        }
+        // Meta
+        var metaParts = [];
+        if (data.search_type) metaParts.push(data.search_type.toUpperCase());
+        if (data.processing_time_sec) metaParts.push(data.processing_time_sec.toFixed(1) + 's');
+        if (metaParts.length > 0) {
+            content.closest('.chat-bubble').insertAdjacentHTML('beforeend',
+                '<div class="chat-meta">' + metaParts.join(' · ') + '</div>');
+        }
+        // Title update
+        if (data.title) {
+            document.getElementById('chat-title-text').textContent = data.title;
+        }
+        scrollToBottom();
+    }
+}
+
+function finishStreaming(wrapper) {
+    _isSending = false;
+    document.querySelector('.chat-input-area').classList.remove('is-sending');
+    document.getElementById('chat-input').focus();
+    // Show copy button
+    var copyBtn = wrapper.querySelector('.chat-copy-btn');
+    if (copyBtn) copyBtn.style.display = '';
+    // Clean up temporary IDs
+    var el;
+    el = wrapper.querySelector('#streaming-indicator'); if (el) el.removeAttribute('id');
+    el = wrapper.querySelector('#streaming-content'); if (el) el.removeAttribute('id');
+    el = wrapper.querySelector('#phase-label'); if (el) el.removeAttribute('id');
+}
+
+// ===== Session management =====
 function _doDelete(url, onSuccess) {
-    console.log('[chat] DELETE', url);
     var xhr = new XMLHttpRequest();
     xhr.open('DELETE', url, true);
     xhr.onload = function() {
-        console.log('[chat] DELETE response:', xhr.status);
-        if (xhr.status >= 200 && xhr.status < 300) {
-            onSuccess(xhr.responseText);
-        } else {
-            console.error('[chat] DELETE failed:', xhr.status, xhr.responseText);
-        }
-    };
-    xhr.onerror = function() {
-        console.error('[chat] DELETE network error');
+        if (xhr.status >= 200 && xhr.status < 300) onSuccess(xhr.responseText);
     };
     xhr.send();
 }
@@ -288,7 +447,6 @@ var _deleteConfirmTimer = null;
 
 function deleteAllSessions() {
     var btn = event.currentTarget;
-    // Two-click confirmation
     if (btn.dataset.confirm !== '1') {
         btn.dataset.confirm = '1';
         btn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Na pewno?';
@@ -313,9 +471,7 @@ function _resetDeleteAllBtn(btn) {
 function deleteSession(sessionId) {
     _doDelete('/app/czat/sessions/' + sessionId, function(html) {
         document.getElementById('session-list').innerHTML = html;
-        if (document.getElementById('session-id').value === sessionId) {
-            startNewChat();
-        }
+        if (document.getElementById('session-id').value === sessionId) startNewChat();
     });
 }
 
@@ -340,68 +496,36 @@ function startNewChat() {
         '<div class="chat-empty" id="chat-empty"><div class="text-center">' +
         '<i class="bi bi-chat-left-text" style="font-size: 3rem;"></i>' +
         '<p class="mt-2 mb-3">Rozpocznij rozmowę - mam dostęp do Twojej bazy wiedzy i internetu.</p>' +
-        '<div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions">' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Ile wydałem w tym miesiącu?</button>' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Podsumuj ostatnie artykuły</button>' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Jakie produkty kupuję najczęściej?</button>' +
-        '<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">Co nowego w technologii?</button>' +
-        '</div></div></div>';
+        '<div class="d-flex flex-wrap justify-content-center gap-2 chat-suggestions" ' +
+        'hx-get="/app/czat/suggestions" hx-trigger="load" hx-swap="innerHTML"></div>' +
+        '</div></div>';
+    htmx.process(document.getElementById('chat-messages'));
     document.getElementById('chat-input').focus();
     document.getElementById('chat-title-text').textContent = '';
-    // Remove active class from all sessions
-    document.querySelectorAll('.chat-session-item.active').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.chat-session-item.active').forEach(function(el) { el.classList.remove('active'); });
 }
 
 function loadSession(sessionId) {
     document.getElementById('session-id').value = sessionId;
-    // Remove empty state
     var empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
-    // Mark active and set title
-    document.querySelectorAll('.chat-session-item.active').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.chat-session-item.active').forEach(function(el) { el.classList.remove('active'); });
     var item = document.querySelector('[data-session="' + sessionId + '"]');
     if (item) {
         item.classList.add('active');
         var titleEl = item.querySelector('.text-truncate');
         if (titleEl) document.getElementById('chat-title-text').textContent = titleEl.textContent;
     }
-    // Close sidebar on mobile
     closeSidebar();
-    // Load messages via HTMX
     htmx.ajax('GET', '/app/czat/sessions/' + sessionId, {target: '#chat-messages', swap: 'innerHTML'});
 }
 
-function afterChatSend(event) {
-    // Clear input and reset height
-    var input = document.getElementById('chat-input');
-    input.value = '';
-    input.style.height = 'auto';
-    // Remove empty state
-    var empty = document.getElementById('chat-empty');
-    if (empty) empty.remove();
-    // Render markdown in new messages
-    renderMarkdown();
-    // Scroll to bottom
-    var msgs = document.getElementById('chat-messages');
-    setTimeout(function() { msgs.scrollTop = msgs.scrollHeight; }, 100);
-}
-
-// Listen for new session ID from server
-document.body.addEventListener('newChatSession', function(evt) {
-    document.getElementById('session-id').value = evt.detail.session_id;
-    if (evt.detail.title) {
-        document.getElementById('chat-title-text').textContent = evt.detail.title;
-    }
-    // Refresh session list
-    htmx.ajax('GET', '/app/czat/sessions', {target: '#session-list', swap: 'innerHTML'});
-});
-
-// Update title when loading a session
+// Session loaded event from HTMX
 document.body.addEventListener('sessionLoaded', function(evt) {
     document.getElementById('chat-title-text').textContent = evt.detail.title || '';
 });
 
-// Auto-scroll and render markdown after HTMX swap on chat messages
+// Render markdown after HTMX swap
 document.body.addEventListener('htmx:afterSwap', function(evt) {
     if (evt.detail.target.id === 'chat-messages') {
         renderMarkdown();

@@ -1,0 +1,3 @@
+{% for s in suggestions %}
+<button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="sendSuggestion(this)">{{ s.icon }} {{ s.text }}</button>
+{% endfor %}

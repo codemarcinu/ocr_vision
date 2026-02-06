@@ -113,6 +113,20 @@ async def chat_send(
         })
 
 
+@router.get("/app/czat/suggestions", response_class=HTMLResponse)
+async def chat_suggestions_html(
+    request: Request,
+    session: DbSession,
+    chat_repo: ChatRepoDep,
+):
+    """Return dynamic chat suggestions as HTML chips."""
+    from app.chat_api import get_suggestions
+    suggestions = await get_suggestions(session=session, chat_repo=chat_repo)
+    return templates.TemplateResponse("chat/partials/suggestions.html", {
+        "request": request, "suggestions": suggestions,
+    })
+
+
 @router.get("/app/czat/sessions", response_class=HTMLResponse)
 async def chat_sessions_list(request: Request, chat_repo: ChatRepoDep):
     sessions = await chat_repo.get_user_sessions(limit=30)
