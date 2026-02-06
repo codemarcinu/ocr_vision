@@ -1239,7 +1239,7 @@ class MobileApp {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'voice.webm');
 
-      const response = await fetch('/transcriptions/quick', {
+      const response = await fetch('/transcription/quick', {
         method: 'POST',
         body: formData
       });
@@ -2099,7 +2099,15 @@ class LockScreen {
     this._setupVisibility();
 
     if (this.enabled && this._hasPin()) {
-      this.lock();
+      // Check if already unlocked in this session (survives page navigation)
+      const unlockedAt = parseInt(sessionStorage.getItem('lock_unlocked_at') || '0', 10);
+      const elapsed = Date.now() - unlockedAt;
+      if (unlockedAt && elapsed < this.lockTimeout) {
+        // Still within timeout - don't lock
+        this.lastActivity = unlockedAt;
+      } else {
+        this.lock();
+      }
     }
   }
 
@@ -2127,9 +2135,13 @@ class LockScreen {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.lastActivity = Date.now();
+        sessionStorage.setItem('lock_unlocked_at', String(Date.now()));
       } else if (this.enabled && this._hasPin() && !this.isLocked) {
         const elapsed = Date.now() - this.lastActivity;
-        if (elapsed > this.lockTimeout) this.lock();
+        if (elapsed > this.lockTimeout) {
+          sessionStorage.removeItem('lock_unlocked_at');
+          this.lock();
+        }
       }
     });
     ['touchstart', 'click', 'keydown'].forEach(evt => {
@@ -2274,6 +2286,7 @@ class LockScreen {
       this.failedAttempts = 0;
       this._hide();
       this.lastActivity = Date.now();
+      sessionStorage.setItem('lock_unlocked_at', String(Date.now()));
     } else {
       this.failedAttempts++;
       this.digits = [];
@@ -2310,6 +2323,7 @@ class LockScreen {
       this.failedAttempts = 0;
       this._hide();
       this.lastActivity = Date.now();
+      sessionStorage.setItem('lock_unlocked_at', String(Date.now()));
     } catch (e) {
       console.log('Biometric cancelled or failed');
     }
@@ -2330,6 +2344,7 @@ class LockScreen {
     localStorage.removeItem('lock_enabled');
     localStorage.removeItem('lock_biometric');
     localStorage.removeItem('lock_credential_id');
+    sessionStorage.removeItem('lock_unlocked_at');
     this.enabled = false;
     this.biometricEnabled = false;
   }
