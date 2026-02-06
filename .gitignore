@@ -63,6 +63,9 @@ Archiwum/
 docs/PWA_IMPLEMENTATION_PLAN.md
 docs/raport_sec_bot.md
 
+# Binaries
+*.deb
+
 # Misc
 nul
 *.log

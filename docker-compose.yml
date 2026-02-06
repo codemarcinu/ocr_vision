@@ -68,6 +68,8 @@ services:
       - WEATHER_CITY=${WEATHER_CITY:-Kraków}
       # Obsidian markdown files (notes, transcriptions, summaries)
       - GENERATE_OBSIDIAN_FILES=true
+      # Authentication
+      - AUTH_TOKEN=${AUTH_TOKEN:-}
       # Push Notifications (Web Push)
       - PUSH_ENABLED=${PUSH_ENABLED:-false}
       - PUSH_VAPID_PUBLIC_KEY=${PUSH_VAPID_PUBLIC_KEY:-}
