@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync Second Brain to Google Drive
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

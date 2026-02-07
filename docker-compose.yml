@@ -72,6 +72,10 @@ services:
       - PUSH_VAPID_PUBLIC_KEY=${PUSH_VAPID_PUBLIC_KEY:-}
       - PUSH_VAPID_PRIVATE_KEY=${PUSH_VAPID_PRIVATE_KEY:-}
       - PUSH_VAPID_SUBJECT=${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      # Google Drive Sync (monitoring only - rclone runs on host)
+      - GDRIVE_SYNC_ENABLED=${GDRIVE_SYNC_ENABLED:-false}
+      - FOLDER_WATCH_ENABLED=${FOLDER_WATCH_ENABLED:-false}
+      - FOLDER_WATCH_INTERVAL_SECONDS=${FOLDER_WATCH_INTERVAL_SECONDS:-300}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

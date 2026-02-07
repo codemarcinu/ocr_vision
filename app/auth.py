@@ -63,6 +63,7 @@ async def web_auth_middleware(request: Request, call_next):
         "/sw.js", "/offline.html", "/manifest.json",  # PWA files
         "/api/push/vapid-key",  # Push subscription key (public for PWA)
         "/metrics",  # Prometheus scraping
+        "/gdrive/status",  # Sync monitoring
         "/favicon.ico",
     )
     if any(path.startswith(p) for p in public_paths):

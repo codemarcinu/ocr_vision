@@ -237,6 +237,10 @@ async def startup_event():
     if settings.FOLDER_WATCH_ENABLED:
         asyncio.create_task(_folder_watch_loop())
 
+    # Log Google Drive sync monitoring status
+    if settings.GDRIVE_SYNC_ENABLED:
+        logger.info(f"Google Drive sync monitoring enabled (status: {settings.GDRIVE_SYNC_STATUS_FILE})")
+
 
 async def _voice_queue_loop():
     """Background loop: process queued voice messages every 30 minutes."""
@@ -486,6 +490,25 @@ async def model_coordinator_status():
 
     status["coordination_enabled"] = settings.MODEL_COORDINATION_ENABLED
 
+    return status
+
+
+@app.get("/gdrive/status")
+async def gdrive_sync_status_endpoint():
+    """Get Google Drive sync status.
+
+    Shows last sync time, success/failure, and file counts.
+    Reads the status file written by the host-side rclone script.
+    Only available when GDRIVE_SYNC_ENABLED=true.
+    """
+    if not settings.GDRIVE_SYNC_ENABLED:
+        return {"enabled": False, "message": "Google Drive sync not enabled"}
+
+    from app.services.gdrive_sync import gdrive_sync_status
+
+    status = gdrive_sync_status.get_status()
+    status["healthy"] = gdrive_sync_status.is_healthy()
+    status["inbox_pending"] = gdrive_sync_status.get_inbox_pending_count()
     return status
 
 

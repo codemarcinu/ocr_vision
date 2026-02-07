@@ -1,0 +1,11 @@
+[Unit]
+Description=Second Brain Google Drive Sync
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=marcin
+Environment=RCLONE_CONFIG=/home/marcin/.config/rclone/rclone.conf
+ExecStart=/home/marcin/Dokumenty/projekty/ocr_vision/scripts/sync-gdrive.sh
+TimeoutStartSec=300
