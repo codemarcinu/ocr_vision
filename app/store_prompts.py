@@ -338,11 +338,23 @@ STORE_PROMPTS = {
 }
 
 
+_FORBIDDEN = """
+
+FORBIDDEN (STRICTLY ENFORCE):
+- Do NOT add products not visible on the receipt
+- Do NOT guess or invent prices — use EXACTLY what's printed
+- Do NOT round amounts (3.49 is NOT 3.50)
+- Do NOT add default items (bag, salt, water) unless printed on receipt
+- Do NOT invent dates if unreadable — leave empty
+- Do NOT rename products to "correct" names — transcribe as-is
+"""
+
+
 def get_prompt_for_store(store: Optional[str]) -> str:
     """Get the appropriate prompt for a given store."""
     if store and store.lower() in STORE_PROMPTS:
-        return STORE_PROMPTS[store.lower()]
-    return PROMPT_GENERIC
+        return STORE_PROMPTS[store.lower()] + _FORBIDDEN
+    return PROMPT_GENERIC + _FORBIDDEN
 
 
 def get_store_display_name(store_key: Optional[str]) -> str:

@@ -329,6 +329,17 @@ Zwróć TYLKO JSON:
 TEKST PARAGONU:
 {ocr_text}"""
 
+_ZAKAZANE = """
+
+ZAKAZANE (BEZWZGLĘDNIE PRZESTRZEGAJ):
+- NIE dodawaj produktów których NIE MA na paragonie
+- NIE wymyślaj ani nie zgaduj cen — wpisuj DOKŁADNIE to co na paragonie
+- NIE zaokrąglaj kwot (3,49 to NIE 3,50)
+- NIE dodawaj domyślnych produktów (sól, woda, reklamówka) jeśli nie widać ich na paragonie
+- NIE wymyślaj daty jeśli nie jest czytelna — zostaw puste
+- NIE zmieniaj nazw produktów na "bardziej poprawne" — przepisz jak jest
+"""
+
 # Mapowanie sklepu na prompt strukturyzacji
 STRUCTURING_PROMPTS = {
     "biedronka": STRUCTURING_PROMPT_BIEDRONKA,
@@ -354,5 +365,5 @@ def get_ocr_prompt(store: str = None) -> str:
 def get_structuring_prompt(store: str = None) -> str:
     """Pobierz prompt LLM do strukturyzacji dla wykrytego sklepu."""
     if store and store.lower() in STRUCTURING_PROMPTS:
-        return STRUCTURING_PROMPTS[store.lower()]
-    return STRUCTURING_PROMPT_GENERIC
+        return STRUCTURING_PROMPTS[store.lower()] + _ZAKAZANE
+    return STRUCTURING_PROMPT_GENERIC + _ZAKAZANE
