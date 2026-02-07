@@ -72,7 +72,7 @@ Database initializes from `scripts/init-db.sql` on first PostgreSQL start (empty
 docker exec -it pantry-api alembic revision --autogenerate -m "description"
 docker exec -it pantry-api alembic upgrade head
 ```
-The ORM source of truth is `app/db/models.py`. Alembic's `env.py` is configured for async (asyncpg). 10 migrations exist in `alembic/versions/`.
+The ORM source of truth is `app/db/models.py`. Alembic's `env.py` is configured for async (asyncpg). 11 migrations exist in `alembic/versions/`.
 
 ## Architecture
 
@@ -169,11 +169,12 @@ app/
 │   ├── receipt_saver.py        # Receipt → DB + Obsidian + RAG
 │   ├── obsidian_sync.py        # Vault regeneration from DB
 │   ├── notes_organizer.py      # Report, auto-tag, duplicate detection
-│   └── push_service.py         # Web Push notification sender
+│   ├── push_service.py         # Web Push notification sender
+│   └── gdrive_sync.py         # Google Drive sync status monitor (read-only)
 │
 ├── db/                         # Database layer
 │   ├── connection.py           # Async engine + session factory
-│   ├── models.py               # SQLAlchemy ORM (25 models)
+│   ├── models.py               # SQLAlchemy ORM (26 models)
 │   └── repositories/           # Data access (16 repos)
 │       ├── base.py, receipts.py, products.py, pantry.py, stores.py
 │       ├── analytics.py, rss.py, transcription.py, notes.py, bookmarks.py
@@ -221,7 +222,7 @@ app/
 │   ├── feedback_logger.py      # User feedback tracking
 │   └── url_validator.py        # SSRF protection
 │
-├── templates/                  # Jinja2 (55+ files, organized by feature)
+├── templates/                  # Jinja2 (60 files, organized by feature)
 │   ├── base.html, login.html, offline.html
 │   ├── mobile/                 # PWA templates (separate base.html)
 │   ├── dashboard/, receipts/, pantry/, analytics/
@@ -259,6 +260,8 @@ Receipt (photo/PDF) → OCR Backend → Store Detection → Store-Specific Promp
 
 OCR backend code is in `app/ocr/`. The `__init__.py` re-exports from `vision.py` for backward compatibility (`from app.ocr import ...` works).
 
+**Anti-hallucination FORBIDDEN sections**: All structuring prompts (both `app/ocr/prompts.py` and `app/store_prompts.py`) include explicit ZAKAZANE/FORBIDDEN rules appended via `get_structuring_prompt()` and `get_prompt_for_store()`. Rules prohibit inventing products, guessing prices, rounding amounts, and renaming products.
+
 **Single-model mode** (`OCR_SINGLE_MODEL_MODE=true`): Vision model performs OCR + JSON structuring in one call, reducing model switches. Useful for 12GB VRAM systems where loading both vision and text models causes thrashing.
 
 **Category cache** (`CLASSIFIER_CACHE_TTL`): Caches product→category mappings to skip LLM calls for recently seen products. Set to 0 to disable.
@@ -271,9 +274,9 @@ OCR backend code is in `app/ocr/`. The `__init__.py` re-exports from `vision.py`
 
 Each module follows a consistent pattern:
 - **API router** (`app/*_api.py`) - FastAPI endpoints
-- **Database models** (`app/db/models.py`) - SQLAlchemy ORM (25 models)
+- **Database models** (`app/db/models.py`) - SQLAlchemy ORM (26 models)
 - **Repository** (`app/db/repositories/*.py`) - Data access layer (16 repos)
-- **Service** (`app/services/*.py`) - Business logic orchestration (4 services)
+- **Service** (`app/services/*.py`) - Business logic orchestration (5 services)
 - **Writer** (`app/writers/*.py`) - Obsidian markdown generation (5 writers)
 - **Web route** (`app/web/*.py`) - HTMX UI (14 feature modules)
 
@@ -312,6 +315,7 @@ Per-user preferences stored in `UserProfile` model: preferred stores, city (for 
 
 - `/health` - Basic health check
 - `/models/status` - VRAM usage, loaded models, eviction metrics (when `MODEL_COORDINATION_ENABLED=true`)
+- `/gdrive/status` - Google Drive sync health (when `GDRIVE_SYNC_ENABLED=true`)
 - `/metrics` - Prometheus metrics (via `prometheus-fastapi-instrumentator`)
 - `/docs` - Swagger UI (FastAPI auto-docs)
 
@@ -335,6 +339,30 @@ Container runs as `user: "1000:1000"` so files have correct ownership (marcin:ma
 
 All `*_OUTPUT_DIR` settings in `config.py` can be overridden via env vars (e.g., `NOTES_OUTPUT_DIR=/data/notes`).
 
+### Google Drive Sync
+
+Optional bidirectional sync between Obsidian vault and Google Drive for mobile access via Gemini Custom Gem on Pixel.
+
+**Architecture:** rclone runs on the **host** as a systemd timer (`gdrive-sync.timer`, every 5 min). The Docker container only reads/writes mounted volumes — it has no rclone or Drive dependencies. An optional read-only status monitor (`app/services/gdrive_sync.py`) exposes sync health at `/gdrive/status`.
+
+**Data flow:**
+```
+Phone (e-receipt) → Share to Drive/inbox/ → rclone → ./paragony/inbox/
+    → existing folder watcher (_folder_watch_loop) → OCR pipeline
+    → vault/paragony/*.md → rclone → Drive/paragony/ → Gemini Gem
+```
+
+**What syncs to Drive (allowlist — only these, nothing else):**
+- `paragony/` (receipts) — medium sensitivity
+- `summaries/` (RSS articles) — low sensitivity
+- `bookmarks/` — low sensitivity
+
+**Never synced:** notes/, transcriptions/, daily/, logs/
+
+**Setup:** `./scripts/setup-gdrive-sync.sh` (interactive: configures rclone, creates Drive folders, installs systemd timer, writes `/etc/secondbrain/gdrive.env`).
+
+**Config:** `GDRIVE_SYNC_ENABLED` (monitoring), `FOLDER_WATCH_ENABLED` + `FOLDER_WATCH_INTERVAL_SECONDS` (inbox processing).
+
 ### Key Design Patterns
 
 **Repository pattern** with FastAPI dependency injection via typed aliases (`app/dependencies.py`):
@@ -348,6 +376,10 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 
 **RAG auto-indexing** (`app/rag/hooks.py`): Fire-and-forget hooks in notes_api, bookmarks_api, rss_api, transcription_api auto-index new content for `/ask` queries. If embeddings table is empty on startup, triggers background `reindex_all()`.
 
+**RAG Polish stem search** (`app/rag/retriever.py`): Keyword fallback supplements pg_trgm with 4-char Polish stems (e.g., "notatki"/"notatką" → "nota"). Uses `_polish_stems()` with NFD diacritics normalization. Stems search via `EmbeddingRepository.search_by_stems()` with score 0.5.
+
+**RAG answer judge** (`app/rag/answerer.py`): Optional post-generation hallucination check (`RAG_JUDGE_ENABLED=false` by default). Sends answer + context to LLM judge at temperature 0.0, returns PASS/WARN. On WARN, appends disclaimer to answer. Doubles LLM calls when enabled.
+
 **Chat AI intent classification** (`app/chat/intent_classifier.py`): LLM classifies each message into 7 intent types:
 - `rag` - personal data (articles, notes, bookmarks, transcriptions)
 - `spending` - receipt analytics, prices, shopping costs
@@ -358,6 +390,8 @@ All database operations are **async** (SQLAlchemy 2.0 + asyncpg). Repository cla
 - `direct` - general knowledge, greetings, math, conversation
 
 Fallback chain: `rag` with no results → try `web`; `web` with no results → try `rag`.
+
+**Per-intent temperature** (`app/chat/orchestrator.py`): `INTENT_TEMPERATURES` maps each intent to optimal temperature — factual intents (rag, spending, inventory, weather) use 0.1, synthesis intents (web, both) use 0.3, conversational (direct) uses 0.5.
 
 **3-layer Polish language detection**: Used in chat, summarizer, and transcription to select models (Bielik for Polish, qwen2.5 for English):
 1. Polish-specific characters (ą, ć, ę, ł, ń, ó, ś, ź, ż)
@@ -527,6 +561,7 @@ RAG_CHUNK_SIZE=1500
 RAG_CHUNK_OVERLAP=200
 RAG_MIN_SCORE=0.3
 RAG_AUTO_INDEX=true
+RAG_JUDGE_ENABLED=false               # Post-answer hallucination judge (doubles LLM calls)
 
 # Web search (SearXNG)
 WEB_SEARCH_NUM_RESULTS=6              # Results per search query
@@ -542,6 +577,11 @@ PUSH_ENABLED=false
 PUSH_VAPID_PUBLIC_KEY=                # Generate with scripts/generate_vapid_keys.py
 PUSH_VAPID_PRIVATE_KEY=
 PUSH_VAPID_SUBJECT=mailto:admin@localhost
+
+# Google Drive Sync (host-side rclone + container monitoring)
+GDRIVE_SYNC_ENABLED=false                # Enable sync status monitoring endpoint
+FOLDER_WATCH_ENABLED=false               # Enable inbox folder watcher (for auto-import)
+FOLDER_WATCH_INTERVAL_SECONDS=300        # Inbox scan interval (reduce to 60 with Drive sync)
 
 # Weather (for agent get_weather tool)
 OPENWEATHER_API_KEY=
@@ -613,7 +653,7 @@ Output goes to Obsidian vault (paths via `docker-compose.override.yml`):
 
 ## Database
 
-PostgreSQL 16 with `pg_trgm` (fuzzy text) and `pgvector` (embeddings) extensions. Schema in `scripts/init-db.sql`, ORM in `app/db/models.py` (25 models), migrations in `alembic/versions/` (10 versions).
+PostgreSQL 16 with `pg_trgm` (fuzzy text) and `pgvector` (embeddings) extensions. Schema in `scripts/init-db.sql`, ORM in `app/db/models.py` (26 models), migrations in `alembic/versions/` (11 versions).
 
 Set all feature flags to `false` to revert to file-only mode (no database).
 
@@ -645,7 +685,7 @@ Set all feature flags to `false` to revert to file-only mode (no database).
 **Authentication** (`app/auth.py`): Optional, controlled by `AUTH_TOKEN` env var. When set:
 - API: `Authorization: Bearer <token>` header
 - Web UI: session cookies (8h expiry) with `/login` and `/logout` routes
-- Public paths bypassing auth: `/health`, `/docs`, `/metrics`, `/login`, `/logout`, `/sw.js`, `/manifest.json`
+- Public paths bypassing auth: `/health`, `/login`, `/logout`, `/static`, `/sw.js`, `/offline.html`, `/manifest.json`, `/api/push/vapid-key`, `/metrics`, `/gdrive/status`, `/favicon.ico`
 
 **Rate limiting**: `slowapi` on login (5/min), receipt upload (10/min), chat (20/min), push test (3/min).
 
@@ -676,6 +716,10 @@ When adding new endpoints: use parameterized queries, sanitize user-provided fil
 | `scripts/test_mobile_pwa.sh` | Mobile PWA smoke tests |
 | `scripts/quick_ocr.py` | Standalone OCR test utility |
 | `scripts/receipt_ocr.py` | Standalone receipt OCR utility |
+| `scripts/sync-gdrive.sh` | Google Drive bidirectional sync (rclone) |
+| `scripts/setup-gdrive-sync.sh` | One-time Google Drive sync setup |
+| `scripts/gdrive-sync.timer` | systemd timer for sync (every 5 min) |
+| `scripts/gdrive-sync.service` | systemd service for sync |
 
 ## Extending the Codebase
 
