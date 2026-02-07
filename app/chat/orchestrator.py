@@ -19,6 +19,17 @@ from app.rag import retriever
 
 logger = logging.getLogger(__name__)
 
+# Temperatura per intent — precyzyjne dane vs kreatywna rozmowa
+INTENT_TEMPERATURES = {
+    "rag": 0.1,
+    "spending": 0.1,
+    "inventory": 0.1,
+    "weather": 0.1,
+    "web": 0.3,
+    "both": 0.3,
+    "direct": 0.5,
+}
+
 
 CHAT_SYSTEM_PROMPT_PL = """Jesteś pomocnym asystentem osobistego systemu zarządzania wiedzą (Second Brain).
 Masz dostęp do osobistej bazy wiedzy (artykuły, paragony, transkrypcje, notatki, zakładki) oraz możesz przeszukiwać internet.
@@ -454,7 +465,7 @@ async def process_message(
         model=model,
         messages=messages,
         options={
-            "temperature": 0.4,
+            "temperature": INTENT_TEMPERATURES.get(search.final_intent, 0.4),
             "num_predict": 2048,
         },
         timeout=120.0,
@@ -580,7 +591,7 @@ async def process_message_stream(
     async for token in ollama_client.post_chat_stream(
         model=model,
         messages=messages_list,
-        options={"temperature": 0.4, "num_predict": 2048},
+        options={"temperature": INTENT_TEMPERATURES.get(search.final_intent, 0.4), "num_predict": 2048},
         timeout=120.0,
         keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
     ):
