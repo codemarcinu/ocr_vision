@@ -114,6 +114,60 @@ class EmbeddingRepository(BaseRepository[DocumentEmbedding]):
             for row in rows
         ]
 
+    async def search_by_stems(
+        self,
+        stems: list[str],
+        limit: int = 5,
+        content_types: Optional[list[str]] = None,
+    ) -> list[dict]:
+        """Wyszukiwanie po 4-znakowych rdzeniach polskich słów."""
+        if not stems:
+            return []
+
+        conditions = []
+        params = {"limit": limit}
+        for i, stem in enumerate(stems):
+            key = f"stem_{i}"
+            conditions.append(f"text_chunk ILIKE :{key}")
+            params[key] = f"%{stem}%"
+
+        where = " OR ".join(conditions)
+
+        extra_clause = ""
+        if content_types:
+            extra_clause = "AND content_type = ANY(:types)"
+            params["types"] = content_types
+
+        sql = text(f"""
+            SELECT
+                id,
+                content_type,
+                content_id,
+                chunk_index,
+                text_chunk,
+                metadata
+            FROM document_embeddings
+            WHERE ({where}) {extra_clause}
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+
+        result = await self.session.execute(sql, params)
+        rows = result.fetchall()
+        return [
+            {
+                "id": row.id,
+                "content_type": row.content_type,
+                "content_id": row.content_id,
+                "chunk_index": row.chunk_index,
+                "text_chunk": row.text_chunk,
+                "metadata": row.metadata or {},
+                "distance": 0.5,
+                "score": 0.5,
+            }
+            for row in rows
+        ]
+
     async def get_by_content(
         self,
         content_type: str,

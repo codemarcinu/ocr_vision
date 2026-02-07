@@ -1,6 +1,7 @@
 """Search and retrieval for RAG queries."""
 
 import logging
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
@@ -88,20 +89,37 @@ async def search(
     return results[:top_k]
 
 
+def _polish_stems(query: str, min_word_len: int = 4) -> list[str]:
+    """Generuj 4-znakowe rdzenie z normalizacją polskich znaków.
+
+    Rozwiązuje problem odmiany: notatki/notatką/notatkę → nota
+    """
+    normalized = unicodedata.normalize("NFD", query.lower())
+    normalized = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    normalized = normalized.replace("ł", "l")
+
+    words = normalized.split()
+    stems = []
+    for w in words:
+        if len(w) >= min_word_len and w.isalpha():
+            stems.append(w[:4])
+    return list(set(stems))
+
+
 async def _keyword_search(
     query: str,
     repo: EmbeddingRepository,
     top_k: int,
     content_types: Optional[list[str]] = None,
 ) -> list[SearchResult]:
-    """Fallback keyword search using pg_trgm."""
+    """Fallback keyword search using pg_trgm + Polish stem matching."""
     raw_results = await repo.search_by_keyword(
         query=query,
         limit=top_k,
         content_types=content_types,
     )
 
-    return [
+    results = [
         SearchResult(
             content_type=r["content_type"],
             content_id=r["content_id"],
@@ -112,3 +130,28 @@ async def _keyword_search(
         )
         for r in raw_results
     ]
+
+    # Uzupełnij stemami polskimi jeśli za mało wyników
+    if len(results) < top_k:
+        stems = _polish_stems(query)
+        if stems:
+            stem_results = await repo.search_by_stems(
+                stems=stems,
+                limit=top_k,
+                content_types=content_types,
+            )
+            seen = {(r.content_type, r.content_id, r.chunk_index) for r in results}
+            for r in stem_results:
+                key = (r["content_type"], r["content_id"], r["chunk_index"])
+                if key not in seen:
+                    results.append(SearchResult(
+                        content_type=r["content_type"],
+                        content_id=r["content_id"],
+                        text_chunk=r["text_chunk"],
+                        metadata=r["metadata"],
+                        score=r["score"],
+                        chunk_index=r["chunk_index"],
+                    ))
+                    seen.add(key)
+
+    return results
