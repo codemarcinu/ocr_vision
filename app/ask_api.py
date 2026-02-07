@@ -40,6 +40,7 @@ class AskResponse(BaseModel):
     model_used: str
     processing_time_sec: float
     chunks_found: int
+    judge_verdict: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +78,7 @@ async def ask_question(request: AskRequest):
             model_used=result.model_used,
             processing_time_sec=result.processing_time_sec,
             chunks_found=result.chunks_found,
+            judge_verdict=result.judge_verdict,
         )
 
 

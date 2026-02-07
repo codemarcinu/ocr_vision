@@ -148,6 +148,13 @@ class Settings:
     FOLDER_WATCH_ENABLED: bool = os.getenv("FOLDER_WATCH_ENABLED", "false").lower() == "true"
     FOLDER_WATCH_INTERVAL_SECONDS: int = int(os.getenv("FOLDER_WATCH_INTERVAL_SECONDS", "300"))
 
+    # Google Drive sync monitoring (rclone runs on host, this is read-only status)
+    GDRIVE_SYNC_ENABLED: bool = os.getenv("GDRIVE_SYNC_ENABLED", "false").lower() == "true"
+    GDRIVE_SYNC_STATUS_FILE: Path = Path(os.getenv(
+        "GDRIVE_SYNC_STATUS_FILE", "/data/gdrive-sync-status.json"
+    ))
+    GDRIVE_SYNC_MAX_AGE_MINUTES: int = int(os.getenv("GDRIVE_SYNC_MAX_AGE_MINUTES", "30"))
+
     # Transcription categories for note extraction
     TRANSCRIPTION_CATEGORIES: list = [
         "Edukacja",
@@ -231,6 +238,7 @@ class Settings:
     RAG_CHUNK_OVERLAP: int = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
     RAG_MIN_SCORE: float = float(os.getenv("RAG_MIN_SCORE", "0.3"))
     RAG_AUTO_INDEX: bool = os.getenv("RAG_AUTO_INDEX", "true").lower() == "true"
+    RAG_JUDGE_ENABLED: bool = os.getenv("RAG_JUDGE_ENABLED", "false").lower() == "true"
 
     # ==========================================================================
     # Chat AI (multi-turn conversation with RAG + web search)

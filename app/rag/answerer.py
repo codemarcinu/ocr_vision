@@ -47,6 +47,7 @@ class AskResult:
     model_used: str = ""
     processing_time_sec: float = 0.0
     chunks_found: int = 0
+    judge_verdict: str = ""
 
 
 RAG_PROMPT_PL = """Na podstawie poniższego kontekstu z osobistej bazy wiedzy, odpowiedz na pytanie użytkownika.
@@ -81,6 +82,54 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:"""
+
+
+JUDGE_PROMPT_PL = """Oceń czy ODPOWIEDŹ jest uzasadniona przez KONTEKST.
+
+KONTEKST:
+{context}
+
+ODPOWIEDŹ:
+{answer}
+
+Odpowiedz JEDNYM słowem: PASS (zgodna) lub WARN (zawiera informacje spoza kontekstu).
+Werdykt:"""
+
+
+JUDGE_PROMPT_EN = """Evaluate if ANSWER is supported by CONTEXT.
+
+CONTEXT:
+{context}
+
+ANSWER:
+{answer}
+
+Reply with ONE word: PASS (consistent) or WARN (contains info beyond context).
+Verdict:"""
+
+
+async def _judge_answer(answer: str, context: str, lang: str, model: str) -> str:
+    """Weryfikuj odpowiedź RAG pod kątem halucynacji."""
+    prompt_template = JUDGE_PROMPT_PL if lang == "pl" else JUDGE_PROMPT_EN
+    prompt = prompt_template.format(context=context, answer=answer)
+
+    response, error = await ollama_client.post_generate(
+        model=model,
+        prompt=prompt,
+        options={"temperature": 0.0, "num_predict": 10},
+        timeout=30.0,
+        keep_alive=settings.TEXT_MODEL_KEEP_ALIVE,
+    )
+
+    if error:
+        logger.warning(f"RAG judge error: {error}")
+        return "pass"
+
+    verdict = response.strip().lower()
+    if "warn" in verdict:
+        logger.info("RAG judge: WARN — odpowiedź może zawierać halucynacje")
+        return "warn"
+    return "pass"
 
 
 def _detect_language(text: str) -> str:
@@ -196,6 +245,20 @@ async def ask(
             chunks_found=len(results),
         )
 
+    answer_text = response.strip()
+
+    # Opcjonalna walidacja odpowiedzi przez sędziego
+    judge_verdict = ""
+    if settings.RAG_JUDGE_ENABLED:
+        judge_verdict = await _judge_answer(answer_text, context, lang, model)
+        if judge_verdict == "warn":
+            disclaimer = (
+                "\n\n---\n*Uwaga: ta odpowiedź może zawierać informacje wykraczające poza dostarczone źródła.*"
+                if lang == "pl" else
+                "\n\n---\n*Note: this answer may contain information beyond the provided sources.*"
+            )
+            answer_text += disclaimer
+
     # Build unique source references
     seen_sources = set()
     sources = []
@@ -211,9 +274,10 @@ async def ask(
             seen_sources.add(key)
 
     return AskResult(
-        answer=response.strip(),
+        answer=answer_text,
         sources=sources,
         model_used=model,
         processing_time_sec=round(time.time() - start_time, 2),
         chunks_found=len(results),
+        judge_verdict=judge_verdict,
     )
