@@ -75,11 +75,12 @@ BOOKMARKS_UPLOADED=0
 SYNC_ERROR=""
 
 count_transferred() {
-    # Parse rclone output for transferred file count
+    # Count transferred files from rclone verbose output
+    # Matches lines like: "INFO  : file.md: Copied (new)" or NOTICE for dry-run skips
     local output="$1"
     local count
-    count=$(echo "$output" | grep -oP 'Transferred:\s+\K\d+' | head -1 || echo "0")
-    echo "${count:-0}"
+    count=$(echo "$output" | grep -cE '(Copied|Skipped copy)') || count=0
+    echo "$count"
 }
 
 write_status() {
@@ -134,8 +135,6 @@ sync_inbox_from_drive() {
         --update \
         --stats-one-line \
         --stats 0 \
-        --log-file="$SYNC_LOG" \
-        --log-level INFO \
         $DRY_RUN \
         -v 2>&1) || true
     INBOX_DOWNLOADED=$(count_transferred "$output")
@@ -153,8 +152,6 @@ sync_paragony_to_drive() {
         --update \
         --stats-one-line \
         --stats 0 \
-        --log-file="$SYNC_LOG" \
-        --log-level INFO \
         $DRY_RUN \
         -v 2>&1) || true
     PARAGONY_UPLOADED=$(count_transferred "$output")
@@ -172,8 +169,6 @@ sync_summaries_to_drive() {
         --update \
         --stats-one-line \
         --stats 0 \
-        --log-file="$SYNC_LOG" \
-        --log-level INFO \
         $DRY_RUN \
         -v 2>&1) || true
     SUMMARIES_UPLOADED=$(count_transferred "$output")
@@ -191,8 +186,6 @@ sync_bookmarks_to_drive() {
         --update \
         --stats-one-line \
         --stats 0 \
-        --log-file="$SYNC_LOG" \
-        --log-level INFO \
         $DRY_RUN \
         -v 2>&1) || true
     BOOKMARKS_UPLOADED=$(count_transferred "$output")

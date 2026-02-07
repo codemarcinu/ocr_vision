@@ -29,6 +29,7 @@ services:
       - ./vault:/data/vault
       - paddleocr_cache:/root/.paddleocr
       - ./credentials:/data/credentials:ro
+      - /tmp/secondbrain-gdrive-sync-status.json:/data/gdrive-sync-status.json:ro
       - whisper_models:/tmp/transcriptions/models
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -74,6 +75,7 @@ services:
       - PUSH_VAPID_SUBJECT=${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
       # Google Drive Sync (monitoring only - rclone runs on host)
       - GDRIVE_SYNC_ENABLED=${GDRIVE_SYNC_ENABLED:-false}
+      - GDRIVE_SYNC_STATUS_FILE=/data/gdrive-sync-status.json
       - FOLDER_WATCH_ENABLED=${FOLDER_WATCH_ENABLED:-false}
       - FOLDER_WATCH_INTERVAL_SECONDS=${FOLDER_WATCH_INTERVAL_SECONDS:-300}
     extra_hosts:
